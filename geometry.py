@@ -24,7 +24,7 @@ def define_geometry(
     )
 
     assemblies_boundary = get_assemblies_boundaries(
-        assembly_section, drums, core.core_diameter
+        assembly_section, drums, core.core_diameter, drum_desc
     )
 
     reflector_cylinder = create_cylinder(
@@ -61,6 +61,7 @@ def define_geometry(
         core,
         material_choice,
         drums,
+        drum_desc,
     )
 
     reflector = openmc.Cell(name="reflector")

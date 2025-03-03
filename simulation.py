@@ -1,7 +1,8 @@
-from materials import materials_dict
+from materials import materials_dict, colors
 from drums import CoreDesc, DrumDesc
 import openmc
 import pytime
+import matplotlib.pyplot as plt
 from simlib import clean_directory
 from geometry import AssemblySectionDesc, MaterialChoice, define_geometry
 
@@ -79,8 +80,8 @@ geometry, universe = define_geometry(
         neutron_shield="Boron Carbide",
         reflector="Molybdenum",
         fuel="Uranium Carbide",
-        cladding="Molybdenum",
-        drum="Molybdenum",
+        cladding="Boron Carbide",
+        drum="Boron Carbide",
     ),
     AssemblySectionDesc(
         fuel_thickness=0.64,
@@ -91,7 +92,32 @@ geometry, universe = define_geometry(
     ),
 )
 
-criticality_simulation(
-    geometry,
-    universe,
-)
+
+def render_geometry(universe, universe_radius, pixels, basis, origin):
+    print("Rendering geometry")
+    universe.plot(
+        width=(universe_radius * 2, universe_radius * 2),
+        pixels=pixels,
+        basis=basis,
+        color_by="material",
+        colors=colors,
+        origin=origin,
+    )
+    plt.savefig("plot.png")
+
+
+render = True
+# Render geometry
+if render:
+    render_geometry(
+        universe,
+        universe_radius=(50),
+        pixels=(2500, 2500),
+        basis="xy",
+        origin=(0, 0.0, 0.0),
+    )
+else:
+    criticality_simulation(
+        geometry,
+        universe,
+    )

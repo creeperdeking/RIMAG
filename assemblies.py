@@ -8,7 +8,7 @@ from geometry_utils import (
     create_hollow_cylinder,
 )
 from materials import materials_dict
-from drums import CoreDesc, DrumLayer
+from drums import CoreDesc, DrumLayer, DrumDesc
 
 
 def calculate_assembly_thickness(assembly_section: AssemblySectionDesc) -> float:
@@ -22,14 +22,17 @@ def calculate_assembly_thickness(assembly_section: AssemblySectionDesc) -> float
 
 
 def get_assemblies_boundaries(
-    assembly_section: AssemblySectionDesc, drums: List[DrumLayer], core_diameter: float
+    assembly_section: AssemblySectionDesc,
+    drums: List[DrumLayer],
+    core_diameter: float,
+    drums_desc: DrumDesc,
 ):
-    distance_from_core = drums[0].distance_from_core
+    distance_from_core = drums_desc.drum_core_distance
     assembly_thickness = calculate_assembly_thickness(assembly_section)
-    drum_height = drums[0].height
-    fist_assembly_radius = drums[0].radius + assembly_section.drum_thickness / 2
+    drum_height = drums_desc.height
+    fist_assembly_radius = drums[0].radius
     last_assembly_radius = (
-        drums[-1].radius - assembly_section.drum_thickness / 2 - assembly_thickness
+        drums[-1].radius - assembly_section.drum_thickness - assembly_thickness
     )
 
     assemblies_boundary = create_hollow_cylinder(
@@ -47,85 +50,86 @@ def create_assembly_cells(
     core_diameter: float,
     drum: DrumLayer,
     material_choice: MaterialChoice,
+    drum_desc: DrumDesc,
 ) -> List[openmc.Cell]:
     core_shape = -openmc.ZCylinder(r=core_diameter / 2)
     current_radius = drum.radius
     drum_shape = (
         create_hollow_cylinder(
-            drum.radius + assembly_section.drum_thickness / 2,
-            drum.radius - assembly_section.drum_thickness / 2,
-            drum.height,
-            distance_from_origin=drum.distance_from_core,
+            drum.radius,
+            drum.radius - assembly_section.drum_thickness,
+            drum_desc.height,
+            distance_from_origin=drum_desc.drum_core_distance,
         )
         & core_shape
     )
-    current_radius -= assembly_section.drum_thickness / 2
+    current_radius -= assembly_section.drum_thickness
     cladding_drum_gap1 = (
         create_hollow_cylinder(
-            current_radius + assembly_section.cladding_drum_gap / 2,
-            current_radius - assembly_section.cladding_drum_gap / 2,
-            drum.height,
-            distance_from_origin=drum.distance_from_core,
+            current_radius,
+            current_radius - assembly_section.cladding_drum_gap,
+            drum_desc.height,
+            distance_from_origin=drum_desc.drum_core_distance,
         )
         & core_shape
     )
-    current_radius -= assembly_section.cladding_drum_gap / 2
+    current_radius -= assembly_section.cladding_drum_gap
     cladding_shape1 = (
         create_hollow_cylinder(
-            current_radius + assembly_section.cladding_thickness / 2,
-            current_radius - assembly_section.cladding_thickness / 2,
-            drum.height,
-            distance_from_origin=drum.distance_from_core,
+            current_radius,
+            current_radius - assembly_section.cladding_thickness,
+            drum_desc.height,
+            distance_from_origin=drum_desc.drum_core_distance,
         )
         & core_shape
     )
-    current_radius -= assembly_section.cladding_thickness / 2
+    current_radius -= assembly_section.cladding_thickness
     fuel_cladding_gap1 = (
         create_hollow_cylinder(
-            current_radius + assembly_section.fuel_cladding_gap / 2,
-            current_radius - assembly_section.fuel_cladding_gap / 2,
-            drum.height,
-            distance_from_origin=drum.distance_from_core,
+            current_radius,
+            current_radius - assembly_section.fuel_cladding_gap,
+            drum_desc.height,
+            distance_from_origin=drum_desc.drum_core_distance,
         )
         & core_shape
     )
-    current_radius -= assembly_section.fuel_cladding_gap / 2
+    current_radius -= assembly_section.fuel_cladding_gap
     fuel_shape = (
         create_hollow_cylinder(
-            current_radius + assembly_section.fuel_thickness / 2,
-            current_radius - assembly_section.fuel_thickness / 2,
-            drum.height,
-            distance_from_origin=drum.distance_from_core,
+            current_radius,
+            current_radius - assembly_section.fuel_thickness,
+            drum_desc.height,
+            distance_from_origin=drum_desc.drum_core_distance,
         )
         & core_shape
     )
-    current_radius -= assembly_section.fuel_thickness / 2
+    current_radius -= assembly_section.fuel_thickness
     fuel_cladding_gap2 = (
         create_hollow_cylinder(
-            current_radius + assembly_section.fuel_cladding_gap / 2,
-            current_radius - assembly_section.fuel_cladding_gap / 2,
-            drum.height,
-            distance_from_origin=drum.distance_from_core,
+            current_radius,
+            current_radius - assembly_section.fuel_cladding_gap,
+            drum_desc.height,
+            distance_from_origin=drum_desc.drum_core_distance,
         )
         & core_shape
     )
-    current_radius -= assembly_section.fuel_cladding_gap / 2
+    current_radius -= assembly_section.fuel_cladding_gap
     cladding_shape2 = (
         create_hollow_cylinder(
-            current_radius + assembly_section.cladding_thickness / 2,
-            current_radius - assembly_section.cladding_thickness / 2,
-            drum.height,
-            distance_from_origin=drum.distance_from_core,
+            current_radius,
+            current_radius - assembly_section.cladding_thickness,
+            drum_desc.height,
+            distance_from_origin=drum_desc.drum_core_distance,
         )
         & core_shape
     )
-    current_radius -= assembly_section.cladding_thickness / 2
+    current_radius -= assembly_section.cladding_thickness
     cladding_drum_gap2 = (
         create_hollow_cylinder(
-            current_radius + assembly_section.cladding_drum_gap / 2,
-            current_radius - assembly_section.cladding_drum_gap / 2,
-            drum.height,
-            distance_from_origin=drum.distance_from_core,
+            current_radius,
+            current_radius - assembly_section.cladding_drum_gap,
+            drum_desc.height,
+            distance_from_origin=drum_desc.drum_core_distance,
         )
         & core_shape
     )
@@ -135,6 +139,7 @@ def create_assembly_cells(
     fuel.region = fuel_shape
 
     gap = openmc.Cell(name="gap" + str(drum.number))
+    gap.fill = materials_dict["Void"]
     gap.region = (
         fuel_cladding_gap1
         | fuel_cladding_gap2
@@ -150,7 +155,7 @@ def create_assembly_cells(
     drum.fill = materials_dict[material_choice.drum]
     drum.region = drum_shape
 
-    return [fuel, gap, cladding, drum]
+    return [drum, gap, cladding, fuel]
 
 
 def make_assemblies_cells(
@@ -158,12 +163,17 @@ def make_assemblies_cells(
     core: CoreDesc,
     material_choice: MaterialChoice,
     drums: List[DrumLayer],
+    drum_desc: DrumDesc,
 ) -> List[openmc.Cell]:
     cells = []
     for drum in drums:
         cells.extend(
             create_assembly_cells(
-                assembly_section, core.core_diameter, drum, material_choice
+                assembly_section,
+                core.core_diameter,
+                drum,
+                material_choice,
+                drum_desc,
             )
         )
     return cells

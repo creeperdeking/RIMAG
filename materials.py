@@ -21,6 +21,7 @@ class Material(BaseModel):
     thermal_conductivity: Optional[float] = None  # W/cm/K
     melting_point: Optional[float] = None  # K
     boiling_point: Optional[float] = None  # K
+    color: Optional[str] = None
 
 
 atoms: Dict[str, Atom] = {
@@ -35,6 +36,7 @@ atoms: Dict[str, Atom] = {
     "Pb": Atom(name="Pb", atomic_weight=207.2),
     "B": Atom(name="B", atomic_weight=10.811),
     "Mo": Atom(name="Mo", atomic_weight=95.94),
+    "Zr": Atom(name="Zr", atomic_weight=91.224),
 }
 
 
@@ -51,16 +53,15 @@ def create_uranium(u235_enrichment, u234_enrichment=0):
 uranium = Material(
     composition=create_uranium(0.00711),
     density=18.95,
+    color="green",
 )
 
 enriched_uranium = Material(
-    composition=create_uranium(0.20),
-    density=18.95,
+    composition=create_uranium(0.20), density=18.95, color="green"
 )
 
 depleted_uranium = Material(
-    composition=create_uranium(0.003),
-    density=18.95,
+    composition=create_uranium(0.003), density=18.95, color="green"
 )
 
 
@@ -72,6 +73,7 @@ materials_def: Dict[str, Material] = {
             AtomProportion(atom=atoms["O"], proportion=1),
         ],
         density=1,
+        color="blue",
     ),
     "Heavy Water": Material(
         composition=[
@@ -79,38 +81,49 @@ materials_def: Dict[str, Material] = {
             AtomProportion(atom=atoms["O"], proportion=1),
         ],
         density=1.105,
+        color="darkblue",
     ),
     "Tungsten": Material(
         composition=[
             AtomProportion(atom=atoms["W"]),
         ],
         density=19.25,
+        color="lightgray",
     ),
     "Uranium Dioxide": Material(
         composition=enriched_uranium.composition
         + [AtomProportion(atom=atoms["O"], proportion=2)],
         density=10.97,
+        color="green",
     ),
     "Uranium Carbide": Material(
         composition=enriched_uranium.composition
         + [AtomProportion(atom=atoms["C"], proportion=1)],
         density=13.63,
+        color="green",
     ),
     "Graphite": Material(
         composition=[AtomProportion(atom=atoms["C"])],
         density=1.8,
+        color="black",
     ),
     "Lead": Material(
-        composition=[AtomProportion(atom=atoms["Pb"])],
-        density=11.34,
+        composition=[AtomProportion(atom=atoms["Pb"])], density=11.34, color="gray"
     ),
     "Boron Carbide": Material(
         composition=[AtomProportion(atom=atoms["B"]), AtomProportion(atom=atoms["C"])],
         density=2.52,
+        color="red",
     ),
     "Molybdenum": Material(
         composition=[AtomProportion(atom=atoms["Mo"])],
         density=10.28,
+        color="darkgray",
+    ),
+    "Void": Material(
+        composition=[AtomProportion(atom=atoms["Zr"])],
+        density=0.01,
+        color="purple",
     ),
 }
 
@@ -125,3 +138,10 @@ for name, material in materials_def.items():
             # for nuclides we use weight percent because it is how enrichment is given
             materials_dict[name].add_nuclide(atom_prop.atom.name, atom_prop.proportion)
     materials_dict[name].set_density("g/cm3", material.density)
+
+colors = {}
+for name, material in materials_def.items():
+    colors[materials_dict[name]] = (
+        "orange" if material.color is None else material.color
+    )
+print(colors)
