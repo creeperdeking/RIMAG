@@ -13,6 +13,8 @@ class CoreDesc(BaseModel):
     core_diameter: float
     core_height: float
     reflector_thickness: float
+    neutron_shield_thickness: float
+    gamma_shield_thickness: float
 
 
 def calculate_drum_arc_length(drum: DrumLayer, core_radius: float):

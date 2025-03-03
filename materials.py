@@ -33,6 +33,8 @@ atoms: Dict[str, Atom] = {
     "W": Atom(name="W", atomic_weight=183.84),
     "C": Atom(name="C", atomic_weight=12.0107),
     "Pb": Atom(name="Pb", atomic_weight=207.2),
+    "B": Atom(name="B", atomic_weight=10.811),
+    "Mo": Atom(name="Mo", atomic_weight=95.94),
 }
 
 
@@ -101,6 +103,14 @@ materials_def: Dict[str, Material] = {
     "Lead": Material(
         composition=[AtomProportion(atom=atoms["Pb"])],
         density=11.34,
+    ),
+    "Boron Carbide": Material(
+        composition=[AtomProportion(atom=atoms["B"]), AtomProportion(atom=atoms["C"])],
+        density=2.52,
+    ),
+    "Molybdenum": Material(
+        composition=[AtomProportion(atom=atoms["Mo"])],
+        density=10.28,
     ),
 }
 

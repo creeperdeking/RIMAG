@@ -47,40 +47,74 @@ def make_assembly_sections(
     )
 
 
-def define_geometry(core: CoreDesc, assembly_section: AssemblySectionDesc):
-
-    core_shape = (
-        -openmc.ZCylinder(r=core.core_diameter / 2)
-        & -openmc.ZPlane(z0=core.core_height / 2)
-        & +openmc.ZPlane(z0=-core.core_height / 2)
+def create_cylinder(radius: float, height: float, boundary_type: str = "transmission"):
+    return (
+        -openmc.ZCylinder(r=radius, boundary_type=boundary_type)
+        & -openmc.ZPlane(z0=height / 2, boundary_type=boundary_type)
+        & +openmc.ZPlane(z0=-height / 2, boundary_type=boundary_type)
     )
 
-    reflector_shape = ~core_shape & (
+
+class MaterialChoice(BaseModel):
+    neutron_shield: str
+    reflector: str
+    fuel: str
+
+
+def define_geometry(
+    core: CoreDesc,
+    material_choice: MaterialChoice,
+    assembly_section: AssemblySectionDesc,
+):
+
+    core_shape = create_cylinder(core.core_diameter / 2, core.core_height)
+
+    reflector_shape = ~core_shape & create_cylinder(
+        core.core_diameter / 2 + core.reflector_thickness, core.core_height
+    )
+
+    outer_boundary_shape = (
         -openmc.ZCylinder(
-            r=core.core_diameter / 2 + core.reflector_thickness, boundary_type="vacuum"
+            r=core.core_diameter / 2
+            + core.reflector_thickness
+            + core.neutron_shield_thickness,
+            boundary_type="vacuum",
         )
         & -openmc.ZPlane(
-            z0=core.core_height / 2 + core.reflector_thickness, boundary_type="vacuum"
+            z0=core.core_height / 2
+            + core.reflector_thickness
+            + core.neutron_shield_thickness,
+            boundary_type="vacuum",
         )
         & +openmc.ZPlane(
-            z0=-core.core_height / 2 - core.reflector_thickness, boundary_type="vacuum"
+            z0=-core.core_height / 2
+            - core.reflector_thickness
+            - core.neutron_shield_thickness,
+            boundary_type="vacuum",
         )
     )
 
+    neutron_shield_shape = ~core_shape & outer_boundary_shape
+
     fuel = openmc.Cell(name="fuel")
-    fuel.fill = materials_dict["Uranium Carbide"]
+    fuel.fill = materials_dict[material_choice.fuel]
     fuel.region = core_shape
     # fuel.temperature = 900
 
     reflector = openmc.Cell(name="reflector")
-    reflector.fill = materials_dict["Lead"]
+    reflector.fill = materials_dict[material_choice.reflector]
     reflector.region = reflector_shape
+
+    neutron_shield = openmc.Cell(name="neutron_shield")
+    neutron_shield.fill = materials_dict[material_choice.neutron_shield]
+    neutron_shield.region = neutron_shield_shape
 
     # Return universe and geometry
     universe = openmc.Universe(
         cells=[
             fuel,
             reflector,
+            neutron_shield,
         ]
     )
 
@@ -134,7 +168,18 @@ def criticality_simulation(
 
 
 geometry, universe = define_geometry(
-    CoreDesc(core_diameter=100, core_height=100, reflector_thickness=30),
+    CoreDesc(
+        core_diameter=100,
+        core_height=100,
+        reflector_thickness=20,
+        neutron_shield_thickness=20,
+        gamma_shield_thickness=10,
+    ),
+    MaterialChoice(
+        neutron_shield="Boron Carbide",
+        reflector="Molybdenum",
+        fuel="Uranium Carbide",
+    ),
     AssemblySectionDesc(
         fuel_thickness=1,
         fuel_cladding_gap=0.1,
