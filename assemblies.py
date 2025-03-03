@@ -2,14 +2,13 @@ from typing import List
 
 import openmc
 
-from geometry import (
+from geometry_utils import (
     AssemblySectionDesc,
-    DrumLayer,
     MaterialChoice,
     create_hollow_cylinder,
 )
 from materials import materials_dict
-from drums import CoreDesc
+from drums import CoreDesc, DrumLayer
 
 
 def calculate_assembly_thickness(assembly_section: AssemblySectionDesc) -> float:
@@ -136,7 +135,6 @@ def create_assembly_cells(
     fuel.region = fuel_shape
 
     gap = openmc.Cell(name="gap" + str(drum.number))
-    gap.fill = materials_dict[material_choice.gap]
     gap.region = (
         fuel_cladding_gap1
         | fuel_cladding_gap2
@@ -148,11 +146,11 @@ def create_assembly_cells(
     cladding.fill = materials_dict[material_choice.cladding]
     cladding.region = cladding_shape1 | cladding_shape2
 
-    drum_shape = openmc.Cell(name="drum" + str(drum.number))
-    drum_shape.fill = materials_dict[material_choice.drum]
-    drum_shape.region = drum_shape
+    drum = openmc.Cell(name="drum" + str(drum.number))
+    drum.fill = materials_dict[material_choice.drum]
+    drum.region = drum_shape
 
-    return [fuel, gap, cladding, drum_shape]
+    return [fuel, gap, cladding, drum]
 
 
 def make_assemblies_cells(

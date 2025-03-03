@@ -1,9 +1,14 @@
 import math
 from typing import List
 import scipy.constants as cst
-from geometry import DrumDesc
 
 from pydantic import BaseModel
+
+
+class DrumDesc(BaseModel):
+    drum_core_distance: float
+    drum_core_margin: float
+    height: float
 
 
 class DrumLayer(BaseModel):

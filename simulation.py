@@ -79,6 +79,8 @@ geometry, universe = define_geometry(
         neutron_shield="Boron Carbide",
         reflector="Molybdenum",
         fuel="Uranium Carbide",
+        cladding="Molybdenum",
+        drum="Molybdenum",
     ),
     AssemblySectionDesc(
         fuel_thickness=0.64,

@@ -1,57 +1,13 @@
 from pydantic import BaseModel
 import openmc
 from materials import materials_dict
-from drums import CoreDesc, make_drums
+from drums import CoreDesc, make_drums, DrumDesc
 from assemblies import (
     get_assemblies_boundaries,
     calculate_assembly_thickness,
     make_assemblies_cells,
 )
-
-
-class DrumDesc(BaseModel):
-    distance_from_core: float
-    drum_core_distance: float
-    drum_core_margin: float
-    height: float
-
-
-class AssemblySectionDesc(BaseModel):
-    fuel_thickness: float
-    fuel_cladding_gap: float
-    cladding_thickness: float
-    cladding_drum_gap: float
-    drum_thickness: float
-
-
-class MaterialChoice(BaseModel):
-    neutron_shield: str
-    reflector: str
-    fuel: str
-    cladding: str
-    drum: str
-
-
-def create_cylinder(radius: float, height: float, boundary_type: str = "transmission"):
-    return (
-        -openmc.ZCylinder(r=radius, boundary_type=boundary_type)
-        & -openmc.ZPlane(z0=height / 2, boundary_type=boundary_type)
-        & +openmc.ZPlane(z0=-height / 2, boundary_type=boundary_type)
-    )
-
-
-def create_hollow_cylinder(
-    outer_radius: float,
-    inner_radius,
-    height: float,
-    distance_from_origin: float = 0,
-):
-    return (
-        -openmc.ZCylinder(r=outer_radius, origin=(distance_from_origin, 0, 0))
-        & +openmc.ZCylinder(r=inner_radius, origin=(distance_from_origin, 0, 0))
-        & -openmc.ZPlane(z0=height / 2)
-        & +openmc.ZPlane(z0=-height / 2)
-    )
+from geometry_utils import create_cylinder, MaterialChoice, AssemblySectionDesc
 
 
 def define_geometry(
