@@ -28,7 +28,7 @@ def generate_XML(materials, geometry, settings, tallies):
 
 def run_sim(geometry, settings, materials, tallies=None):
     generate_XML(materials, geometry, settings, tallies)
-    openmc.run(threads=8)
+    openmc.run(threads=16)
     clean_directory()
 
 
@@ -65,8 +65,8 @@ def criticality_simulation(
 
 geometry, universe = define_geometry(
     CoreDesc(
-        core_diameter=80,
-        core_height=80,
+        core_diameter=120,
+        core_height=120,
         reflector_thickness=20,
         neutron_shield_thickness=20,
         gamma_shield_thickness=10,
@@ -80,15 +80,15 @@ geometry, universe = define_geometry(
         neutron_shield="Boron Carbide",
         reflector="Molybdenum",
         fuel="Uranium Carbide",
-        cladding="Boron Carbide",
-        drum="Boron Carbide",
+        cladding="Molybdenum",
+        drum="Molybdenum",
     ),
     AssemblySectionDesc(
-        fuel_thickness=0.64,
-        fuel_cladding_gap=0.03,
-        cladding_thickness=0.05,
-        cladding_drum_gap=0.075,
-        drum_thickness=0.05,
+        fuel_thickness=0.3,
+        fuel_cladding_gap=0.015,
+        cladding_thickness=0.02,
+        cladding_drum_gap=0.03,
+        drum_thickness=0.005,
     ),
 )
 
@@ -107,7 +107,6 @@ def render_geometry(universe, universe_radius, pixels, basis, origin):
 
 
 render = True
-# Render geometry
 if render:
     render_geometry(
         universe,

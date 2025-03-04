@@ -158,6 +158,28 @@ def create_assembly_cells(
     return [drum, gap, cladding, fuel]
 
 
+def create_last_drum_cell(
+    core_diameter: float,
+    assembly_section: AssemblySectionDesc,
+    last_drum: DrumLayer,
+    drum_desc: DrumDesc,
+    material_choice: MaterialChoice,
+) -> openmc.Cell:
+    assembly_thickness = calculate_assembly_thickness(assembly_section)
+    last_drum_shape = create_hollow_cylinder(
+        last_drum.radius - assembly_thickness,
+        last_drum.radius - assembly_thickness - assembly_section.drum_thickness,
+        drum_desc.height,
+        distance_from_origin=drum_desc.drum_core_distance,
+    ) & -openmc.ZCylinder(r=core_diameter / 2)
+
+    last_drum_cell = openmc.Cell(name="last_drum")
+    last_drum_cell.fill = materials_dict[material_choice.drum]
+    last_drum_cell.region = last_drum_shape
+
+    return last_drum_cell
+
+
 def make_assemblies_cells(
     assembly_section: AssemblySectionDesc,
     core: CoreDesc,
@@ -176,4 +198,13 @@ def make_assemblies_cells(
                 drum_desc,
             )
         )
+    cells.append(
+        create_last_drum_cell(
+            core.core_diameter,
+            assembly_section,
+            drums[-1],
+            drum_desc,
+            material_choice,
+        )
+    )
     return cells

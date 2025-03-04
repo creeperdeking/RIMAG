@@ -83,7 +83,10 @@ def make_drums(
     drum_radiuses = [outer_drum_radius]
 
     while (
-        core_radius + drum_radiuses[-1] - drum_desc.drum_core_distance
+        core_radius
+        + drum_radiuses[-1]
+        - drum_desc.drum_core_distance
+        - distance_between_drums
     ) >= drum_desc.drum_core_margin:
         drum_radiuses.append(drum_radiuses[-1] - distance_between_drums)
     return [

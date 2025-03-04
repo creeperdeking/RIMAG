@@ -1,4 +1,3 @@
-from pydantic import BaseModel
 import openmc
 from materials import materials_dict
 from drums import CoreDesc, make_drums, DrumDesc
