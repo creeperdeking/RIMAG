@@ -4,7 +4,12 @@ import openmc
 import pytime
 import matplotlib.pyplot as plt
 from simlib import clean_directory
-from geometry import AssemblySectionDesc, MaterialChoice, define_geometry
+from geometry import (
+    AssemblySectionDesc,
+    MaterialChoice,
+    define_geometry,
+    calculate_assembly_thickness,
+)
 
 
 def assembly_section_thickness(section: AssemblySectionDesc) -> float:
@@ -63,33 +68,40 @@ def criticality_simulation(
         run_sim(geometry, settings, materials)
 
 
+fuel_thicc = 0.45
+assembly_section = AssemblySectionDesc(
+    fuel_thickness=fuel_thicc,
+    fuel_cladding_gap=fuel_thicc * 0.1 * 0.5,
+    cladding_thickness=0.03,
+    cladding_drum_gap=0.07,
+    drum_thickness=0.01,
+)
+
+print("thicc")
+print(calculate_assembly_thickness(assembly_section))
+
+core_diameter = 120
 geometry, universe = define_geometry(
     CoreDesc(
-        core_diameter=120,
-        core_height=120,
+        core_diameter=core_diameter,
+        core_height=core_diameter,
         reflector_thickness=20,
         neutron_shield_thickness=20,
         gamma_shield_thickness=10,
     ),
     DrumDesc(
-        drum_core_distance=100,
+        drum_core_distance=core_diameter + 30 / 2,
         drum_core_margin=2,
         height=80,
     ),
     MaterialChoice(
         neutron_shield="Boron Carbide",
         reflector="Molybdenum",
-        fuel="Uranium Carbide",
+        fuel="Plutonium Carbide",
         cladding="Molybdenum",
         drum="Molybdenum",
     ),
-    AssemblySectionDesc(
-        fuel_thickness=0.3,
-        fuel_cladding_gap=0.015,
-        cladding_thickness=0.02,
-        cladding_drum_gap=0.03,
-        drum_thickness=0.005,
-    ),
+    assembly_section=assembly_section,
 )
 
 
@@ -110,7 +122,7 @@ render = True
 if render:
     render_geometry(
         universe,
-        universe_radius=(50),
+        universe_radius=(100),
         pixels=(2500, 2500),
         basis="xy",
         origin=(0, 0.0, 0.0),

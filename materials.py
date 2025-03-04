@@ -37,6 +37,9 @@ atoms: Dict[str, Atom] = {
     "B": Atom(name="B", atomic_weight=10.811),
     "Mo": Atom(name="Mo", atomic_weight=95.94),
     "Zr": Atom(name="Zr", atomic_weight=91.224),
+    "Pu239": Atom(name="Pu239", atomic_weight=239.052163),
+    "Pu240": Atom(name="Pu240", atomic_weight=240.053813),
+    "Pu241": Atom(name="Pu241", atomic_weight=241.056851),
 }
 
 
@@ -50,11 +53,57 @@ def create_uranium(u235_enrichment, u234_enrichment=0):
     ]
 
 
+def create_plutonium(pu239_enrichment, pu240_enrichment=0, pu241_enrichment=0):
+    return [
+        AtomProportion(atom=atoms["Pu239"], proportion=pu239_enrichment),
+        AtomProportion(atom=atoms["Pu240"], proportion=pu240_enrichment),
+        AtomProportion(atom=atoms["Pu241"], proportion=pu241_enrichment),
+    ]
+
+
+def create_mixed_uranium_plutonium(
+    pu239_enrichment,
+    pu240_enrichment,
+    pu241_enrichment,
+    plutonium_proportion,
+):
+    return [
+        AtomProportion(atom=atoms["U238"], proportion=(1 - plutonium_proportion)),
+        AtomProportion(
+            atom=atoms["Pu239"], proportion=pu239_enrichment * plutonium_proportion
+        ),
+        AtomProportion(
+            atom=atoms["Pu240"], proportion=pu240_enrichment * plutonium_proportion
+        ),
+        AtomProportion(
+            atom=atoms["Pu241"], proportion=pu241_enrichment * plutonium_proportion
+        ),
+    ]
+
+
 uranium = Material(
     composition=create_uranium(0.00711),
     density=18.95,
     color="green",
 )
+reactor_grade_plutonium = Material(
+    composition=create_plutonium(
+        pu239_enrichment=0.8, pu240_enrichment=0.15, pu241_enrichment=0.05
+    ),
+    density=19.84,
+    color="green",
+)
+mixed_uranium_plutonium = Material(
+    composition=create_mixed_uranium_plutonium(
+        pu239_enrichment=0.8,
+        pu240_enrichment=0.15,
+        pu241_enrichment=0.05,
+        plutonium_proportion=0.15,
+    ),
+    density=18.95,
+    color="green",
+)
+
 
 enriched_uranium = Material(
     composition=create_uranium(0.20), density=18.95, color="green"
@@ -102,6 +151,18 @@ materials_def: Dict[str, Material] = {
         density=13.63,
         color="green",
     ),
+    "Plutonium Carbide": Material(
+        composition=mixed_uranium_plutonium.composition
+        + [AtomProportion(atom=atoms["C"], proportion=1)],
+        density=13.63,
+        color="green",
+    ),
+    "Plutonium Oxide": Material(
+        composition=mixed_uranium_plutonium.composition
+        + [AtomProportion(atom=atoms["O"], proportion=2)],
+        density=10.97,
+        color="green",
+    ),
     "Graphite": Material(
         composition=[AtomProportion(atom=atoms["C"])],
         density=1.8,
@@ -123,7 +184,7 @@ materials_def: Dict[str, Material] = {
     "Void": Material(
         composition=[AtomProportion(atom=atoms["Zr"])],
         density=0.01,
-        color="purple",
+        color="white",
     ),
 }
 

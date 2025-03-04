@@ -77,9 +77,7 @@ def make_drums(
     distance_between_drums: float,
 ) -> List[DrumLayer]:
     core_radius = core_diameter / 2
-    outer_drum_radius = (
-        drum_desc.drum_core_distance + core_radius - drum_desc.drum_core_margin
-    )
+    outer_drum_radius = drum_desc.drum_core_distance - drum_desc.drum_core_margin
     drum_radiuses = [outer_drum_radius]
 
     while (
@@ -113,16 +111,16 @@ drum_desc = DrumDesc(
 a = make_drums(
     drum_desc=drum_desc,
     core_diameter=80,
-    distance_between_drums=1,
+    distance_between_drums=0.70,
 )
 print(len(a))
 emissive_surface = calculate_drums_emissive_surface_in_core(a, 80, drum_desc) / 10000
 print(emissive_surface)
 
-hot_temp = 2400 + 273
-cold_temp = 1800 + 273
+hot_temp = 2020 + 273
+cold_temp = 1750 + 273
 
 radiative_flux = radiative_heat_flux_between_plates(hot_temp, cold_temp, 0.9, 0.9)
 print(radiative_flux)
 
-print(radiative_flux * emissive_surface / 1000000)
+print("core power", radiative_flux * emissive_surface / 1000000)
