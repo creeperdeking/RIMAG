@@ -93,7 +93,7 @@ geometry, universe = define_geometry(
         drum_core_distance=core_diameter + 30 / 2,
         drum_core_margin_inner=2,
         drum_core_margin_outer=0.5,
-        height=80,
+        height=core_diameter,
     ),
     MaterialChoice(
         neutron_shield="Boron Carbide",
@@ -120,7 +120,7 @@ def render_geometry(universe, universe_radius, pixels, basis, origin):
     plt.savefig("plot.png")
 
 
-render = True
+render = False
 if render:
     render_geometry(
         universe,

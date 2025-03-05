@@ -5,21 +5,22 @@ from assemblies import (
     get_assemblies_boundaries,
     calculate_assembly_thickness,
     make_assemblies_cells,
+    create_outer_core_assembly_cells,
+    create_assembly_cells,
 )
 from geometry_utils import create_cylinder, MaterialChoice, AssemblySectionDesc
 
 
 def define_geometry(
-    core: CoreDesc,
+    core_desc: CoreDesc,
     drum_desc: DrumDesc,
     material_choice: MaterialChoice,
     assembly_section: AssemblySectionDesc,
     half_drum: bool = False,
 ):
-
     drums = make_drums(
         drum_desc,
-        core.core_diameter,
+        core_desc.core_diameter,
         calculate_assembly_thickness(assembly_section),
         half_drum,
     )
@@ -33,16 +34,17 @@ def define_geometry(
         )
 
     assemblies_boundary = get_assemblies_boundaries(
-        assembly_section, drums, core.core_diameter, drum_desc
+        assembly_section, drums, core_desc, drum_desc
     )
     assemblies_boundary_other_side = None
     if half_drum:
         assemblies_boundary_other_side = get_assemblies_boundaries(
-            assembly_section, drums, core.core_diameter, mirrored_drum_desc
+            assembly_section, drums, core_desc, mirrored_drum_desc
         )
 
     reflector_cylinder = create_cylinder(
-        core.core_diameter / 2 + core.reflector_thickness, core.core_height
+        core_desc.core_diameter / 2 + core_desc.reflector_thickness,
+        core_desc.core_height + core_desc.reflector_thickness * 2,
     )
 
     reflector_shape = ~assemblies_boundary & reflector_cylinder
@@ -53,21 +55,21 @@ def define_geometry(
 
     outer_boundary_shape = (
         -openmc.ZCylinder(
-            r=core.core_diameter / 2
-            + core.reflector_thickness
-            + core.neutron_shield_thickness,
+            r=core_desc.core_diameter / 2
+            + core_desc.reflector_thickness
+            + core_desc.neutron_shield_thickness,
             boundary_type="vacuum",
         )
         & -openmc.ZPlane(
-            z0=core.core_height / 2
-            + core.reflector_thickness
-            + core.neutron_shield_thickness,
+            z0=core_desc.core_height / 2
+            + core_desc.reflector_thickness
+            + core_desc.neutron_shield_thickness,
             boundary_type="vacuum",
         )
         & +openmc.ZPlane(
-            z0=-core.core_height / 2
-            - core.reflector_thickness
-            - core.neutron_shield_thickness,
+            z0=-core_desc.core_height / 2
+            - core_desc.reflector_thickness
+            - core_desc.neutron_shield_thickness,
             boundary_type="vacuum",
         )
     )
@@ -75,8 +77,9 @@ def define_geometry(
     neutron_shield_shape = ~reflector_cylinder & outer_boundary_shape
 
     assembly_cells = make_assemblies_cells(
+        create_assembly_cells,
         assembly_section,
-        core,
+        core_desc,
         material_choice,
         drums,
         drum_desc,
@@ -84,8 +87,27 @@ def define_geometry(
     assembly_cells_other_side = None
     if half_drum:
         assembly_cells_other_side = make_assemblies_cells(
+            create_assembly_cells,
             assembly_section,
-            core,
+            core_desc,
+            material_choice,
+            drums,
+            mirrored_drum_desc,
+        )
+    assembly_outer_core_cells = make_assemblies_cells(
+        create_outer_core_assembly_cells,
+        assembly_section,
+        core_desc,
+        material_choice,
+        drums,
+        drum_desc,
+    )
+    assembly_outer_core_cells_other_side = None
+    if half_drum:
+        assembly_outer_core_cells_other_side = make_assemblies_cells(
+            create_outer_core_assembly_cells,
+            assembly_section,
+            core_desc,
             material_choice,
             drums,
             mirrored_drum_desc,
@@ -103,6 +125,8 @@ def define_geometry(
         cells=[
             *assembly_cells,
             *(assembly_cells_other_side if half_drum else []),
+            *assembly_outer_core_cells,
+            *(assembly_outer_core_cells_other_side if half_drum else []),
             reflector,
             neutron_shield,
         ]
