@@ -14,23 +14,42 @@ def define_geometry(
     drum_desc: DrumDesc,
     material_choice: MaterialChoice,
     assembly_section: AssemblySectionDesc,
+    half_drum: bool = False,
 ):
 
     drums = make_drums(
         drum_desc,
         core.core_diameter,
         calculate_assembly_thickness(assembly_section),
+        half_drum,
     )
+    mirrored_drum_desc = None
+    if half_drum:
+        mirrored_drum_desc = DrumDesc(
+            drum_core_distance=-drum_desc.drum_core_distance,
+            drum_core_margin_outer=drum_desc.drum_core_margin_outer,
+            drum_core_margin_inner=drum_desc.drum_core_margin_inner,
+            height=drum_desc.height,
+        )
 
     assemblies_boundary = get_assemblies_boundaries(
         assembly_section, drums, core.core_diameter, drum_desc
     )
+    assemblies_boundary_other_side = None
+    if half_drum:
+        assemblies_boundary_other_side = get_assemblies_boundaries(
+            assembly_section, drums, core.core_diameter, mirrored_drum_desc
+        )
 
     reflector_cylinder = create_cylinder(
         core.core_diameter / 2 + core.reflector_thickness, core.core_height
     )
 
     reflector_shape = ~assemblies_boundary & reflector_cylinder
+    if half_drum:
+        reflector_shape = (
+            ~assemblies_boundary & ~assemblies_boundary_other_side & reflector_cylinder
+        )
 
     outer_boundary_shape = (
         -openmc.ZCylinder(
@@ -62,6 +81,15 @@ def define_geometry(
         drums,
         drum_desc,
     )
+    assembly_cells_other_side = None
+    if half_drum:
+        assembly_cells_other_side = make_assemblies_cells(
+            assembly_section,
+            core,
+            material_choice,
+            drums,
+            mirrored_drum_desc,
+        )
 
     reflector = openmc.Cell(name="reflector")
     reflector.fill = materials_dict[material_choice.reflector]
@@ -74,6 +102,7 @@ def define_geometry(
     universe = openmc.Universe(
         cells=[
             *assembly_cells,
+            *(assembly_cells_other_side if half_drum else []),
             reflector,
             neutron_shield,
         ]

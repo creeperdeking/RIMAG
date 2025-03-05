@@ -7,7 +7,8 @@ from pydantic import BaseModel
 
 class DrumDesc(BaseModel):
     drum_core_distance: float
-    drum_core_margin: float
+    drum_core_margin_outer: float
+    drum_core_margin_inner: float
     height: float
 
 
@@ -75,9 +76,16 @@ def make_drums(
     drum_desc: DrumDesc,
     core_diameter: float,
     distance_between_drums: float,
+    half_drum: bool = False,
 ) -> List[DrumLayer]:
     core_radius = core_diameter / 2
-    outer_drum_radius = drum_desc.drum_core_distance - drum_desc.drum_core_margin
+    outer_drum_radius = (
+        drum_desc.drum_core_distance + core_radius - drum_desc.drum_core_margin_outer
+    )
+    if half_drum:
+        outer_drum_radius = (
+            drum_desc.drum_core_distance - drum_desc.drum_core_margin_outer
+        )
     drum_radiuses = [outer_drum_radius]
 
     while (
@@ -85,7 +93,7 @@ def make_drums(
         + drum_radiuses[-1]
         - drum_desc.drum_core_distance
         - distance_between_drums
-    ) >= drum_desc.drum_core_margin:
+    ) >= drum_desc.drum_core_margin_inner:
         drum_radiuses.append(drum_radiuses[-1] - distance_between_drums)
     return [
         DrumLayer(
@@ -104,7 +112,8 @@ def radiative_heat_flux_between_plates(
 
 drum_desc = DrumDesc(
     drum_core_distance=100,
-    drum_core_margin=2,
+    drum_core_margin_outer=0.5,
+    drum_core_margin_inner=2,
     height=80,
 )
 
@@ -112,6 +121,7 @@ a = make_drums(
     drum_desc=drum_desc,
     core_diameter=80,
     distance_between_drums=0.70,
+    half_drum=True,
 )
 print(len(a))
 emissive_surface = calculate_drums_emissive_surface_in_core(a, 80, drum_desc) / 10000

@@ -91,7 +91,8 @@ geometry, universe = define_geometry(
     ),
     DrumDesc(
         drum_core_distance=core_diameter + 30 / 2,
-        drum_core_margin=2,
+        drum_core_margin_inner=2,
+        drum_core_margin_outer=0.5,
         height=80,
     ),
     MaterialChoice(
@@ -102,6 +103,7 @@ geometry, universe = define_geometry(
         drum="Molybdenum",
     ),
     assembly_section=assembly_section,
+    half_drum=True,
 )
 
 
