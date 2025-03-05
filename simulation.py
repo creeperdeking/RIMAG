@@ -1,5 +1,5 @@
 from materials import materials_dict, colors
-from drums import CoreDesc, DrumDesc
+from drums import DrumDesc, compute_core_desc
 import openmc
 import pytime
 import matplotlib.pyplot as plt
@@ -82,7 +82,7 @@ print(calculate_assembly_thickness(assembly_section))
 
 core_diameter = 120
 geometry, universe = define_geometry(
-    CoreDesc(
+    compute_core_desc(
         core_radius=core_diameter / 2,
         core_height=core_diameter,
         reflector_thickness=20,
@@ -93,7 +93,6 @@ geometry, universe = define_geometry(
         drum_core_distance=core_diameter + 30 / 2,
         drum_core_margin_inner=2,
         drum_core_margin_outer=0.5,
-        height=core_diameter,
     ),
     MaterialChoice(
         neutron_shield="Boron Carbide",

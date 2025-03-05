@@ -26,10 +26,11 @@ def get_assemblies_boundaries(
     drums: List[DrumLayer],
     core_desc: CoreDesc,
     drums_desc: DrumDesc,
+    outer_core_radius: float,
 ):
     distance_from_core = drums_desc.drum_core_distance
     assembly_thickness = calculate_assembly_thickness(assembly_section)
-    drum_height = drums_desc.height
+    drum_height = core_desc.core_height
     fist_assembly_radius = drums[0].radius
     last_assembly_radius = (
         drums[-1].radius - assembly_section.drum_thickness - assembly_thickness
@@ -41,11 +42,7 @@ def get_assemblies_boundaries(
         drum_height,
         distance_from_origin=distance_from_core,
     ) & -openmc.ZCylinder(
-        r=(
-            core_desc.core_radius
-            + core_desc.reflector_thickness
-            + core_desc.neutron_shield_thickness
-        ),
+        r=outer_core_radius,
         boundary_type="vacuum",
     )
 
@@ -61,11 +58,12 @@ def create_assembly_cells(
 ) -> List[openmc.Cell]:
     core_shape = -openmc.ZCylinder(r=core_desc.core_radius)
     current_radius = drum.radius
+    drum_height = core_desc.core_height
     drum_shape = (
         create_hollow_cylinder(
             drum.radius,
             drum.radius - assembly_section.drum_thickness,
-            drum_desc.height,
+            drum_height,
             distance_from_origin=drum_desc.drum_core_distance,
         )
         & core_shape
@@ -75,7 +73,7 @@ def create_assembly_cells(
         create_hollow_cylinder(
             current_radius,
             current_radius - assembly_section.cladding_drum_gap,
-            drum_desc.height,
+            drum_height,
             distance_from_origin=drum_desc.drum_core_distance,
         )
         & core_shape
@@ -85,7 +83,7 @@ def create_assembly_cells(
         create_hollow_cylinder(
             current_radius,
             current_radius - assembly_section.cladding_thickness,
-            drum_desc.height,
+            drum_height,
             distance_from_origin=drum_desc.drum_core_distance,
         )
         & core_shape
@@ -95,7 +93,7 @@ def create_assembly_cells(
         create_hollow_cylinder(
             current_radius,
             current_radius - assembly_section.fuel_cladding_gap,
-            drum_desc.height,
+            drum_height,
             distance_from_origin=drum_desc.drum_core_distance,
         )
         & core_shape
@@ -105,7 +103,7 @@ def create_assembly_cells(
         create_hollow_cylinder(
             current_radius,
             current_radius - assembly_section.fuel_thickness,
-            drum_desc.height,
+            drum_height,
             distance_from_origin=drum_desc.drum_core_distance,
         )
         & core_shape
@@ -115,7 +113,7 @@ def create_assembly_cells(
         create_hollow_cylinder(
             current_radius,
             current_radius - assembly_section.fuel_cladding_gap,
-            drum_desc.height,
+            drum_height,
             distance_from_origin=drum_desc.drum_core_distance,
         )
         & core_shape
@@ -125,7 +123,7 @@ def create_assembly_cells(
         create_hollow_cylinder(
             current_radius,
             current_radius - assembly_section.cladding_thickness,
-            drum_desc.height,
+            drum_height,
             distance_from_origin=drum_desc.drum_core_distance,
         )
         & core_shape
@@ -135,7 +133,7 @@ def create_assembly_cells(
         create_hollow_cylinder(
             current_radius,
             current_radius - assembly_section.cladding_drum_gap,
-            drum_desc.height,
+            drum_height,
             distance_from_origin=drum_desc.drum_core_distance,
         )
         & core_shape
@@ -168,9 +166,7 @@ def create_assembly_cells(
 def make_outer_core_zone_shape(core_desc: CoreDesc):
     core_shape = -openmc.ZCylinder(r=core_desc.core_radius)
     neutron_shield_outer_cylinder = -openmc.ZCylinder(
-        r=core_desc.core_radius
-        + core_desc.reflector_thickness
-        + core_desc.neutron_shield_thickness,
+        r=core_desc.outer_core_radius,
         boundary_type="vacuum",
     )
     return ~core_shape & neutron_shield_outer_cylinder
@@ -183,20 +179,17 @@ def create_outer_core_assembly_cells(
     material_choice: MaterialChoice,
     drum_desc: DrumDesc,
 ):
+    drum_height = core_desc.core_height
     outer_core_zone_shape = make_outer_core_zone_shape(core_desc)
     reflector_shape = create_hollow_cylinder(
-        core_desc.core_radius + core_desc.reflector_thickness,
+        core_desc.reflector_radius,
         core_desc.core_radius,
-        core_desc.core_height + core_desc.reflector_thickness,
+        core_desc.reflector_height,
     )
     neutron_shield_shape = create_hollow_cylinder(
-        core_desc.core_radius
-        + core_desc.reflector_thickness
-        + core_desc.neutron_shield_thickness,
-        core_desc.core_radius + core_desc.reflector_thickness,
-        core_desc.core_height
-        + core_desc.reflector_thickness
-        + core_desc.neutron_shield_thickness,
+        core_desc.outer_core_radius,
+        core_desc.reflector_radius,
+        core_desc.outer_core_height,
     )
 
     current_radius = drum.radius
@@ -204,7 +197,7 @@ def create_outer_core_assembly_cells(
         create_hollow_cylinder(
             drum.radius,
             drum.radius - assembly_section.drum_thickness,
-            drum_desc.height,
+            drum_height,
             distance_from_origin=drum_desc.drum_core_distance,
         )
         & outer_core_zone_shape
@@ -214,7 +207,7 @@ def create_outer_core_assembly_cells(
         create_hollow_cylinder(
             current_radius,
             current_radius - assembly_section.cladding_drum_gap,
-            drum_desc.height,
+            drum_height,
             distance_from_origin=drum_desc.drum_core_distance,
         )
         & outer_core_zone_shape
@@ -229,7 +222,7 @@ def create_outer_core_assembly_cells(
         create_hollow_cylinder(
             current_radius,
             current_radius - filled_in_thickness,
-            drum_desc.height,
+            drum_height,
             distance_from_origin=drum_desc.drum_core_distance,
         )
         & outer_core_zone_shape
@@ -241,7 +234,7 @@ def create_outer_core_assembly_cells(
         create_hollow_cylinder(
             current_radius,
             current_radius - assembly_section.cladding_drum_gap,
-            drum_desc.height,
+            drum_height,
             distance_from_origin=drum_desc.drum_core_distance,
         )
         & outer_core_zone_shape
@@ -270,6 +263,7 @@ def create_last_drum_cell(
     assembly_section: AssemblySectionDesc,
     last_drum: DrumLayer,
     drum_desc: DrumDesc,
+    drum_height: float,
     material_choice: MaterialChoice,
     core_zone,
 ) -> openmc.Cell:
@@ -278,7 +272,7 @@ def create_last_drum_cell(
         create_hollow_cylinder(
             last_drum.radius - assembly_thickness,
             last_drum.radius - assembly_thickness - assembly_section.drum_thickness,
-            drum_desc.height,
+            drum_height,
             distance_from_origin=drum_desc.drum_core_distance,
         )
         & core_zone
@@ -296,6 +290,7 @@ def create_last_cell_core(
     assembly_section: AssemblySectionDesc,
     last_drum: DrumLayer,
     drum_desc: DrumDesc,
+    drum_height: float,
     material_choice: MaterialChoice,
 ) -> openmc.Cell:
     core_shape = -openmc.ZCylinder(r=core_desc.core_radius)
@@ -303,6 +298,7 @@ def create_last_cell_core(
         assembly_section,
         last_drum,
         drum_desc,
+        drum_height,
         material_choice,
         core_shape,
     )
@@ -313,6 +309,7 @@ def create_last_cell_outer_core(
     assembly_section: AssemblySectionDesc,
     last_drum: DrumLayer,
     drum_desc: DrumDesc,
+    drum_height: float,
     material_choice: MaterialChoice,
 ) -> openmc.Cell:
     outer_core_zone_shape = make_outer_core_zone_shape(core_desc)
@@ -320,6 +317,7 @@ def create_last_cell_outer_core(
         assembly_section,
         last_drum,
         drum_desc,
+        drum_height,
         material_choice,
         outer_core_zone_shape,
     )
@@ -351,6 +349,7 @@ def make_assemblies_cells(
             assembly_section,
             drums[-1],
             drum_desc,
+            core_desc.core_height,
             material_choice,
         )
     )

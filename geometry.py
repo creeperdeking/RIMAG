@@ -32,21 +32,24 @@ def define_geometry(
             drum_core_distance=-drum_desc.drum_core_distance,
             drum_core_margin_outer=drum_desc.drum_core_margin_outer,
             drum_core_margin_inner=drum_desc.drum_core_margin_inner,
-            height=drum_desc.height,
         )
 
     assemblies_boundary = get_assemblies_boundaries(
-        assembly_section, drums, core_desc, drum_desc
+        assembly_section, drums, core_desc, drum_desc, core_desc.outer_core_radius
     )
     assemblies_boundary_other_side = None
     if half_drum:
         assemblies_boundary_other_side = get_assemblies_boundaries(
-            assembly_section, drums, core_desc, mirrored_drum_desc
+            assembly_section,
+            drums,
+            core_desc,
+            mirrored_drum_desc,
+            core_desc.outer_core_radius,
         )
 
     reflector_cylinder = create_cylinder(
-        core_desc.core_radius + core_desc.reflector_thickness,
-        core_desc.core_height + core_desc.reflector_thickness * 2,
+        core_desc.reflector_radius,
+        core_desc.reflector_height,
     )
 
     reflector_shape = (
@@ -59,21 +62,15 @@ def define_geometry(
 
     outer_boundary_shape = (
         -openmc.ZCylinder(
-            r=core_desc.core_radius
-            + core_desc.reflector_thickness
-            + core_desc.neutron_shield_thickness,
+            r=core_desc.outer_core_radius,
             boundary_type="vacuum",
         )
         & -openmc.ZPlane(
-            z0=core_desc.core_height / 2
-            + core_desc.reflector_thickness
-            + core_desc.neutron_shield_thickness,
+            z0=core_desc.outer_core_height / 2,
             boundary_type="vacuum",
         )
         & +openmc.ZPlane(
-            z0=-core_desc.core_height / 2
-            - core_desc.reflector_thickness
-            - core_desc.neutron_shield_thickness,
+            z0=-core_desc.outer_core_height / 2,
             boundary_type="vacuum",
         )
     )

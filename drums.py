@@ -9,7 +9,6 @@ class DrumDesc(BaseModel):
     drum_core_distance: float
     drum_core_margin_outer: float
     drum_core_margin_inner: float
-    height: float
 
 
 class DrumLayer(BaseModel):
@@ -31,6 +30,32 @@ class CoreDesc(BaseModel):
     reflector_thickness: float
     neutron_shield_thickness: float
     gamma_shield_thickness: float
+    outer_core_radius: float
+    outer_core_height: float
+    reflector_radius: float
+    reflector_height: float
+
+
+def compute_core_desc(
+    core_radius: float,
+    core_height: float,
+    reflector_thickness: float,
+    neutron_shield_thickness: float,
+    gamma_shield_thickness: float,
+):
+    return CoreDesc(
+        core_radius=core_radius,
+        core_height=core_height,
+        reflector_thickness=reflector_thickness,
+        neutron_shield_thickness=neutron_shield_thickness,
+        gamma_shield_thickness=gamma_shield_thickness,
+        outer_core_radius=core_radius + reflector_thickness + neutron_shield_thickness,
+        outer_core_height=core_height
+        + reflector_thickness * 2
+        + neutron_shield_thickness * 2,
+        reflector_radius=core_radius + reflector_thickness,
+        reflector_height=core_height + reflector_thickness * 2,
+    )
 
 
 def calculate_drum_arc_length(
@@ -47,7 +72,7 @@ def calculate_drum_arc_length(
 
 
 def calculate_drum_surface_in_core(
-    drum: DrumLayer, core_radius: float, drum_desc: DrumDesc
+    drum: DrumLayer, core_radius: float, drum_height: float
 ):
     return (
         calculate_drum_arc_length(
@@ -55,19 +80,19 @@ def calculate_drum_surface_in_core(
             drum_desc.drum_core_distance,
             core_radius,
         )
-        * drum_desc.height
+        * drum_height
     )
 
 
 def calculate_drums_emissive_surface_in_core(
     drums: List[DrumLayer],
     core_radius: float,
-    drum_desc: DrumDesc,
+    drum_height: float,
 ) -> float:
     drum_surface_in_core = 0
     for drum in drums:
         drum_surface_in_core += calculate_drum_surface_in_core(
-            drum, core_radius, drum_desc
+            drum, core_radius, drum_height
         )
     return drum_surface_in_core * 2
 
@@ -113,7 +138,6 @@ drum_desc = DrumDesc(
     drum_core_distance=100,
     drum_core_margin_outer=0.5,
     drum_core_margin_inner=2,
-    height=80,
 )
 
 a = make_drums(
@@ -123,7 +147,7 @@ a = make_drums(
     half_drum=True,
 )
 print(len(a))
-emissive_surface = calculate_drums_emissive_surface_in_core(a, 80, drum_desc) / 10000
+emissive_surface = calculate_drums_emissive_surface_in_core(a, 80, 80) / 10000
 print(emissive_surface)
 
 hot_temp = 2020 + 273
