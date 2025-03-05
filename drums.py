@@ -26,7 +26,7 @@ class DrumLayer(BaseModel):
 
 
 class CoreDesc(BaseModel):
-    core_diameter: float
+    core_radius: float
     core_height: float
     reflector_thickness: float
     neutron_shield_thickness: float
@@ -74,11 +74,10 @@ def calculate_drums_emissive_surface_in_core(
 
 def make_drums(
     drum_desc: DrumDesc,
-    core_diameter: float,
+    core_radius: float,
     distance_between_drums: float,
     half_drum: bool = False,
 ) -> List[DrumLayer]:
-    core_radius = core_diameter / 2
     outer_drum_radius = (
         drum_desc.drum_core_distance + core_radius - drum_desc.drum_core_margin_outer
     )
@@ -119,7 +118,7 @@ drum_desc = DrumDesc(
 
 a = make_drums(
     drum_desc=drum_desc,
-    core_diameter=80,
+    core_radius=80 / 2,
     distance_between_drums=0.70,
     half_drum=True,
 )

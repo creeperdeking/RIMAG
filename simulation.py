@@ -83,7 +83,7 @@ print(calculate_assembly_thickness(assembly_section))
 core_diameter = 120
 geometry, universe = define_geometry(
     CoreDesc(
-        core_diameter=core_diameter,
+        core_radius=core_diameter / 2,
         core_height=core_diameter,
         reflector_thickness=20,
         neutron_shield_thickness=20,

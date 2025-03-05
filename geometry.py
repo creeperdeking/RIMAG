@@ -22,7 +22,7 @@ def define_geometry(
 ):
     drums = make_drums(
         drum_desc,
-        core_desc.core_diameter,
+        core_desc.core_radius,
         calculate_assembly_thickness(assembly_section),
         half_drum,
     )
@@ -45,7 +45,7 @@ def define_geometry(
         )
 
     reflector_cylinder = create_cylinder(
-        core_desc.core_diameter / 2 + core_desc.reflector_thickness,
+        core_desc.core_radius + core_desc.reflector_thickness,
         core_desc.core_height + core_desc.reflector_thickness * 2,
     )
 
@@ -59,7 +59,7 @@ def define_geometry(
 
     outer_boundary_shape = (
         -openmc.ZCylinder(
-            r=core_desc.core_diameter / 2
+            r=core_desc.core_radius
             + core_desc.reflector_thickness
             + core_desc.neutron_shield_thickness,
             boundary_type="vacuum",
