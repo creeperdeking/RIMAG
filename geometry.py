@@ -7,6 +7,8 @@ from assemblies import (
     make_assemblies_cells,
     create_outer_core_assembly_cells,
     create_assembly_cells,
+    create_last_cell_outer_core,
+    create_last_cell_core,
 )
 from geometry_utils import create_cylinder, MaterialChoice, AssemblySectionDesc
 
@@ -47,7 +49,9 @@ def define_geometry(
         core_desc.core_height + core_desc.reflector_thickness * 2,
     )
 
-    reflector_shape = ~assemblies_boundary & reflector_cylinder
+    reflector_shape = (
+        ~assemblies_boundary & reflector_cylinder & ~assemblies_boundary_other_side
+    )
     if half_drum:
         reflector_shape = (
             ~assemblies_boundary & ~assemblies_boundary_other_side & reflector_cylinder
@@ -74,10 +78,16 @@ def define_geometry(
         )
     )
 
-    neutron_shield_shape = ~reflector_cylinder & outer_boundary_shape
+    neutron_shield_shape = (
+        ~reflector_cylinder
+        & outer_boundary_shape
+        & ~assemblies_boundary
+        & ~assemblies_boundary_other_side
+    )
 
     assembly_cells = make_assemblies_cells(
         create_assembly_cells,
+        create_last_cell_core,
         assembly_section,
         core_desc,
         material_choice,
@@ -88,6 +98,7 @@ def define_geometry(
     if half_drum:
         assembly_cells_other_side = make_assemblies_cells(
             create_assembly_cells,
+            create_last_cell_core,
             assembly_section,
             core_desc,
             material_choice,
@@ -96,6 +107,7 @@ def define_geometry(
         )
     assembly_outer_core_cells = make_assemblies_cells(
         create_outer_core_assembly_cells,
+        create_last_cell_outer_core,
         assembly_section,
         core_desc,
         material_choice,
@@ -106,6 +118,7 @@ def define_geometry(
     if half_drum:
         assembly_outer_core_cells_other_side = make_assemblies_cells(
             create_outer_core_assembly_cells,
+            create_last_cell_outer_core,
             assembly_section,
             core_desc,
             material_choice,

@@ -127,7 +127,7 @@ if render:
         universe_radius=(100),
         pixels=(2500, 2500),
         basis="xy",
-        origin=(0, 0.0, 0.0),
+        origin=(0, 0, 0.0),
     )
 else:
     criticality_simulation(

@@ -184,7 +184,7 @@ materials_def: Dict[str, Material] = {
     "Void": Material(
         composition=[AtomProportion(atom=atoms["Zr"])],
         density=0.01,
-        color="white",
+        color="purple",
     ),
 }
 

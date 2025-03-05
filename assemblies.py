@@ -42,11 +42,11 @@ def get_assemblies_boundaries(
         distance_from_origin=distance_from_core,
     ) & -openmc.ZCylinder(
         r=(
-            core_desc.core_diameter
+            core_desc.core_diameter / 2
             + core_desc.reflector_thickness
             + core_desc.neutron_shield_thickness
-        )
-        / 2
+        ),
+        boundary_type="vacuum",
     )
 
     return assemblies_boundary
@@ -165,6 +165,17 @@ def create_assembly_cells(
     return [drum, gap, cladding, fuel]
 
 
+def make_outer_core_zone_shape(core_desc: CoreDesc):
+    core_shape = -openmc.ZCylinder(r=core_desc.core_diameter / 2)
+    neutron_shield_outer_cylinder = -openmc.ZCylinder(
+        r=core_desc.core_diameter / 2
+        + core_desc.reflector_thickness
+        + core_desc.neutron_shield_thickness,
+        boundary_type="vacuum",
+    )
+    return ~core_shape & neutron_shield_outer_cylinder
+
+
 def create_outer_core_assembly_cells(
     assembly_section: AssemblySectionDesc,
     core_desc: CoreDesc,
@@ -172,7 +183,7 @@ def create_outer_core_assembly_cells(
     material_choice: MaterialChoice,
     drum_desc: DrumDesc,
 ):
-    core_shape = -openmc.ZCylinder(r=core_desc.core_diameter / 2)
+    outer_core_zone_shape = make_outer_core_zone_shape(core_desc)
     reflector_shape = create_hollow_cylinder(
         core_desc.core_diameter / 2 + core_desc.reflector_thickness,
         core_desc.core_diameter / 2,
@@ -187,12 +198,7 @@ def create_outer_core_assembly_cells(
         + core_desc.reflector_thickness
         + core_desc.neutron_shield_thickness,
     )
-    neutron_shield_outer_cylinder = -openmc.ZCylinder(
-        r=core_desc.core_diameter / 2
-        + core_desc.reflector_thickness
-        + core_desc.neutron_shield_thickness,
-        boundary_type="vacuum",
-    )
+
     current_radius = drum.radius
     drum_shape = (
         create_hollow_cylinder(
@@ -201,8 +207,7 @@ def create_outer_core_assembly_cells(
             drum_desc.height,
             distance_from_origin=drum_desc.drum_core_distance,
         )
-        & neutron_shield_outer_cylinder
-        & ~core_shape
+        & outer_core_zone_shape
     )
     current_radius -= assembly_section.drum_thickness
     cladding_drum_gap1 = (
@@ -212,8 +217,7 @@ def create_outer_core_assembly_cells(
             drum_desc.height,
             distance_from_origin=drum_desc.drum_core_distance,
         )
-        & neutron_shield_outer_cylinder
-        & ~core_shape
+        & outer_core_zone_shape
     )
     current_radius -= assembly_section.cladding_drum_gap
     filled_in_thickness = (
@@ -228,8 +232,7 @@ def create_outer_core_assembly_cells(
             drum_desc.height,
             distance_from_origin=drum_desc.drum_core_distance,
         )
-        & neutron_shield_outer_cylinder
-        & ~core_shape
+        & outer_core_zone_shape
     )
     reflector_shape = filled_in_shape & reflector_shape
     neutron_shield_shape = filled_in_shape & neutron_shield_shape
@@ -241,8 +244,7 @@ def create_outer_core_assembly_cells(
             drum_desc.height,
             distance_from_origin=drum_desc.drum_core_distance,
         )
-        & neutron_shield_outer_cylinder
-        & ~core_shape
+        & outer_core_zone_shape
     )
 
     neutron_shield = openmc.Cell(name="neutron_shield" + str(drum.number))
@@ -265,19 +267,22 @@ def create_outer_core_assembly_cells(
 
 
 def create_last_drum_cell(
-    core_desc: CoreDesc,
     assembly_section: AssemblySectionDesc,
     last_drum: DrumLayer,
     drum_desc: DrumDesc,
     material_choice: MaterialChoice,
+    core_zone,
 ) -> openmc.Cell:
     assembly_thickness = calculate_assembly_thickness(assembly_section)
-    last_drum_shape = create_hollow_cylinder(
-        last_drum.radius - assembly_thickness,
-        last_drum.radius - assembly_thickness - assembly_section.drum_thickness,
-        drum_desc.height,
-        distance_from_origin=drum_desc.drum_core_distance,
-    ) & -openmc.ZCylinder(r=core_desc.core_diameter / 2)
+    last_drum_shape = (
+        create_hollow_cylinder(
+            last_drum.radius - assembly_thickness,
+            last_drum.radius - assembly_thickness - assembly_section.drum_thickness,
+            drum_desc.height,
+            distance_from_origin=drum_desc.drum_core_distance,
+        )
+        & core_zone
+    )
 
     last_drum_cell = openmc.Cell(name="last_drum")
     last_drum_cell.fill = materials_dict[material_choice.drum]
@@ -286,8 +291,43 @@ def create_last_drum_cell(
     return last_drum_cell
 
 
+def create_last_cell_core(
+    core_desc: CoreDesc,
+    assembly_section: AssemblySectionDesc,
+    last_drum: DrumLayer,
+    drum_desc: DrumDesc,
+    material_choice: MaterialChoice,
+) -> openmc.Cell:
+    core_shape = -openmc.ZCylinder(r=core_desc.core_diameter / 2)
+    return create_last_drum_cell(
+        assembly_section,
+        last_drum,
+        drum_desc,
+        material_choice,
+        core_shape,
+    )
+
+
+def create_last_cell_outer_core(
+    core_desc: CoreDesc,
+    assembly_section: AssemblySectionDesc,
+    last_drum: DrumLayer,
+    drum_desc: DrumDesc,
+    material_choice: MaterialChoice,
+) -> openmc.Cell:
+    outer_core_zone_shape = make_outer_core_zone_shape(core_desc)
+    return create_last_drum_cell(
+        assembly_section,
+        last_drum,
+        drum_desc,
+        material_choice,
+        outer_core_zone_shape,
+    )
+
+
 def make_assemblies_cells(
     assembly_fn,
+    last_cell_fn,
     assembly_section: AssemblySectionDesc,
     core_desc: CoreDesc,
     material_choice: MaterialChoice,
@@ -306,7 +346,7 @@ def make_assemblies_cells(
             )
         )
     cells.append(
-        create_last_drum_cell(
+        last_cell_fn(
             core_desc,
             assembly_section,
             drums[-1],
