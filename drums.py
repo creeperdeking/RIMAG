@@ -29,7 +29,6 @@ class CoreDesc(BaseModel):
     core_height: float
     reflector_thickness: float
     neutron_shield_thickness: float
-    gamma_shield_thickness: float
     outer_core_radius: float
     outer_core_height: float
     reflector_radius: float
@@ -41,14 +40,12 @@ def compute_core_desc(
     core_height: float,
     reflector_thickness: float,
     neutron_shield_thickness: float,
-    gamma_shield_thickness: float,
 ):
     return CoreDesc(
         core_radius=core_radius,
         core_height=core_height,
         reflector_thickness=reflector_thickness,
         neutron_shield_thickness=neutron_shield_thickness,
-        gamma_shield_thickness=gamma_shield_thickness,
         outer_core_radius=core_radius + reflector_thickness + neutron_shield_thickness,
         outer_core_height=core_height
         + reflector_thickness * 2

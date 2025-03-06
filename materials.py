@@ -151,13 +151,13 @@ materials_def: Dict[str, Material] = {
         density=13.63,
         color="green",
     ),
-    "Plutonium Carbide": Material(
+    "Plutonium-Uranium Carbide": Material(
         composition=mixed_uranium_plutonium.composition
         + [AtomProportion(atom=atoms["C"], proportion=1)],
         density=13.63,
         color="green",
     ),
-    "Plutonium Oxide": Material(
+    "Plutonium-Uranium Oxide": Material(
         composition=mixed_uranium_plutonium.composition
         + [AtomProportion(atom=atoms["O"], proportion=2)],
         density=10.97,

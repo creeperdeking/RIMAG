@@ -1,16 +1,19 @@
 from pydantic import BaseModel
 import openmc
+from typing import List
 
 
-class AssemblySectionDesc(BaseModel):
-    fuel_thickness: float
-    fuel_cladding_gap: float
-    cladding_thickness: float
-    cladding_drum_gap: float
-    drum_thickness: float
+class Assembly(BaseModel):
+    thickness: float
+    material: str
+
+
+class AssemblySections(BaseModel):
+    parts: List[Assembly]
 
 
 class MaterialChoice(BaseModel):
+    moderator: str
     neutron_shield: str
     reflector: str
     fuel: str

@@ -5,25 +5,43 @@ from assemblies import (
     get_assemblies_boundaries,
     calculate_assembly_thickness,
     make_assemblies_cells,
-    create_outer_core_assembly_cells,
-    create_assembly_cells,
-    create_last_cell_outer_core,
-    create_last_cell_core,
 )
-from geometry_utils import create_cylinder, MaterialChoice, AssemblySectionDesc
+import numpy as np
+from geometry_utils import create_cylinder, MaterialChoice, AssemblySections
 
 
 def define_geometry(
     core_desc: CoreDesc,
     drum_desc: DrumDesc,
     material_choice: MaterialChoice,
-    assembly_section: AssemblySectionDesc,
+    assembly_section_inner: AssemblySections,
+    assembly_section_reflector: AssemblySections,
+    assembly_section_absorber: AssemblySections,
+    assembly_section_last: AssemblySections,
     half_drum: bool = False,
 ):
+    last_assembly_thickness = calculate_assembly_thickness(assembly_section_last)
+    assembly_thickness = calculate_assembly_thickness(assembly_section_inner)
+    assembly_thickness_reflector = calculate_assembly_thickness(
+        assembly_section_reflector
+    )
+    assembly_thickness_absorber = calculate_assembly_thickness(
+        assembly_section_absorber
+    )
+
+    if not np.isclose(assembly_thickness, assembly_thickness_reflector):
+        raise ValueError(
+            "Inner assembly and reflector sections must have the same thickness"
+        )
+    if not np.isclose(assembly_thickness, assembly_thickness_absorber):
+        raise ValueError(
+            "Inner assembly and absorber sections must have the same thickness"
+        )
+
     drums = make_drums(
         drum_desc,
         core_desc.core_radius,
-        calculate_assembly_thickness(assembly_section),
+        assembly_thickness,
         half_drum,
     )
     mirrored_drum_desc = None
@@ -35,12 +53,18 @@ def define_geometry(
         )
 
     assemblies_boundary = get_assemblies_boundaries(
-        assembly_section, drums, core_desc, drum_desc, core_desc.outer_core_radius
+        assembly_thickness,
+        last_assembly_thickness,
+        drums,
+        core_desc,
+        drum_desc,
+        core_desc.outer_core_radius,
     )
     assemblies_boundary_other_side = None
     if half_drum:
         assemblies_boundary_other_side = get_assemblies_boundaries(
-            assembly_section,
+            assembly_thickness,
+            last_assembly_thickness,
             drums,
             core_desc,
             mirrored_drum_desc,
@@ -82,43 +106,55 @@ def define_geometry(
         & ~assemblies_boundary_other_side
     )
 
+    ### Making Cells
+
     assembly_cells = make_assemblies_cells(
-        create_assembly_cells,
-        create_last_cell_core,
-        assembly_section,
+        assembly_section_inner,
+        assembly_section_last,
         core_desc,
-        material_choice,
         drums,
         drum_desc,
     )
     assembly_cells_other_side = None
     if half_drum:
         assembly_cells_other_side = make_assemblies_cells(
-            create_assembly_cells,
-            create_last_cell_core,
-            assembly_section,
+            assembly_section_inner,
+            assembly_section_last,
             core_desc,
-            material_choice,
             drums,
             mirrored_drum_desc,
         )
-    assembly_outer_core_cells = make_assemblies_cells(
-        create_outer_core_assembly_cells,
-        create_last_cell_outer_core,
-        assembly_section,
+
+    assembly_reflector_cells = make_assemblies_cells(
+        assembly_section_reflector,
+        assembly_section_last,
         core_desc,
-        material_choice,
         drums,
         drum_desc,
     )
-    assembly_outer_core_cells_other_side = None
+    assembly_reflector_cells_other_side = None
     if half_drum:
-        assembly_outer_core_cells_other_side = make_assemblies_cells(
-            create_outer_core_assembly_cells,
-            create_last_cell_outer_core,
-            assembly_section,
+        assembly_reflector_cells_other_side = make_assemblies_cells(
+            assembly_section_reflector,
+            assembly_section_last,
             core_desc,
-            material_choice,
+            drums,
+            mirrored_drum_desc,
+        )
+
+    assembly_absorber_cells = make_assemblies_cells(
+        assembly_section_absorber,
+        assembly_section_last,
+        core_desc,
+        drums,
+        mirrored_drum_desc,
+    )
+    assembly_absorber_cells_other_side = None
+    if half_drum:
+        assembly_absorber_cells_other_side = make_assemblies_cells(
+            assembly_section_absorber,
+            assembly_section_last,
+            core_desc,
             drums,
             mirrored_drum_desc,
         )
@@ -135,8 +171,10 @@ def define_geometry(
         cells=[
             *assembly_cells,
             *(assembly_cells_other_side if half_drum else []),
-            *assembly_outer_core_cells,
-            *(assembly_outer_core_cells_other_side if half_drum else []),
+            *assembly_reflector_cells,
+            *(assembly_reflector_cells_other_side if half_drum else []),
+            *assembly_absorber_cells,
+            *(assembly_absorber_cells_other_side if half_drum else []),
             reflector,
             neutron_shield,
         ]
