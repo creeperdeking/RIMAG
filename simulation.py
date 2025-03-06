@@ -1,9 +1,5 @@
-from materials import materials_dict, colors
 from drums import DrumDesc, compute_core_desc
-import openmc
-import pytime
-import matplotlib.pyplot as plt
-from simlib import clean_directory
+
 from geometry import (
     AssemblySectionDesc,
     MaterialChoice,
@@ -11,67 +7,13 @@ from geometry import (
     calculate_assembly_thickness,
 )
 
-
-def assembly_section_thickness(section: AssemblySectionDesc) -> float:
-    return (
-        section.fuel_thickness
-        + section.fuel_cladding_gap * 2
-        + section.cladding_thickness * 2
-        + section.cladding_drum_gap * 2
-        + section.drum_thickness
-    )
-
-
-def generate_XML(materials, geometry, settings, tallies):
-    materials.export_to_xml()
-    geometry.export_to_xml()
-    settings.export_to_xml()
-
-    if tallies is not None:
-        tallies.export_to_xml()
-
-
-def run_sim(geometry, settings, materials, tallies=None):
-    generate_XML(materials, geometry, settings, tallies)
-    openmc.run(threads=16)
-    clean_directory()
-
-
-def criticality_simulation(
-    geometry: openmc.Geometry,
-    universe: openmc.Universe,
-    deterministic: bool = True,
-    keffsim: bool = True,
-):
-    # Define neutron source
-    source = openmc.Source(space=openmc.stats.Point((0, 0, 0)))
-
-    # Define simulation settings
-    settings = openmc.Settings()
-    settings.source = source
-    settings.batches = 5000
-    settings.inactive = 50
-    settings.particles = 100
-    settings.seed = 42
-    settings.rel_max_lost_particles = 0.1
-
-    if not deterministic:
-        settings.seed = int(pytime.time())
-
-    materials = openmc.Materials(materials_dict.values())
-
-    if keffsim:
-        print()
-        print("-------- Criticality simulation --------")
-        print()
-        print("Seed :", settings.seed, "\n")
-        run_sim(geometry, settings, materials)
+from simlib import render_geometry, criticality_simulation
 
 
 fuel_thicc = 0.45
 assembly_section = AssemblySectionDesc(
     fuel_thickness=fuel_thicc,
-    fuel_cladding_gap=fuel_thicc * 0.1 * 0.5,
+    fuel_cladding_gap=fuel_thicc * 0.15 / 2,
     cladding_thickness=0.03,
     cladding_drum_gap=0.07,
     drum_thickness=0.01,
@@ -100,23 +42,11 @@ geometry, universe = define_geometry(
         fuel="Plutonium Carbide",
         cladding="Molybdenum",
         drum="Molybdenum",
+        moderator="Void",
     ),
     assembly_section=assembly_section,
     half_drum=True,
 )
-
-
-def render_geometry(universe, universe_radius, pixels, basis, origin):
-    print("Rendering geometry")
-    universe.plot(
-        width=(universe_radius * 2, universe_radius * 2),
-        pixels=pixels,
-        basis=basis,
-        color_by="material",
-        colors=colors,
-        origin=origin,
-    )
-    plt.savefig("plot.png")
 
 
 render = False
