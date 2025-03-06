@@ -84,7 +84,7 @@ def define_geometry(
             ~assemblies_boundary & ~assemblies_boundary_other_side & reflector_cylinder
         )
 
-    outer_boundary_shape = (
+    neutron_shield_cylinder = (
         -openmc.ZCylinder(
             r=core_desc.outer_core_radius,
             boundary_type="vacuum",
@@ -101,19 +101,20 @@ def define_geometry(
 
     neutron_shield_shape = (
         ~reflector_cylinder
-        & outer_boundary_shape
+        & neutron_shield_cylinder
         & ~assemblies_boundary
         & ~assemblies_boundary_other_side
     )
 
     ### Making Cells
-
+    core_shape = -openmc.ZCylinder(r=core_desc.core_radius)
     assembly_cells = make_assemblies_cells(
         assembly_section_inner,
         assembly_section_last,
         core_desc,
         drums,
         drum_desc,
+        core_shape,
     )
     assembly_cells_other_side = None
     if half_drum:
@@ -123,6 +124,7 @@ def define_geometry(
             core_desc,
             drums,
             mirrored_drum_desc,
+            core_shape,
         )
 
     assembly_reflector_cells = make_assemblies_cells(
@@ -131,6 +133,7 @@ def define_geometry(
         core_desc,
         drums,
         drum_desc,
+        reflector_cylinder,
     )
     assembly_reflector_cells_other_side = None
     if half_drum:
@@ -140,6 +143,7 @@ def define_geometry(
             core_desc,
             drums,
             mirrored_drum_desc,
+            reflector_cylinder,
         )
 
     assembly_absorber_cells = make_assemblies_cells(
@@ -147,7 +151,8 @@ def define_geometry(
         assembly_section_last,
         core_desc,
         drums,
-        mirrored_drum_desc,
+        drum_desc,
+        neutron_shield_cylinder,
     )
     assembly_absorber_cells_other_side = None
     if half_drum:
@@ -157,6 +162,7 @@ def define_geometry(
             core_desc,
             drums,
             mirrored_drum_desc,
+            neutron_shield_cylinder,
         )
 
     reflector = openmc.Cell(name="reflector")

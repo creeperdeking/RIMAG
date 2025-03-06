@@ -137,7 +137,7 @@ materials_def: Dict[str, Material] = {
             AtomProportion(atom=atoms["W"]),
         ],
         density=19.25,
-        color="lightgray",
+        color="yellow",
     ),
     "Uranium Dioxide": Material(
         composition=enriched_uranium.composition

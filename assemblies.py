@@ -25,9 +25,7 @@ def get_assemblies_boundaries(
     distance_from_core = drums_desc.drum_core_distance
     drum_height = core_desc.core_height
     fist_assembly_radius = drums[0].radius
-    last_assembly_radius = (
-        drums[-1].radius - last_assembly_thickness - assembly_thickness
-    )
+    last_assembly_radius = drums[-1].radius - last_assembly_thickness
 
     assemblies_boundary = create_hollow_cylinder(
         fist_assembly_radius,
@@ -47,8 +45,8 @@ def create_assembly_cells(
     core_desc: CoreDesc,
     drum: DrumLayer,
     drum_desc: DrumDesc,
+    boundary_shape,
 ) -> List[openmc.Cell]:
-    core_shape = -openmc.ZCylinder(r=core_desc.core_radius)
     current_radius = drum.radius
     drum_height = core_desc.core_height
 
@@ -61,7 +59,7 @@ def create_assembly_cells(
                 drum_height,
                 distance_from_origin=drum_desc.drum_core_distance,
             )
-            & core_shape
+            & boundary_shape
         )
         cell = openmc.Cell(name=f"{assembly_part.material} {str(i)} - {drum.number}")
         cell.fill = materials_dict[assembly_part.material]
@@ -72,30 +70,23 @@ def create_assembly_cells(
     return assembly_cells
 
 
-def make_outer_core_zone_shape(core_desc: CoreDesc):
-    core_shape = -openmc.ZCylinder(r=core_desc.core_radius)
-    neutron_shield_outer_cylinder = -openmc.ZCylinder(
-        r=core_desc.outer_core_radius,
-        boundary_type="vacuum",
-    )
-    return ~core_shape & neutron_shield_outer_cylinder
-
-
 def make_assemblies_cells(
     assembly_section: AssemblySections,
     last_section: AssemblySections,
     core_desc: CoreDesc,
     drums: List[DrumLayer],
     drum_desc: DrumDesc,
+    boundary_shape,
 ) -> List[openmc.Cell]:
     cells = []
-    for drum in drums:
+    for drum in drums[:-1]:
         cells.extend(
             create_assembly_cells(
                 assembly_section,
                 core_desc,
                 drum,
                 drum_desc,
+                boundary_shape,
             )
         )
     cells.extend(
@@ -104,6 +95,7 @@ def make_assemblies_cells(
             core_desc,
             drums[-1],
             drum_desc,
+            boundary_shape,
         )
     )
     return cells
