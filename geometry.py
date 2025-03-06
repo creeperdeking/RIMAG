@@ -5,6 +5,8 @@ from assemblies import (
     get_assemblies_boundaries,
     calculate_assembly_thickness,
     make_assemblies_cells,
+    make_reflector_assembly_zone_shape,
+    make_neutron_shield_assembly_zone_shape,
 )
 import numpy as np
 from geometry_utils import create_cylinder, MaterialChoice, AssemblySections
@@ -127,13 +129,15 @@ def define_geometry(
             core_shape,
         )
 
+    reflector_assembly_shape = make_reflector_assembly_zone_shape(core_desc)
+
     assembly_reflector_cells = make_assemblies_cells(
         assembly_section_reflector,
         assembly_section_last,
         core_desc,
         drums,
         drum_desc,
-        reflector_cylinder,
+        reflector_assembly_shape,
     )
     assembly_reflector_cells_other_side = None
     if half_drum:
@@ -143,16 +147,17 @@ def define_geometry(
             core_desc,
             drums,
             mirrored_drum_desc,
-            reflector_cylinder,
+            reflector_assembly_shape,
         )
 
+    neutron_shield_assembly_shape = make_neutron_shield_assembly_zone_shape(core_desc)
     assembly_absorber_cells = make_assemblies_cells(
         assembly_section_absorber,
         assembly_section_last,
         core_desc,
         drums,
         drum_desc,
-        neutron_shield_cylinder,
+        neutron_shield_assembly_shape,
     )
     assembly_absorber_cells_other_side = None
     if half_drum:
@@ -162,7 +167,7 @@ def define_geometry(
             core_desc,
             drums,
             mirrored_drum_desc,
-            neutron_shield_cylinder,
+            neutron_shield_assembly_shape,
         )
 
     reflector = openmc.Cell(name="reflector")
