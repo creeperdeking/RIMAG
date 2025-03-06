@@ -79,11 +79,12 @@ def make_reflector_assembly_zone_shape(core_desc: CoreDesc):
 
 
 def make_neutron_shield_assembly_zone_shape(core_desc: CoreDesc):
-    core_shape = -openmc.ZCylinder(r=core_desc.core_radius)
+    reflector_shape = -openmc.ZCylinder(r=core_desc.reflector_radius)
     neutron_shield_outer_cylinder = -openmc.ZCylinder(
         r=core_desc.outer_core_radius,
+        boundary_type="vacuum",
     )
-    return ~core_shape & neutron_shield_outer_cylinder
+    return ~reflector_shape & neutron_shield_outer_cylinder
 
 
 def make_assemblies_cells(

@@ -28,7 +28,9 @@ def clean_directory():
                 pass
 
 
-def generate_XML(materials, geometry, settings, tallies):
+def generate_XML(geometry, settings, tallies):
+    materials = openmc.Materials(materials_dict.values())
+
     materials.export_to_xml()
     geometry.export_to_xml()
     settings.export_to_xml()
@@ -37,10 +39,10 @@ def generate_XML(materials, geometry, settings, tallies):
         tallies.export_to_xml()
 
 
-def run_sim(geometry, settings, materials, tallies=None):
-    generate_XML(materials, geometry, settings, tallies)
+def run_sim(geometry, settings, tallies=None):
+    generate_XML(geometry, settings, tallies)
     openmc.run(threads=16)
-    clean_directory()
+    # clean_directory()
 
 
 def criticality_simulation(
@@ -64,24 +66,31 @@ def criticality_simulation(
     if not deterministic:
         settings.seed = int(pytime.time())
 
-    materials = openmc.Materials(materials_dict.values())
-
     if keffsim:
         print()
         print("-------- Criticality simulation --------")
         print()
         print("Seed :", settings.seed, "\n")
-        run_sim(geometry, settings, materials)
+        run_sim(geometry, settings)
 
 
-def render_geometry(universe, universe_radius, pixels, basis, origin):
+def render_geometry(universe, universe_radius, pixels, basis, origin, geometry):
+    materials = openmc.Materials(materials_dict.values())
+    materials.export_to_xml()
+    geometry.export_to_xml()
     print("Rendering geometry")
-    universe.plot(
-        width=(universe_radius * 2, universe_radius * 2),
-        pixels=pixels,
-        basis=basis,
-        color_by="material",
-        colors=colors,
-        origin=origin,
-    )
-    plt.savefig("plot.png")
+    plot = openmc.Plot()
+    plot.width = [universe_radius * 2, universe_radius * 2]
+    plot.pixels = pixels
+    plot.basis = basis
+    plot.color_by = "material"
+    plot.colors = colors
+    plot.origin = origin
+    plot.show_overlaps = True
+    plot.overlap_color = "blue"
+    image = plot.to_ipython_image()
+
+    # Save the image to a local file
+    with open("plot.png", "wb") as f:
+        f.write(image.data)
+    clean_directory()

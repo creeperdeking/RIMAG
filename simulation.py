@@ -145,14 +145,15 @@ geometry, universe = define_geometry(
 )
 
 
-render = True
+render = False
 if render:
     render_geometry(
         universe,
         universe_radius=(100),
-        pixels=(2500, 2500),
+        pixels=(1500, 1500),
         basis="xy",
         origin=(0, 0, 0.0),
+        geometry=geometry,
     )
 else:
     criticality_simulation(
