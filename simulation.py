@@ -145,7 +145,7 @@ geometry, universe = define_geometry(
 )
 
 
-render = False
+render = True
 if render:
     render_geometry(
         universe,
