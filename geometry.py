@@ -78,9 +78,7 @@ def define_geometry(
         core_desc.reflector_height,
     )
 
-    reflector_shape = (
-        ~assemblies_boundary & reflector_cylinder & ~assemblies_boundary_other_side
-    )
+    reflector_shape = ~assemblies_boundary & reflector_cylinder
     if half_drum:
         reflector_shape = (
             ~assemblies_boundary & ~assemblies_boundary_other_side & reflector_cylinder
@@ -102,12 +100,15 @@ def define_geometry(
     )
 
     neutron_shield_shape = (
-        ~reflector_cylinder
-        & neutron_shield_cylinder
-        & ~assemblies_boundary
-        & ~assemblies_boundary_other_side
+        ~reflector_cylinder & neutron_shield_cylinder & ~assemblies_boundary
     )
-
+    if half_drum:
+        neutron_shield_shape = (
+            ~reflector_cylinder
+            & neutron_shield_cylinder
+            & ~assemblies_boundary
+            & ~assemblies_boundary_other_side
+        )
     ### Making Cells
     core_shape = -openmc.ZCylinder(r=core_desc.core_radius)
     assembly_cells = make_assemblies_cells(
@@ -191,4 +192,4 @@ def define_geometry(
         ]
     )
 
-    return (openmc.Geometry(universe), universe)
+    return (openmc.Geometry(universe), universe, drums)

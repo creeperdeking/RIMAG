@@ -40,6 +40,12 @@ atoms: Dict[str, Atom] = {
     "Pu239": Atom(name="Pu239", atomic_weight=239.052163),
     "Pu240": Atom(name="Pu240", atomic_weight=240.053813),
     "Pu241": Atom(name="Pu241", atomic_weight=241.056851),
+    "Be": Atom(name="Be", atomic_weight=9.012182),
+    "Si": Atom(name="Si", atomic_weight=28.0855),
+    "N": Atom(name="N", atomic_weight=14.0067),
+    "N15": Atom(name="N15", atomic_weight=15.000108),
+    "N14": Atom(name="N14", atomic_weight=14.003074),
+    "Al": Atom(name="Al", atomic_weight=26.9815385),
 }
 
 
@@ -106,7 +112,7 @@ mixed_uranium_plutonium = Material(
 
 
 enriched_uranium = Material(
-    composition=create_uranium(0.20), density=18.95, color="green"
+    composition=create_uranium(0.035), density=18.95, color="green"
 )
 
 depleted_uranium = Material(
@@ -115,14 +121,43 @@ depleted_uranium = Material(
 
 
 materials_def: Dict[str, Material] = {
-    "Uranium": depleted_uranium,
-    "Water": Material(
+    "Depleted Uranium": depleted_uranium,
+    "Light Water": Material(
         composition=[
             AtomProportion(atom=atoms["H"], proportion=2),
             AtomProportion(atom=atoms["O"], proportion=1),
         ],
         density=1,
         color="blue",
+    ),
+    "Aluminum": Material(
+        composition=[AtomProportion(atom=atoms["Al"])],
+        density=2.7,
+        color="lightblue",
+    ),
+    "Beryllium Oxide": Material(
+        composition=[
+            AtomProportion(atom=atoms["Be"], proportion=1),
+            AtomProportion(atom=atoms["O"], proportion=1),
+        ],
+        density=3.02,
+        color="lightblue",
+    ),
+    "TRISO": Material(
+        composition=[
+            AtomProportion(atom=atoms["Si"], proportion=4),
+            AtomProportion(atom=atoms["C"], proportion=4),
+            AtomProportion(atom=atoms["C"], proportion=0.2),
+            *enriched_uranium.composition,
+            AtomProportion(atom=atoms["O"], proportion=0.3),
+        ],
+        density=3.6 * 0.75 + 10.8 * 0.25,
+        color="green",
+    ),
+    "Insulation": Material(
+        composition=[AtomProportion(atom=atoms["Mo"], proportion=1)],
+        density=10.28 / 2,
+        color="darkgray",
     ),
     "Heavy Water": Material(
         composition=[
@@ -165,7 +200,7 @@ materials_def: Dict[str, Material] = {
     ),
     "Graphite": Material(
         composition=[AtomProportion(atom=atoms["C"])],
-        density=1.8,
+        density=2.26,
         color="black",
     ),
     "Lead": Material(
@@ -205,4 +240,3 @@ for name, material in materials_def.items():
     colors[materials_dict[name]] = (
         "orange" if material.color is None else material.color
     )
-print(colors)
