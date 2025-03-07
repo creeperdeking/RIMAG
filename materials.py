@@ -154,11 +154,6 @@ materials_def: Dict[str, Material] = {
         density=3.6 * 0.75 + 10.8 * 0.25,
         color="green",
     ),
-    "Insulation": Material(
-        composition=[AtomProportion(atom=atoms["Mo"], proportion=1)],
-        density=10.28 / 2,
-        color="darkgray",
-    ),
     "Heavy Water": Material(
         composition=[
             AtomProportion(atom=atoms["H2"], proportion=2),

@@ -7,6 +7,7 @@ from geometry import (
     MaterialChoice,
     define_geometry,
     calculate_assembly_thickness,
+    GeometrySettings,
 )
 from drums import (
     calculate_drums_emissive_surface_in_core,
@@ -20,6 +21,11 @@ fuel_thickness = 1.0
 moderator_thickness = fuel_thickness / 1
 fuel_drum_gap = 0.07
 drum_thickness = 0.01
+
+render = False
+keff_simulation = False
+print_core_characteristics = True
+half_drum = True
 
 material_choice = MaterialChoice(
     moderator="Light Water",
@@ -97,51 +103,6 @@ inner_assembly_unique_parts2_thickness = calculate_assembly_thickness(
     inner_assembly_unique_parts2
 )
 
-inner_assembly_desc = AssemblySections(
-    parts=[
-        *drum_assembly.parts,
-        *inner_assembly_unique_parts_complete.parts,
-    ],
-)
-
-assembly_desc_last = AssemblySections(
-    parts=[*drum_assembly.parts],
-)
-
-outer_assembly_desc_reflector = AssemblySections(
-    parts=[
-        *drum_assembly.parts,
-        ### Reflector
-        Assembly(
-            material=material_choice.reflector,
-            thickness=inner_assembly_unique_parts1_thickness,
-        ),
-        *drum_assembly.parts,
-        ### Reflector
-        Assembly(
-            material=material_choice.reflector,
-            thickness=inner_assembly_unique_parts2_thickness,
-        ),
-    ],
-)
-
-outer_assembly_desc_absorber = AssemblySections(
-    parts=[
-        *drum_assembly.parts,
-        ### Reflector
-        Assembly(
-            material=material_choice.neutron_shield,
-            thickness=inner_assembly_unique_parts1_thickness,
-        ),
-        *drum_assembly.parts,
-        ### Reflector
-        Assembly(
-            material=material_choice.neutron_shield,
-            thickness=inner_assembly_unique_parts2_thickness,
-        ),
-    ],
-)
-
 core_desc = compute_core_desc(
     core_radius=core_diameter / 2,
     core_height=core_diameter,
@@ -157,43 +118,94 @@ drum_desc = DrumDesc(
     drum_core_margin_outer=0.5,
 )
 
-
-print("thicc: ", calculate_assembly_thickness(inner_assembly_desc))
-
-geometry, universe, drums = define_geometry(
-    assembly_section_inner=inner_assembly_desc,
-    assembly_section_reflector=outer_assembly_desc_reflector,
-    assembly_section_absorber=outer_assembly_desc_absorber,
-    assembly_section_last=assembly_desc_last,
-    half_drum=True,
+geometry_settings = GeometrySettings(
+    assembly_section_inner=AssemblySections(
+        parts=[
+            *drum_assembly.parts,
+            *inner_assembly_unique_parts_complete.parts,
+        ],
+    ),
+    assembly_section_reflector=AssemblySections(
+        parts=[
+            *drum_assembly.parts,
+            ### Reflector
+            Assembly(
+                material=material_choice.reflector,
+                thickness=inner_assembly_unique_parts1_thickness,
+            ),
+            *drum_assembly.parts,
+            ### Reflector
+            Assembly(
+                material=material_choice.reflector,
+                thickness=inner_assembly_unique_parts2_thickness,
+            ),
+        ],
+    ),
+    assembly_section_absorber=AssemblySections(
+        parts=[
+            *drum_assembly.parts,
+            ### Reflector
+            Assembly(
+                material=material_choice.neutron_shield,
+                thickness=inner_assembly_unique_parts1_thickness,
+            ),
+            *drum_assembly.parts,
+            ### Reflector
+            Assembly(
+                material=material_choice.neutron_shield,
+                thickness=inner_assembly_unique_parts2_thickness,
+            ),
+        ],
+    ),
+    assembly_section_last=AssemblySections(
+        parts=[*drum_assembly.parts],
+    ),
+    half_drum=half_drum,
     core_desc=core_desc,
     drum_desc=drum_desc,
     material_choice=material_choice,
 )
 
-emissive_surface = calculate_drums_emissive_surface_in_core(drums, 80, 80) / 10000
-print("emissive_surface", emissive_surface)
 
-hot_temp = 2020 + 273
-cold_temp = 1750 + 273
+geometry, universe, drums = define_geometry(geometry_settings)
 
-radiative_flux = radiative_heat_flux_between_plates(hot_temp, cold_temp, 0.9, 0.9)
-print("Radiative flux", radiative_flux)
+if print_core_characteristics:
+    print()
+    print(
+        "thicc: ",
+        calculate_assembly_thickness(geometry_settings.assembly_section_inner),
+    )
 
-print("core power", radiative_flux * emissive_surface / 1000000)
+    print(core_desc)
+
+    emissive_surface = (
+        calculate_drums_emissive_surface_in_core(drums, drum_desc, core_desc) / 10000
+    )
+    print("half drum", half_drum)
+
+    print("emissive_surface", emissive_surface * (2 if half_drum else 1))
+
+    hot_temp = 2020 + 273
+    cold_temp = 1750 + 273
+
+    radiative_flux = radiative_heat_flux_between_plates(hot_temp, cold_temp, 0.9, 0.9)
+    print("Radiative flux", radiative_flux)
+
+    print("core power", radiative_flux * emissive_surface / 1000000)
+    print()
 
 
-render = False
 if render:
     render_geometry(
         universe,
         universe_radius=(core_desc.outer_core_radius),
-        pixels=(1500, 1500),
+        pixels=(2500, 2500),
         basis="xy",
         origin=(0, 0, 0.0),
         geometry=geometry,
     )
-else:
+
+if keff_simulation:
     criticality_simulation(
         geometry,
         universe,

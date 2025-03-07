@@ -69,27 +69,27 @@ def calculate_drum_arc_length(
 
 
 def calculate_drum_surface_in_core(
-    drum: DrumLayer, core_radius: float, drum_height: float
+    drum: DrumLayer, core_desc: CoreDesc, drum_desc: DrumDesc
 ):
     return (
         calculate_drum_arc_length(
             drum,
             drum_desc.drum_core_distance,
-            core_radius,
+            core_desc.core_radius,
         )
-        * drum_height
+        * core_desc.core_height
     )
 
 
 def calculate_drums_emissive_surface_in_core(
     drums: List[DrumLayer],
-    core_radius: float,
-    drum_height: float,
+    drum_desc: DrumDesc,
+    core_desc: CoreDesc,
 ) -> float:
     drum_surface_in_core = 0
     for drum in drums:
         drum_surface_in_core += calculate_drum_surface_in_core(
-            drum, core_radius, drum_height
+            drum, core_desc, drum_desc
         )
     return drum_surface_in_core * 2
 
@@ -129,28 +129,3 @@ def radiative_heat_flux_between_plates(
     T1: float, T2: float, epsilon1: float, epsilon2: float
 ):
     return cst.Stefan_Boltzmann * (T1**4 - T2**4) / (1 / epsilon1 + 1 / epsilon2 - 1)
-
-
-drum_desc = DrumDesc(
-    drum_core_distance=100,
-    drum_core_margin_outer=0.5,
-    drum_core_margin_inner=2,
-)
-
-a = make_drums(
-    drum_desc=drum_desc,
-    core_radius=80 / 2,
-    distance_between_drums=0.70,
-    half_drum=True,
-)
-print(len(a))
-emissive_surface = calculate_drums_emissive_surface_in_core(a, 80, 80) / 10000
-print(emissive_surface)
-
-hot_temp = 2020 + 273
-cold_temp = 1750 + 273
-
-radiative_flux = radiative_heat_flux_between_plates(hot_temp, cold_temp, 0.9, 0.9)
-print(radiative_flux)
-
-print("core power", radiative_flux * emissive_surface / 1000000)
