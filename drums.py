@@ -91,7 +91,7 @@ def calculate_drums_emissive_surface_in_core(
         drum_surface_in_core += calculate_drum_surface_in_core(
             drum, core_desc, drum_desc
         )
-    return drum_surface_in_core * 2
+    return drum_surface_in_core
 
 
 def make_drums(

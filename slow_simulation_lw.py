@@ -183,7 +183,8 @@ if print_core_characteristics:
     )
     print("half drum", half_drum)
 
-    print("emissive_surface", emissive_surface * (2 if half_drum else 1))
+    # multiply by 2 because each drum section has two faces exposed to the fuel, and then by 2 again if there are two drum assemblies
+    print("emissive_surface", emissive_surface * (2 if half_drum else 1) * 2)
 
     hot_temp = 2020 + 273
     cold_temp = 1750 + 273
