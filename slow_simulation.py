@@ -25,7 +25,7 @@ material_choice = MaterialChoice(
     neutron_shield="Boron Carbide",
     reflector="Beryllium Oxide",
     fuel="TRISO",
-    cladding="Void",
+    moderator_cladding="Void",
     drum="Molybdenum",
 )
 

@@ -112,7 +112,7 @@ mixed_uranium_plutonium = Material(
 
 
 enriched_uranium = Material(
-    composition=create_uranium(0.035), density=18.95, color="green"
+    composition=create_uranium(0.095), density=18.95, color="green"
 )
 
 depleted_uranium = Material(
@@ -153,6 +153,14 @@ materials_def: Dict[str, Material] = {
         ],
         density=3.6 * 0.75 + 10.8 * 0.25,
         color="green",
+    ),
+    "Silicon Carbide": Material(
+        composition=[
+            AtomProportion(atom=atoms["Si"], proportion=1),
+            AtomProportion(atom=atoms["C"], proportion=1),
+        ],
+        density=3.6,
+        color="darkgray",
     ),
     "Heavy Water": Material(
         composition=[

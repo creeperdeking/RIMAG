@@ -17,8 +17,9 @@ class MaterialChoice(BaseModel):
     neutron_shield: str
     reflector: str
     fuel: str
-    cladding: str
+    moderator_cladding: str
     drum: str
+    fuel_cladding: str
 
 
 def create_cylinder(radius: float, height: float, boundary_type: str = "transmission"):

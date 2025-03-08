@@ -15,14 +15,15 @@ from drums import (
 )
 from simlib import render_geometry, criticality_simulation
 
-core_diameter = 130
-cladding_thickness = 0.05
-fuel_thickness = 0.5
-moderator_thickness = fuel_thickness / 0.5
+core_diameter = 50
+moderator_cladding_thickness = 0.05
+fuel_cladding_thickness = 0.01
+fuel_thickness = 0.25
+moderator_thickness = fuel_thickness / 0.3
 fuel_drum_gap = 0.09
 drum_thickness = 0.01
 
-render = True
+render = False
 keff_simulation = False
 print_core_characteristics = True
 half_drum = True
@@ -32,8 +33,9 @@ material_choice = MaterialChoice(
     neutron_shield="Boron Carbide",
     reflector="Graphite",
     fuel="TRISO",
-    cladding="Aluminum",
+    moderator_cladding="Aluminum",
     drum="Molybdenum",
+    fuel_cladding="Silicon Carbide",
 )
 
 drum_assembly = AssemblySections(
@@ -61,8 +63,8 @@ inner_assembly_unique_parts1 = AssemblySections(
     parts=[
         ### Cladding
         Assembly(
-            material=material_choice.cladding,
-            thickness=cladding_thickness,
+            material=material_choice.moderator_cladding,
+            thickness=moderator_cladding_thickness,
         ),
         ### Moderator
         Assembly(
@@ -71,18 +73,28 @@ inner_assembly_unique_parts1 = AssemblySections(
         ),
         ### Cladding
         Assembly(
-            material=material_choice.cladding,
-            thickness=cladding_thickness,
+            material=material_choice.moderator_cladding,
+            thickness=moderator_cladding_thickness,
         ),
     ],
 )
 
 inner_assembly_unique_parts2 = AssemblySections(
     parts=[
+        ### Fuel Cladding
+        Assembly(
+            material=material_choice.fuel_cladding,
+            thickness=fuel_cladding_thickness,
+        ),
         ### Fuel
         Assembly(
             material=material_choice.fuel,
             thickness=fuel_thickness,
+        ),
+        ### Fuel Cladding
+        Assembly(
+            material=material_choice.fuel_cladding,
+            thickness=fuel_cladding_thickness,
         ),
     ],
 )
@@ -188,8 +200,8 @@ if print_core_characteristics:
 
     print("emissive_surface", emissive_surface)
 
-    hot_temp = 2000 + 273
-    cold_temp = 1800 + 273
+    hot_temp = 2100 + 273
+    cold_temp = 1900 + 273
 
     radiative_flux = radiative_heat_flux_between_plates(hot_temp, cold_temp, 0.9, 0.9)
     print("Radiative flux", radiative_flux)
@@ -201,10 +213,10 @@ if print_core_characteristics:
 if render:
     render_geometry(
         universe,
-        universe_radius=(core_desc.outer_core_radius * 0.05),
+        universe_radius=(core_desc.outer_core_radius),
         pixels=(2500, 2500),
         basis="xy",
-        origin=(-20, 0, 0.0),
+        origin=(0, 0, 0.0),
         geometry=geometry,
     )
 

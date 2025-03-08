@@ -25,7 +25,7 @@ material_choice = MaterialChoice(
     neutron_shield="Boron Carbide",
     reflector="Graphite",
     fuel="Plutonium-Uranium Carbide",
-    cladding="Molybdenum",
+    moderator_cladding="Molybdenum",
     drum="Tungsten",
 )
 
@@ -54,7 +54,7 @@ inner_assembly_unique_parts = AssemblySections(
     parts=[
         ### Cladding
         Assembly(
-            material=material_choice.cladding,
+            material=material_choice.moderator_cladding,
             thickness=cladding_thickness,
         ),
         ### Void
@@ -74,7 +74,7 @@ inner_assembly_unique_parts = AssemblySections(
         ),
         ### Cladding
         Assembly(
-            material=material_choice.cladding,
+            material=material_choice.moderator_cladding,
             thickness=cladding_thickness,
         ),
     ],
