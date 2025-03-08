@@ -15,14 +15,14 @@ from drums import (
 )
 from simlib import render_geometry, criticality_simulation
 
-core_diameter = 100
-cladding_thickness = 0.03
-fuel_thickness = 1.0
-moderator_thickness = fuel_thickness / 1
-fuel_drum_gap = 0.07
+core_diameter = 130
+cladding_thickness = 0.05
+fuel_thickness = 0.5
+moderator_thickness = fuel_thickness / 0.5
+fuel_drum_gap = 0.09
 drum_thickness = 0.01
 
-render = False
+render = True
 keff_simulation = False
 print_core_characteristics = True
 half_drum = True
@@ -178,31 +178,33 @@ if print_core_characteristics:
 
     print(core_desc)
 
+    # multiply by 2 because each drum section has two faces exposed to the fuel, and then by 2 again if there are two drum assemblies
     emissive_surface = (
-        calculate_drums_emissive_surface_in_core(drums, drum_desc, core_desc) / 10000
+        (calculate_drums_emissive_surface_in_core(drums, drum_desc, core_desc) / 10000)
+        * (2 if half_drum else 1)
+        * 2
     )
     print("half drum", half_drum)
 
-    # multiply by 2 because each drum section has two faces exposed to the fuel, and then by 2 again if there are two drum assemblies
-    print("emissive_surface", emissive_surface * (2 if half_drum else 1) * 2)
+    print("emissive_surface", emissive_surface)
 
-    hot_temp = 2020 + 273
-    cold_temp = 1750 + 273
+    hot_temp = 2000 + 273
+    cold_temp = 1800 + 273
 
     radiative_flux = radiative_heat_flux_between_plates(hot_temp, cold_temp, 0.9, 0.9)
     print("Radiative flux", radiative_flux)
 
-    print("core power", radiative_flux * emissive_surface / 1000000)
+    print("core power", radiative_flux * emissive_surface / 1e6)
     print()
 
 
 if render:
     render_geometry(
         universe,
-        universe_radius=(core_desc.outer_core_radius),
+        universe_radius=(core_desc.outer_core_radius * 0.05),
         pixels=(2500, 2500),
         basis="xy",
-        origin=(0, 0, 0.0),
+        origin=(-20, 0, 0.0),
         geometry=geometry,
     )
 
