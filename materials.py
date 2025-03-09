@@ -107,14 +107,25 @@ def multiply_composition(material: Material, factor: float) -> List[AtomProporti
     ]
 
 
-def create_triso(
-    packing_fraction: float, uranium_oxy_carbide: Material, silicon_carbide: Material
-):
-    density_uranium_oxy_carbide = uranium_oxy_carbide.density
-    density_silicon_carbide = silicon_carbide.density
-    volumic_ratio_hm = packing_fraction * 0.5
+def create_volumic_blend(volume_fraction_mat1: float, mat1: Material, mat2: Material):
+    normalized_mat1 = normalize_material(mat1)
+    normalized_mat2 = normalize_material(mat2)
+    proportion_mat2_in_blend = 1 / volume_fraction_mat1 - 1
+    print(proportion_mat2_in_blend)
 
-    return Material(composition=[], density=density_triso)
+    density_blend = mat1.density * volume_fraction_mat1 + mat2.density * (
+        1 - volume_fraction_mat1
+    )
+
+    return normalize_material(
+        Material(
+            composition=[
+                *normalized_mat1.composition,
+                *multiply_composition(normalized_mat2, proportion_mat2_in_blend),
+            ],
+            density=density_blend,
+        )
+    )
 
 
 def make_materials(uranium_enrichment: float):
@@ -170,6 +181,13 @@ def make_materials(uranium_enrichment: float):
         color="darkgray",
     )
 
+    triso = create_volumic_blend(
+        0.25,
+        uranium_oxy_carbide,
+        silicon_carbide,
+    )
+    triso.color = "green"
+
     materials_def: Dict[str, Material] = {
         "Depleted Uranium": depleted_uranium,
         "Light Water": Material(
@@ -198,23 +216,8 @@ def make_materials(uranium_enrichment: float):
             density=3.02,
             color="lightblue",
         ),
-        "TRISO": Material(
-            composition=[
-                AtomProportion(atom=atoms["Si"], proportion=4),
-                AtomProportion(atom=atoms["C"], proportion=4),
-                *uranium_oxy_carbide.composition,
-            ],
-            density=3.6 * 0.75 + 10.8 * 0.25,
-            color="green",
-        ),
-        "Silicon Carbide": Material(
-            composition=[
-                AtomProportion(atom=atoms["Si"], proportion=1),
-                AtomProportion(atom=atoms["C"], proportion=1),
-            ],
-            density=3.6,
-            color="darkgray",
-        ),
+        "TRISO": triso,
+        "Silicon Carbide": silicon_carbide,
         "Heavy Water": Material(
             composition=[
                 AtomProportion(atom=atoms["H2"], proportion=2),
