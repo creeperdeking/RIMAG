@@ -116,8 +116,8 @@ def run_depletion_sim(
     materials_dict: Dict[str, openmc.Material],
     material_choice: MaterialChoice,
     fuel_mass: float,
-    sim_timesteps: List[float] = [],
-    timesteps_units: str = "d",
+    sim_steps: List[float] = [],
+    steps_units: str = "d",
 ):
     fission_q = {"U235": 202.5e6}  # energy in eV # "U233": 200.1e6, "Pu239": 211.5e6
     model = openmc.Model(geometry, materials, settings)
@@ -126,15 +126,15 @@ def run_depletion_sim(
     )
     max_step = 2 * op.heavy_metal / thermal_power * 1e3
     # Check if any timestep exceeds the maximum allowed step size
-    for step in sim_timesteps:
+    for step in sim_steps:
         if step > max_step:
             raise ValueError(
-                f"Timestep {step} {timesteps_units} exceeds maximum allowed step size of {max_step:.2f} {timesteps_units}. "
+                f"Timestep {step} {steps_units} exceeds maximum allowed step size of {max_step:.2f} {steps_units}. "
                 f"This limit is based on the heavy metal content and thermal power."
             )
 
     openmc.deplete.CECMIntegrator(
-        op, sim_timesteps, thermal_power, timestep_units=timesteps_units
+        op, sim_steps, thermal_power, timestep_units=steps_units
     ).integrate()
 
     results = openmc.deplete.Results("depletion_results.h5")

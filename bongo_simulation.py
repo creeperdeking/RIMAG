@@ -23,7 +23,7 @@ from simlib import (
 from assemblies import calculate_fuel_volume
 
 core_diameter = 50
-core_height = 120
+core_height = 50
 moderator_cladding_thickness = 0.05
 fuel_cladding_thickness = 0.05
 fuel_thickness = 0.25
@@ -35,7 +35,7 @@ half_drum = False
 hot_temp = 2000 + 273
 cold_temp = 1800 + 273
 
-reflector_thickness = 10
+reflector_thickness = 15
 neutron_shield_thickness = 10
 
 u235_enrichment = 9.5 / 100
@@ -43,7 +43,7 @@ fuel_hm_density = 0.25
 
 render = False
 keff_simulation = False
-depletion_sim = True
+depletion_sim = False
 
 material_choice = MaterialChoice(
     moderator="Light Water",
@@ -221,7 +221,7 @@ emissive_surface = (
 
 radiative_flux = radiative_heat_flux_between_plates(hot_temp, cold_temp, 0.9, 0.9)
 
-core_power = radiative_flux * emissive_surface
+core_power = radiative_flux * emissive_surface / 1e6
 
 # print core characteristics
 
@@ -233,9 +233,15 @@ print(
 print(core_desc)
 print("biggest drum radius", drums[0].radius)
 print("half drum", half_drum)
-print("emissive_surface", emissive_surface)
-print("Radiative flux", radiative_flux)
-print("core power", core_power)
+print("emissive_surface", round(emissive_surface, 2), "m2")
+print(
+    "Radiative flux",
+    round(
+        radiative_flux,
+    ),
+    "W/m2",
+)
+print("core power", round(core_power, 2), "MW")
 print()
 
 
@@ -276,6 +282,6 @@ if depletion_sim:
         materials_dict=materials_dict,
         material_choice=material_choice,
         fuel_mass=fuel_mass,
-        sim_timesteps=[5, 10, 20, 25] + [25 for i in range(15 * 3)],
-        timesteps_units="",
+        sim_steps=[1, 3, 6],  # [1, 3, 6, 10, 10, 10, 10, 10],
+        steps_units="MWd/kg",
     )
