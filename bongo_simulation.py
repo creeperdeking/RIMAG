@@ -2,15 +2,14 @@ from geometry_utils import (
     AssemblySections,
     Assembly,
 )
-from materials import make_materials
+from materials import make_materials, MaterialChoice, filter_materials
 from geometry import (
-    MaterialChoice,
     define_geometry,
     calculate_assembly_thickness,
     GeometrySettings,
 )
 from drums import (
-    calculate_drums_emissive_surface_in_core,
+    calculate_drums_surface_in_core,
     radiative_heat_flux_between_plates,
     DrumDesc,
     compute_core_desc,
@@ -20,8 +19,8 @@ from simlib import (
     criticality_simulation,
     run_depletion_sim,
     make_sim_settings,
-    compute_fuel_mass,
 )
+from assemblies import calculate_fuel_volume
 
 core_diameter = 50
 core_height = 120
@@ -43,8 +42,8 @@ u235_enrichment = 9.5 / 100
 fuel_hm_density = 0.25
 
 render = False
-keff_simulation = not render
-depletion_sim = False
+keff_simulation = False
+depletion_sim = True
 
 material_choice = MaterialChoice(
     moderator="Light Water",
@@ -54,6 +53,7 @@ material_choice = MaterialChoice(
     moderator_cladding="Aluminum",
     drum="Molybdenum",
     fuel_cladding="Silicon Carbide",
+    void="Void",
 )
 
 drum_assembly = AssemblySections(
@@ -108,6 +108,7 @@ inner_assembly_unique_parts2 = AssemblySections(
         Assembly(
             material=material_choice.fuel,
             thickness=fuel_thickness,
+            is_fuel=True,
         ),
         ### Fuel Cladding
         Assembly(
@@ -197,13 +198,23 @@ geometry_settings = GeometrySettings(
 )
 
 
-materials_dict, colors = make_materials(u235_enrichment)
+materials_dict, colors = make_materials(u235_enrichment, material_choice)
 
 geometry, universe, drums = define_geometry(geometry_settings, materials_dict)
 
+fuel_volume = calculate_fuel_volume(
+    drum_desc=drum_desc,
+    core_desc=core_desc,
+    assembly_section=geometry_settings.assembly_section_inner,
+    drums=drums,
+    half_drum=half_drum,
+)
+
+materials_dict[material_choice.fuel].volume = fuel_volume
+
 # multiply by 2 because each drum section has two faces exposed to the fuel, and then by 2 again if there are two drum assemblies
 emissive_surface = (
-    (calculate_drums_emissive_surface_in_core(drums, drum_desc, core_desc) / 10000)
+    (calculate_drums_surface_in_core(drums, drum_desc, core_desc) / 10000)
     * (2 if half_drum else 1)
     * 2
 )
@@ -228,6 +239,14 @@ print("core power", core_power)
 print()
 
 
+print("fuel volume", fuel_volume, "cm3")
+fuel_mass = fuel_volume * 0.25 * 11 / 1000
+print(
+    "fuel mass",
+    fuel_mass,
+    "kg",
+)
+
 if render:
     render_geometry(
         universe,
@@ -248,17 +267,15 @@ if keff_simulation:
     )
 
 if depletion_sim:
-    fuel_mass = compute_fuel_mass(
-        fuel_surface_area=emissive_surface / 2,
-        fuel_hm_density=fuel_hm_density,
-        fuel_thickness=fuel_thickness,
-        fuel_density=materials_dict["TRISO"].density,
-    )
+    print(materials_dict)
     run_depletion_sim(
         thermal_power=core_power,
         geometry=geometry,
         settings=settings,
         materials=materials_dict.values(),
+        materials_dict=materials_dict,
+        material_choice=material_choice,
         fuel_mass=fuel_mass,
-        sim_timesteps=[10, 20, 20, 20, 20],
+        sim_timesteps=[5, 10, 20, 25] + [25 for i in range(15 * 3)],
+        timesteps_units="",
     )

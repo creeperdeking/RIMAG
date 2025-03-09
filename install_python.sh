@@ -1,2 +1,2 @@
 #!/bin/bash
-pip install tabulate
+pip install tabulate pydantic pytime

@@ -9,7 +9,7 @@ from geometry import (
     calculate_assembly_thickness,
 )
 from drums import (
-    calculate_drums_emissive_surface_in_core,
+    calculate_drums_surface_in_core,
     radiative_heat_flux_between_plates,
 )
 from simlib import render_geometry, criticality_simulation
@@ -134,7 +134,7 @@ geometry, universe, drums = define_geometry(
     material_choice=material_choice,
 )
 
-emissive_surface = calculate_drums_emissive_surface_in_core(drums, 80, 80) / 10000
+emissive_surface = calculate_drums_surface_in_core(drums, 80, 80) / 10000
 print("emissive_surface", emissive_surface)
 
 hot_temp = 2020 + 273

@@ -24,6 +24,17 @@ class Material(BaseModel):
     color: Optional[str] = None
 
 
+class MaterialChoice(BaseModel):
+    moderator: str
+    neutron_shield: str
+    reflector: str
+    fuel: str
+    moderator_cladding: str
+    drum: str
+    fuel_cladding: str
+    void: str
+
+
 atoms: Dict[str, Atom] = {
     "U235": Atom(name="U235", atomic_weight=235.0439299),
     "U234": Atom(name="U234", atomic_weight=234.040947),
@@ -128,7 +139,16 @@ def create_volumic_blend(volume_fraction_mat1: float, mat1: Material, mat2: Mate
     )
 
 
-def make_materials(uranium_enrichment: float):
+def filter_materials(materials_dict: Dict[str, openmc.Material], mat_name: str):
+    new_materials_dict = {}
+    for name, material in materials_dict.items():
+        if name == mat_name:
+            new_materials_dict[name] = material
+
+    return new_materials_dict
+
+
+def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
     natural_uranium = Material(
         composition=create_uranium(0.00711),
         density=18.95,
@@ -245,6 +265,7 @@ def make_materials(uranium_enrichment: float):
             density=13.63,
             color="green",
         ),
+        "Uranium Oxy-Carbide": uranium_oxy_carbide,
         "Plutonium-Uranium Carbide": Material(
             composition=mixed_uranium_plutonium.composition
             + [AtomProportion(atom=atoms["C"], proportion=1)],
@@ -288,6 +309,8 @@ def make_materials(uranium_enrichment: float):
     materials_dict = {}
 
     for name, material in materials_def.items():
+        if name not in material_choice.model_dump().values():
+            continue
         materials_dict[name] = openmc.Material(name=name)
         for atom_prop in material.composition:
             try:
@@ -303,6 +326,8 @@ def make_materials(uranium_enrichment: float):
 
     colors = {}
     for name, material in materials_def.items():
+        if name not in material_choice.model_dump().values():
+            continue
         colors[materials_dict[name]] = (
             "orange" if material.color is None else material.color
         )

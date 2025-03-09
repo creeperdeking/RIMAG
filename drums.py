@@ -81,7 +81,7 @@ def calculate_drum_surface_in_core(
     )
 
 
-def calculate_drums_emissive_surface_in_core(
+def calculate_drums_surface_in_core(
     drums: List[DrumLayer],
     drum_desc: DrumDesc,
     core_desc: CoreDesc,

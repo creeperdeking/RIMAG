@@ -1,10 +1,12 @@
 import glob
 import openmc
+import openmc.deplete
 import os
 import pytime
 from typing import List, Dict
 from tabulate import tabulate
 import scipy.constants as cst
+from materials import MaterialChoice
 
 
 def clean_directory():
@@ -106,20 +108,13 @@ def compute_burnup(thermal_power, time_table, fuel_mass):
     return burnup
 
 
-def compute_fuel_mass(
-    fuel_surface_area: float,
-    fuel_hm_density: float,
-    fuel_thickness: float,
-    fuel_density: float,
-):
-    return fuel_surface_area * fuel_thickness * fuel_density * fuel_hm_density
-
-
 def run_depletion_sim(
     thermal_power: float,
     geometry,
     settings,
     materials,
+    materials_dict: Dict[str, openmc.Material],
+    material_choice: MaterialChoice,
     fuel_mass: float,
     sim_timesteps: List[float] = [],
     timesteps_units: str = "d",
@@ -150,67 +145,60 @@ def run_depletion_sim(
         ["Time (year)"] + [round(t / 365, 3) for t in time],
         ["Keff"] + [round(a[0], 3) for a in keff],
         ["Uranium Burnup (MWd/kgHM)"] + [round(a, 3) for a in uranium_burnups],
-        ["U232 (mol)"]
-        + [
-            round(a / cst.Avogadro, 3)
-            for a in results.get_atoms(mat=u233f6, nuc="U232", time_units="d")[1]
-        ],
-        ["U233 (mol)"]
-        + [
-            round(a / cst.Avogadro, 3)
-            for a in results.get_atoms(mat=u233f6, nuc="U233", time_units="d")[1]
-        ],
         ["U234 (mol)"]
         + [
             round(a / cst.Avogadro, 3)
-            for a in results.get_atoms(mat=u233f6, nuc="U234", time_units="d")[1]
+            for a in results.get_atoms(
+                mat=materials_dict[material_choice.fuel], nuc="U234", time_units="d"
+            )[1]
         ],
         ["U235 (mol)"]
         + [
             round(a / cst.Avogadro, 3)
-            for a in results.get_atoms(mat=u233f6, nuc="U235", time_units="d")[1]
+            for a in results.get_atoms(
+                mat=materials_dict[material_choice.fuel], nuc="U235", time_units="d"
+            )[1]
         ],
         ["Xe135 (mol)"]
         + [
             round(a / cst.Avogadro, 5)
-            for a in results.get_atoms(mat=u233f6, nuc="Xe135", time_units="d")[1]
+            for a in results.get_atoms(
+                mat=materials_dict[material_choice.fuel], nuc="Xe135", time_units="d"
+            )[1]
         ],
         ["Sm149 (mol)"]
         + [
             round(a / cst.Avogadro, 5)
-            for a in results.get_atoms(mat=u233f6, nuc="Sm149", time_units="d")[1]
+            for a in results.get_atoms(
+                mat=materials_dict[material_choice.fuel], nuc="Sm149", time_units="d"
+            )[1]
         ],
         ["Gd157 (mol)"]
         + [
             round(a / cst.Avogadro, 5)
-            for a in results.get_atoms(mat=u233f6, nuc="Gd157", time_units="d")[1]
-        ],
-        ["Blanket Th232 (mol)"]
-        + [
-            round(a / cst.Avogadro, 5)
             for a in results.get_atoms(
-                mat=thorium_tetrafluoride, nuc="Th232", time_units="d"
+                mat=materials_dict[material_choice.fuel], nuc="Gd157", time_units="d"
             )[1]
         ],
-        ["Blanket U232 (mol)"]
+        ["Pu239 (mol)"]
         + [
             round(a / cst.Avogadro, 5)
             for a in results.get_atoms(
-                mat=thorium_tetrafluoride, nuc="U232", time_units="d"
+                mat=materials_dict[material_choice.fuel], nuc="Pu239", time_units="d"
             )[1]
         ],
-        ["Blanket U233 (mol)"]
+        ["Pu240 (mol)"]
         + [
             round(a / cst.Avogadro, 5)
             for a in results.get_atoms(
-                mat=thorium_tetrafluoride, nuc="U233", time_units="d"
+                mat=materials_dict[material_choice.fuel], nuc="Pu240", time_units="d"
             )[1]
         ],
-        ["Blanket Pa233 (mol)"]
+        ["Pu241 (mol)"]
         + [
             round(a / cst.Avogadro, 5)
             for a in results.get_atoms(
-                mat=thorium_tetrafluoride, nuc="Pa233", time_units="d"
+                mat=materials_dict[material_choice.fuel], nuc="Pu241", time_units="d"
             )[1]
         ],
     ]

@@ -6,20 +6,11 @@ from typing import List
 class Assembly(BaseModel):
     thickness: float
     material: str
+    is_fuel: bool = False
 
 
 class AssemblySections(BaseModel):
     parts: List[Assembly]
-
-
-class MaterialChoice(BaseModel):
-    moderator: str
-    neutron_shield: str
-    reflector: str
-    fuel: str
-    moderator_cladding: str
-    drum: str
-    fuel_cladding: str
 
 
 def create_cylinder(radius: float, height: float, boundary_type: str = "transmission"):

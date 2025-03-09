@@ -9,8 +9,9 @@ from assemblies import (
 )
 import numpy as np
 from typing import Dict
-from geometry_utils import create_cylinder, MaterialChoice, AssemblySections
+from geometry_utils import create_cylinder, AssemblySections
 from pydantic import BaseModel
+from materials import MaterialChoice
 
 
 class GeometrySettings(BaseModel):

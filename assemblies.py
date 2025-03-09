@@ -6,7 +6,12 @@ from geometry_utils import (
     AssemblySections,
     create_hollow_cylinder,
 )
-from drums import CoreDesc, DrumLayer, DrumDesc
+from drums import (
+    CoreDesc,
+    DrumLayer,
+    DrumDesc,
+    calculate_drums_surface_in_core,
+)
 
 
 def calculate_assembly_thickness(assembly_section: AssemblySections) -> float:
@@ -37,6 +42,36 @@ def get_assemblies_boundaries(
     )
 
     return assemblies_boundary
+
+
+def calculate_fuel_volume(
+    drum_desc: DrumDesc,
+    core_desc: CoreDesc,
+    assembly_section: AssemblySections,
+    drums: List[DrumLayer],
+    half_drum: bool = False,
+) -> float:
+    fuel_radius_offset = 0
+    fuel_thickness = 0
+    for assembly_part in assembly_section.parts:
+        if assembly_part.is_fuel:
+            fuel_thickness = assembly_part.thickness
+            break
+
+        fuel_radius_offset += assembly_part.thickness
+
+    fuel_drums = []
+
+    for drum in drums:
+        fuel_radius = drum.radius - fuel_radius_offset
+        fuel_drums.append(DrumLayer(radius=fuel_radius, number=drum.number))
+
+    fuel_volume = (
+        calculate_drums_surface_in_core(fuel_drums, drum_desc, core_desc)
+        * fuel_thickness
+    ) * (2 if half_drum else 1)
+
+    return fuel_volume
 
 
 def create_assembly_cells(
