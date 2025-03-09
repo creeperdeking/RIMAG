@@ -87,159 +87,220 @@ def create_mixed_uranium_plutonium(
     ]
 
 
-uranium = Material(
-    composition=create_uranium(0.00711),
-    density=18.95,
-    color="green",
-)
-reactor_grade_plutonium = Material(
-    composition=create_plutonium(
-        pu239_enrichment=0.8, pu240_enrichment=0.15, pu241_enrichment=0.05
-    ),
-    density=19.84,
-    color="green",
-)
-mixed_uranium_plutonium = Material(
-    composition=create_mixed_uranium_plutonium(
-        pu239_enrichment=0.8,
-        pu240_enrichment=0.15,
-        pu241_enrichment=0.05,
-        plutonium_proportion=0.15,
-    ),
-    density=18.95,
-    color="green",
-)
-
-
-enriched_uranium = Material(
-    composition=create_uranium(0.095), density=18.95, color="green"
-)
-
-depleted_uranium = Material(
-    composition=create_uranium(0.003), density=18.95, color="green"
-)
-
-
-materials_def: Dict[str, Material] = {
-    "Depleted Uranium": depleted_uranium,
-    "Light Water": Material(
+def normalize_material(material: Material) -> Material:
+    total_proportion = sum(atom_prop.proportion for atom_prop in material.composition)
+    return Material(
         composition=[
-            AtomProportion(atom=atoms["H"], proportion=2),
-            AtomProportion(atom=atoms["O"], proportion=1),
+            AtomProportion(
+                atom=atom_prop.atom, proportion=atom_prop.proportion / total_proportion
+            )
+            for atom_prop in material.composition
         ],
-        density=1,
-        color="blue",
-    ),
-    "Aluminum": Material(
-        composition=[AtomProportion(atom=atoms["Al"])],
-        density=2.7,
-        color="lightblue",
-    ),
-    "Beryllium Oxide": Material(
+        **{k: v for k, v in material.model_dump().items() if k not in ["composition"]},
+    )
+
+
+def multiply_composition(material: Material, factor: float) -> List[AtomProportion]:
+    return [
+        AtomProportion(atom=atom_prop.atom, proportion=atom_prop.proportion * factor)
+        for atom_prop in material.composition
+    ]
+
+
+def create_triso(
+    packing_fraction: float, uranium_oxy_carbide: Material, silicon_carbide: Material
+):
+    density_uranium_oxy_carbide = uranium_oxy_carbide.density
+    density_silicon_carbide = silicon_carbide.density
+    volumic_ratio_hm = packing_fraction * 0.5
+
+    return Material(composition=[], density=density_triso)
+
+
+def make_materials(uranium_enrichment: float):
+    natural_uranium = Material(
+        composition=create_uranium(0.00711),
+        density=18.95,
+        color="green",
+    )
+    reactor_grade_plutonium = Material(
+        composition=create_plutonium(
+            pu239_enrichment=0.8, pu240_enrichment=0.15, pu241_enrichment=0.05
+        ),
+        density=19.84,
+        color="green",
+    )
+    mixed_uranium_plutonium = Material(
+        composition=create_mixed_uranium_plutonium(
+            pu239_enrichment=0.8,
+            pu240_enrichment=0.15,
+            pu241_enrichment=0.05,
+            plutonium_proportion=0.15,
+        ),
+        density=18.95,
+        color="green",
+    )
+
+    enriched_uranium = Material(
+        composition=create_uranium(uranium_enrichment),
+        density=18.95,
+        color="green",
+    )
+
+    depleted_uranium = Material(
+        composition=create_uranium(0.003), density=18.95, color="green"
+    )
+
+    uranium_oxy_carbide = Material(
         composition=[
-            AtomProportion(atom=atoms["Be"], proportion=1),
-            AtomProportion(atom=atoms["O"], proportion=1),
-        ],
-        density=3.02,
-        color="lightblue",
-    ),
-    "TRISO": Material(
-        composition=[
-            AtomProportion(atom=atoms["Si"], proportion=4),
-            AtomProportion(atom=atoms["C"], proportion=4),
             AtomProportion(atom=atoms["C"], proportion=0.2),
             *enriched_uranium.composition,
             AtomProportion(atom=atoms["O"], proportion=0.3),
         ],
-        density=3.6 * 0.75 + 10.8 * 0.25,
+        density=10.97,
         color="green",
-    ),
-    "Silicon Carbide": Material(
+    )
+
+    silicon_carbide = Material(
         composition=[
             AtomProportion(atom=atoms["Si"], proportion=1),
             AtomProportion(atom=atoms["C"], proportion=1),
         ],
         density=3.6,
         color="darkgray",
-    ),
-    "Heavy Water": Material(
-        composition=[
-            AtomProportion(atom=atoms["H2"], proportion=2),
-            AtomProportion(atom=atoms["O"], proportion=1),
-        ],
-        density=1.105,
-        color="darkblue",
-    ),
-    "Tungsten": Material(
-        composition=[
-            AtomProportion(atom=atoms["W"]),
-        ],
-        density=19.25,
-        color="yellow",
-    ),
-    "Uranium Dioxide": Material(
-        composition=enriched_uranium.composition
-        + [AtomProportion(atom=atoms["O"], proportion=2)],
-        density=10.97,
-        color="green",
-    ),
-    "Uranium Carbide": Material(
-        composition=enriched_uranium.composition
-        + [AtomProportion(atom=atoms["C"], proportion=1)],
-        density=13.63,
-        color="green",
-    ),
-    "Plutonium-Uranium Carbide": Material(
-        composition=mixed_uranium_plutonium.composition
-        + [AtomProportion(atom=atoms["C"], proportion=1)],
-        density=13.63,
-        color="green",
-    ),
-    "Plutonium-Uranium Oxide": Material(
-        composition=mixed_uranium_plutonium.composition
-        + [AtomProportion(atom=atoms["O"], proportion=2)],
-        density=10.97,
-        color="green",
-    ),
-    "Graphite": Material(
-        composition=[AtomProportion(atom=atoms["C"])],
-        density=2.26,
-        color="black",
-    ),
-    "Lead": Material(
-        composition=[AtomProportion(atom=atoms["Pb"])], density=11.34, color="gray"
-    ),
-    "Boron Carbide": Material(
-        composition=[AtomProportion(atom=atoms["B"]), AtomProportion(atom=atoms["C"])],
-        density=2.52,
-        color="red",
-    ),
-    "Molybdenum": Material(
-        composition=[AtomProportion(atom=atoms["Mo"])],
-        density=10.28,
-        color="darkgray",
-    ),
-    "Void": Material(
-        composition=[AtomProportion(atom=atoms["Zr"])],
-        density=0.01,
-        color="purple",
-    ),
-}
-
-materials_dict = {}
-
-for name, material in materials_def.items():
-    materials_dict[name] = openmc.Material(name=name)
-    for atom_prop in material.composition:
-        try:
-            materials_dict[name].add_element(atom_prop.atom.name, atom_prop.proportion)
-        except Exception as e:
-            # for nuclides we use weight percent because it is how enrichment is given
-            materials_dict[name].add_nuclide(atom_prop.atom.name, atom_prop.proportion)
-    materials_dict[name].set_density("g/cm3", material.density)
-
-colors = {}
-for name, material in materials_def.items():
-    colors[materials_dict[name]] = (
-        "orange" if material.color is None else material.color
     )
+
+    materials_def: Dict[str, Material] = {
+        "Depleted Uranium": depleted_uranium,
+        "Light Water": Material(
+            composition=[
+                AtomProportion(atom=atoms["H"], proportion=2),
+                AtomProportion(atom=atoms["O"], proportion=1),
+            ],
+            density=1,
+            color="blue",
+        ),
+        "Zirconium": Material(
+            composition=[AtomProportion(atom=atoms["Zr"])],
+            density=6.52,
+            color="gray",
+        ),
+        "Aluminum": Material(
+            composition=[AtomProportion(atom=atoms["Al"])],
+            density=2.7,
+            color="lightblue",
+        ),
+        "Beryllium Oxide": Material(
+            composition=[
+                AtomProportion(atom=atoms["Be"], proportion=1),
+                AtomProportion(atom=atoms["O"], proportion=1),
+            ],
+            density=3.02,
+            color="lightblue",
+        ),
+        "TRISO": Material(
+            composition=[
+                AtomProportion(atom=atoms["Si"], proportion=4),
+                AtomProportion(atom=atoms["C"], proportion=4),
+                *uranium_oxy_carbide.composition,
+            ],
+            density=3.6 * 0.75 + 10.8 * 0.25,
+            color="green",
+        ),
+        "Silicon Carbide": Material(
+            composition=[
+                AtomProportion(atom=atoms["Si"], proportion=1),
+                AtomProportion(atom=atoms["C"], proportion=1),
+            ],
+            density=3.6,
+            color="darkgray",
+        ),
+        "Heavy Water": Material(
+            composition=[
+                AtomProportion(atom=atoms["H2"], proportion=2),
+                AtomProportion(atom=atoms["O"], proportion=1),
+            ],
+            density=1.105,
+            color="darkblue",
+        ),
+        "Tungsten": Material(
+            composition=[
+                AtomProportion(atom=atoms["W"]),
+            ],
+            density=19.25,
+            color="yellow",
+        ),
+        "Uranium Dioxide": Material(
+            composition=enriched_uranium.composition
+            + [AtomProportion(atom=atoms["O"], proportion=2)],
+            density=10.97,
+            color="green",
+        ),
+        "Uranium Carbide": Material(
+            composition=enriched_uranium.composition
+            + [AtomProportion(atom=atoms["C"], proportion=1)],
+            density=13.63,
+            color="green",
+        ),
+        "Plutonium-Uranium Carbide": Material(
+            composition=mixed_uranium_plutonium.composition
+            + [AtomProportion(atom=atoms["C"], proportion=1)],
+            density=13.63,
+            color="green",
+        ),
+        "Plutonium-Uranium Oxide": Material(
+            composition=mixed_uranium_plutonium.composition
+            + [AtomProportion(atom=atoms["O"], proportion=2)],
+            density=10.97,
+            color="green",
+        ),
+        "Graphite": Material(
+            composition=[AtomProportion(atom=atoms["C"])],
+            density=2.26,
+            color="black",
+        ),
+        "Lead": Material(
+            composition=[AtomProportion(atom=atoms["Pb"])], density=11.34, color="gray"
+        ),
+        "Boron Carbide": Material(
+            composition=[
+                AtomProportion(atom=atoms["B"]),
+                AtomProportion(atom=atoms["C"]),
+            ],
+            density=2.52,
+            color="red",
+        ),
+        "Molybdenum": Material(
+            composition=[AtomProportion(atom=atoms["Mo"])],
+            density=10.28,
+            color="darkgray",
+        ),
+        "Void": Material(
+            composition=[AtomProportion(atom=atoms["Zr"])],
+            density=0.01,
+            color="purple",
+        ),
+    }
+
+    materials_dict = {}
+
+    for name, material in materials_def.items():
+        materials_dict[name] = openmc.Material(name=name)
+        for atom_prop in material.composition:
+            try:
+                materials_dict[name].add_element(
+                    atom_prop.atom.name, atom_prop.proportion
+                )
+            except Exception as e:
+                # for nuclides we use weight percent because it is how enrichment is given
+                materials_dict[name].add_nuclide(
+                    atom_prop.atom.name, atom_prop.proportion
+                )
+        materials_dict[name].set_density("g/cm3", material.density)
+
+    colors = {}
+    for name, material in materials_def.items():
+        colors[materials_dict[name]] = (
+            "orange" if material.color is None else material.color
+        )
+    return materials_dict, colors

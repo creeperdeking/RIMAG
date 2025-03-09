@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Dict
 
 import openmc
 
@@ -6,7 +6,6 @@ from geometry_utils import (
     AssemblySections,
     create_hollow_cylinder,
 )
-from materials import materials_dict
 from drums import CoreDesc, DrumLayer, DrumDesc
 
 
@@ -46,6 +45,7 @@ def create_assembly_cells(
     drum: DrumLayer,
     drum_desc: DrumDesc,
     boundary_shape,
+    materials_dict: Dict[str, openmc.Material],
 ) -> List[openmc.Cell]:
     current_radius = drum.radius
     drum_height = core_desc.core_height
@@ -94,6 +94,7 @@ def make_assemblies_cells(
     drums: List[DrumLayer],
     drum_desc: DrumDesc,
     boundary_shape,
+    materials_dict: Dict[str, openmc.Material],
 ) -> List[openmc.Cell]:
     cells = []
     for drum in drums[:-1]:
@@ -104,6 +105,7 @@ def make_assemblies_cells(
                 drum,
                 drum_desc,
                 boundary_shape,
+                materials_dict,
             )
         )
     cells.extend(
@@ -113,6 +115,7 @@ def make_assemblies_cells(
             drums[-1],
             drum_desc,
             boundary_shape,
+            materials_dict,
         )
     )
     return cells

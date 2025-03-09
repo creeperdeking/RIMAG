@@ -1,5 +1,4 @@
 import openmc
-from materials import materials_dict
 from drums import CoreDesc, make_drums, DrumDesc
 from assemblies import (
     get_assemblies_boundaries,
@@ -9,6 +8,7 @@ from assemblies import (
     make_neutron_shield_assembly_zone_shape,
 )
 import numpy as np
+from typing import Dict
 from geometry_utils import create_cylinder, MaterialChoice, AssemblySections
 from pydantic import BaseModel
 
@@ -26,6 +26,7 @@ class GeometrySettings(BaseModel):
 
 def define_geometry(
     geometry_settings: GeometrySettings,
+    materials_dict: Dict[str, openmc.Material],
 ):
     last_assembly_thickness = calculate_assembly_thickness(
         geometry_settings.assembly_section_last
@@ -127,6 +128,7 @@ def define_geometry(
         drums,
         geometry_settings.drum_desc,
         core_shape,
+        materials_dict,
     )
     assembly_cells_other_side = None
     if geometry_settings.half_drum:
@@ -137,6 +139,7 @@ def define_geometry(
             drums,
             mirrored_drum_desc,
             core_shape,
+            materials_dict,
         )
 
     reflector_assembly_shape = make_reflector_assembly_zone_shape(
@@ -150,6 +153,7 @@ def define_geometry(
         drums,
         geometry_settings.drum_desc,
         reflector_assembly_shape,
+        materials_dict,
     )
     assembly_reflector_cells_other_side = None
     if geometry_settings.half_drum:
@@ -160,6 +164,7 @@ def define_geometry(
             drums,
             mirrored_drum_desc,
             reflector_assembly_shape,
+            materials_dict,
         )
 
     neutron_shield_assembly_shape = make_neutron_shield_assembly_zone_shape(
@@ -172,6 +177,7 @@ def define_geometry(
         drums,
         geometry_settings.drum_desc,
         neutron_shield_assembly_shape,
+        materials_dict,
     )
     assembly_absorber_cells_other_side = None
     if geometry_settings.half_drum:
@@ -182,6 +188,7 @@ def define_geometry(
             drums,
             mirrored_drum_desc,
             neutron_shield_assembly_shape,
+            materials_dict,
         )
 
     reflector = openmc.Cell(name="reflector")
