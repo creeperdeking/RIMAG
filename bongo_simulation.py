@@ -31,6 +31,7 @@ fuel_thickness = 0.25
 moderator_thickness = fuel_thickness / 0.3
 fuel_drum_gap = 0.09
 drum_thickness = 0.01
+half_drum = False
 
 hot_temp = 2000 + 273
 cold_temp = 1800 + 273
@@ -44,8 +45,6 @@ fuel_hm_density = 0.25
 render = False
 keff_simulation = not render
 depletion_sim = False
-print_core_characteristics = True
-half_drum = False
 
 material_choice = MaterialChoice(
     moderator="Light Water",
@@ -213,19 +212,20 @@ radiative_flux = radiative_heat_flux_between_plates(hot_temp, cold_temp, 0.9, 0.
 
 core_power = radiative_flux * emissive_surface
 
-if print_core_characteristics:
-    print()
-    print(
-        "thicc: ",
-        calculate_assembly_thickness(geometry_settings.assembly_section_inner),
-    )
-    print(core_desc)
-    print("biggest drum radius", drums[0].radius)
-    print("half drum", half_drum)
-    print("emissive_surface", emissive_surface)
-    print("Radiative flux", radiative_flux)
-    print("core power", core_power)
-    print()
+# print core characteristics
+
+print()
+print(
+    "thicc: ",
+    calculate_assembly_thickness(geometry_settings.assembly_section_inner),
+)
+print(core_desc)
+print("biggest drum radius", drums[0].radius)
+print("half drum", half_drum)
+print("emissive_surface", emissive_surface)
+print("Radiative flux", radiative_flux)
+print("core power", core_power)
+print()
 
 
 if render:
