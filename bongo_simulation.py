@@ -47,7 +47,7 @@ fuel_hm_density = 0.25
 
 render = False
 keff_simulation = False
-depletion_sim = True
+depletion_sim = False
 
 material_choice = MaterialChoice(
     moderator="Light Water",

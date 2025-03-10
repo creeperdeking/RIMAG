@@ -122,7 +122,6 @@ def create_volumic_blend(volume_fraction_mat1: float, mat1: Material, mat2: Mate
     normalized_mat1 = normalize_material(mat1)
     normalized_mat2 = normalize_material(mat2)
     proportion_mat2_in_blend = 1 / volume_fraction_mat1 - 1
-    print(proportion_mat2_in_blend)
 
     density_blend = mat1.density * volume_fraction_mat1 + mat2.density * (
         1 - volume_fraction_mat1
@@ -140,7 +139,6 @@ def create_volumic_blend(volume_fraction_mat1: float, mat1: Material, mat2: Mate
 
 
 def heavy_metals_density(material: Material) -> float:
-    print(material)
     return (
         material.density
         * sum(
