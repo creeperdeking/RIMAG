@@ -2,7 +2,11 @@ from geometry_utils import (
     AssemblySections,
     Assembly,
 )
-from materials import make_materials, MaterialChoice, filter_materials
+from materials import (
+    make_materials,
+    MaterialChoice,
+    heavy_metals_density,
+)
 from geometry import (
     define_geometry,
     calculate_assembly_thickness,
@@ -43,7 +47,7 @@ fuel_hm_density = 0.25
 
 render = False
 keff_simulation = False
-depletion_sim = False
+depletion_sim = True
 
 material_choice = MaterialChoice(
     moderator="Light Water",
@@ -198,7 +202,7 @@ geometry_settings = GeometrySettings(
 )
 
 
-materials_dict, colors = make_materials(u235_enrichment, material_choice)
+materials_dict, materials_def, colors = make_materials(u235_enrichment, material_choice)
 
 geometry, universe, drums = define_geometry(geometry_settings, materials_dict)
 
@@ -221,7 +225,7 @@ emissive_surface = (
 
 radiative_flux = radiative_heat_flux_between_plates(hot_temp, cold_temp, 0.9, 0.9)
 
-core_power = radiative_flux * emissive_surface / 1e6
+core_power = radiative_flux * emissive_surface
 
 # print core characteristics
 
@@ -241,12 +245,14 @@ print(
     ),
     "W/m2",
 )
-print("core power", round(core_power, 2), "MW")
+print("core power", round(core_power / 1e6, 2), "MW")
 print()
 
 
 print("fuel volume", fuel_volume, "cm3")
-fuel_mass = fuel_volume * 0.25 * 11 / 1000
+fuel_mass = (
+    fuel_volume * heavy_metals_density(materials_def[material_choice.fuel]) / 1000
+)
 print(
     "fuel mass",
     fuel_mass,
@@ -273,7 +279,6 @@ if keff_simulation:
     )
 
 if depletion_sim:
-    print(materials_dict)
     run_depletion_sim(
         thermal_power=core_power,
         geometry=geometry,

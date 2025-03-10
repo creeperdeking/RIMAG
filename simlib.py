@@ -101,10 +101,14 @@ def render_geometry(universe, universe_radius, pixels, basis, origin, geometry):
     clean_directory()
 
 
-def compute_burnup(thermal_power, time_table, fuel_mass):
+def compute_burnup(
+    thermal_power: float,  # W
+    time_table: List[float],  # d
+    fuel_mass: float,  # kg
+) -> List[float]:
     burnup = []
     for time in time_table:
-        burnup.append(1000 * thermal_power / 1000000 * time / fuel_mass)
+        burnup.append(thermal_power / 1e6 * time / fuel_mass)
     return burnup
 
 

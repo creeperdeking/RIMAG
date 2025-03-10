@@ -139,13 +139,20 @@ def create_volumic_blend(volume_fraction_mat1: float, mat1: Material, mat2: Mate
     )
 
 
-def filter_materials(materials_dict: Dict[str, openmc.Material], mat_name: str):
-    new_materials_dict = {}
-    for name, material in materials_dict.items():
-        if name == mat_name:
-            new_materials_dict[name] = material
-
-    return new_materials_dict
+def heavy_metals_density(material: Material) -> float:
+    print(material)
+    return (
+        material.density
+        * sum(
+            atom_prop.proportion * atom_prop.atom.atomic_weight
+            for atom_prop in material.composition
+            if atom_prop.atom.atomic_weight > 200
+        )
+        / sum(
+            atom_prop.proportion * atom_prop.atom.atomic_weight
+            for atom_prop in material.composition
+        )
+    )
 
 
 def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
@@ -331,4 +338,4 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
         colors[materials_dict[name]] = (
             "orange" if material.color is None else material.color
         )
-    return materials_dict, colors
+    return materials_dict, materials_def, colors
