@@ -250,12 +250,12 @@ print()
 
 
 print("fuel volume", fuel_volume, "cm3")
-fuel_mass = (
+heavy_metal_mass = (
     fuel_volume * heavy_metals_density(materials_def[material_choice.fuel]) / 1000
 )
 print(
     "fuel mass",
-    fuel_mass,
+    heavy_metal_mass,
     "kg",
 )
 
@@ -286,7 +286,7 @@ if depletion_sim:
         materials=materials_dict.values(),
         materials_dict=materials_dict,
         material_choice=material_choice,
-        fuel_mass=fuel_mass,
+        fuel_mass=heavy_metal_mass,
         sim_steps=[1, 3, 6],  # [1, 3, 6, 10, 10, 10, 10, 10],
         steps_units="MWd/kg",
     )
