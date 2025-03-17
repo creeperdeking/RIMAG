@@ -26,12 +26,12 @@ from simlib import (
 )
 from assemblies import calculate_fuel_volume
 
-core_diameter = 50
-core_height = 50
+core_diameter = 30
+core_height = 30
 moderator_cladding_thickness = 0.05
 fuel_cladding_thickness = 0.05
 fuel_thickness = 0.25
-moderator_thickness = fuel_thickness / 0.3
+moderator_thickness = 0.25 * 8  # fuel_thickness / 0.2
 fuel_drum_gap = 0.09
 drum_thickness = 0.01
 half_drum = False
@@ -42,10 +42,10 @@ cold_temp = 1800 + 273
 reflector_thickness = 15
 neutron_shield_thickness = 10
 
-u235_enrichment = 9.5 / 100
+u235_enrichment = 50 / 100
 fuel_hm_density = 0.25
 
-render = False
+render = True
 keff_simulation = False
 depletion_sim = False
 
@@ -267,6 +267,8 @@ if render:
         basis="xy",
         origin=(0, 0, 0.0),
         geometry=geometry,
+        colors=colors,
+        materials_dict=materials_dict,
     )
 
 settings = make_sim_settings(deterministic=True)
@@ -287,6 +289,14 @@ if depletion_sim:
         materials_dict=materials_dict,
         material_choice=material_choice,
         fuel_mass=heavy_metal_mass,
-        sim_steps=[1, 3, 6],  # [1, 3, 6, 10, 10, 10, 10, 10],
+        sim_steps=[
+            0.5,
+            1,
+            3,
+            6,
+            10,
+            10,
+            10,
+        ],
         steps_units="MWd/kg",
     )

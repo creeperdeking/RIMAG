@@ -79,7 +79,16 @@ def criticality_simulation(
     run_sim(geometry, settings, materials_dict)
 
 
-def render_geometry(universe, universe_radius, pixels, basis, origin, geometry):
+def render_geometry(
+    universe,
+    universe_radius,
+    pixels,
+    basis,
+    origin,
+    geometry,
+    colors,
+    materials_dict: Dict[str, openmc.Material],
+):
     materials = openmc.Materials(materials_dict.values())
     materials.export_to_xml()
     geometry.export_to_xml()
@@ -137,7 +146,9 @@ def run_depletion_sim(
                 f"This limit is based on the heavy metal content and thermal power."
             )
 
-    openmc.deplete.CECMIntegrator(
+    # This https://www.tandfonline.com/doi/abs/10.13182/NSE14-92
+    # seems to suggest that the LEQIIntegrator is more accurate than the CECMIntegrator
+    openmc.deplete.LEQIIntegrator(
         op, sim_steps, thermal_power, timestep_units=steps_units
     ).integrate()
 
@@ -147,6 +158,7 @@ def run_depletion_sim(
     results.export_to_materials(burnup_index=1)
     results_table = [
         ["Time (year)"] + [round(t / 365, 3) for t in time],
+        ["Time (day)"] + [round(t, 3) for t in time],
         ["Keff"] + [round(a[0], 3) for a in keff],
         ["Uranium Burnup (MWd/kgHM)"] + [round(a, 3) for a in uranium_burnups],
         ["U234 (mol)"]
@@ -161,6 +173,13 @@ def run_depletion_sim(
             round(a / cst.Avogadro, 3)
             for a in results.get_atoms(
                 mat=materials_dict[material_choice.fuel], nuc="U235", time_units="d"
+            )[1]
+        ],
+        ["U238 (mol)"]
+        + [
+            round(a / cst.Avogadro, 3)
+            for a in results.get_atoms(
+                mat=materials_dict[material_choice.fuel], nuc="U238", time_units="d"
             )[1]
         ],
         ["Xe135 (mol)"]
@@ -208,3 +227,5 @@ def run_depletion_sim(
     ]
 
     print(tabulate(results_table))
+
+    clean_directory()

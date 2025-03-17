@@ -58,6 +58,10 @@ def compute_core_desc(
 def calculate_drum_arc_length(
     drum: DrumLayer, drum_distance_from_core: float, core_radius: float
 ):
+    print(
+        (drum_distance_from_core**2 + drum.radius**2 - core_radius**2)
+        / (2 * drum_distance_from_core * drum.radius)
+    )
     return (
         2
         * drum.radius
@@ -86,6 +90,7 @@ def calculate_drums_surface_in_core(
     drum_desc: DrumDesc,
     core_desc: CoreDesc,
 ) -> float:
+    print("num", len(drums))
     drum_surface_in_core = 0
     for drum in drums:
         drum_surface_in_core += calculate_drum_surface_in_core(
