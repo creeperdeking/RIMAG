@@ -39,23 +39,23 @@ half_drum = False
 hot_temp = 2000 + 273
 cold_temp = 1800 + 273
 
-reflector_thickness = 15
-neutron_shield_thickness = 10
+reflector_thickness = 20
+neutron_shield_thickness = 80
 
 u235_enrichment = 9.5 / 100
 fuel_hm_density = 0.25
 
 render = False
-keff_simulation = False
+keff_simulation = True
 depletion_sim = False
 
 material_choice = MaterialChoice(
     moderator="Light Water",
-    neutron_shield="Boron Carbide",
-    reflector="Beryllium Oxide",
+    neutron_shield="Gadolinium Oxide",
+    reflector="Tungsten",
     fuel="TRISO",
     moderator_cladding="Aluminum",
-    drum="Molybdenum",
+    drum="Graphite",
     fuel_cladding="Silicon Carbide",
     void="Void",
 )
@@ -267,6 +267,8 @@ if render:
         basis="xy",
         origin=(0, 0, 0.0),
         geometry=geometry,
+        colors=colors,
+        materials_dict=materials_dict,
     )
 
 settings = make_sim_settings(deterministic=True)

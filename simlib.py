@@ -79,7 +79,9 @@ def criticality_simulation(
     run_sim(geometry, settings, materials_dict)
 
 
-def render_geometry(universe, universe_radius, pixels, basis, origin, geometry):
+def render_geometry(
+    universe, universe_radius, pixels, basis, origin, geometry, colors, materials_dict
+):
     materials = openmc.Materials(materials_dict.values())
     materials.export_to_xml()
     geometry.export_to_xml()

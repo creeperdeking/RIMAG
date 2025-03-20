@@ -57,6 +57,7 @@ atoms: Dict[str, Atom] = {
     "N15": Atom(name="N15", atomic_weight=15.000108),
     "N14": Atom(name="N14", atomic_weight=14.003074),
     "Al": Atom(name="Al", atomic_weight=26.9815385),
+    "Gd": Atom(name="Gd", atomic_weight=157.25),
 }
 
 
@@ -215,6 +216,14 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
 
     materials_def: Dict[str, Material] = {
         "Depleted Uranium": depleted_uranium,
+        "Gadolinium Oxide": Material(
+            composition=[
+                AtomProportion(atom=atoms["Gd"], proportion=1),
+                AtomProportion(atom=atoms["O"], proportion=1),
+            ],
+            density=7.9,
+            color="gray",
+        ),
         "Light Water": Material(
             composition=[
                 AtomProportion(atom=atoms["H"], proportion=2),
