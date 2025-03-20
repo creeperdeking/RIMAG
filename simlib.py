@@ -49,6 +49,7 @@ def run_sim(geometry, settings, materials_dict, tallies=None):
 
 def make_sim_settings(
     deterministic: bool = True,
+    batches: int = 1500,
 ):
     # Define neutron source
     source = openmc.Source(space=openmc.stats.Point((0, 0, 0)))
@@ -56,9 +57,9 @@ def make_sim_settings(
     # Define simulation settings
     settings = openmc.Settings()
     settings.source = source
-    settings.batches = 1500
+    settings.batches = batches
     settings.inactive = 50
-    settings.particles = 100
+    settings.particles = 1000
     settings.seed = 42
     settings.rel_max_lost_particles = 0.1
     if not deterministic:
@@ -210,3 +211,57 @@ def run_depletion_sim(
     ]
 
     print(tabulate(results_table))
+
+
+def create_photovoltaic_tally(photovoltaic_cell, materials_dict):
+    tally = openmc.Tally(name="photovoltaic")
+    tally.filters = [openmc.CellFilter(photovoltaic_cell)]
+    tally.scores = ["flux"]
+    return tally
+
+
+def print_neutron_fluence_cm2s(power_output_watts, photovoltaic_slice_volume, batches):
+    results = openmc.StatePoint(f"statepoint.{batches}.h5")
+    fluence = results.get_tally(name="photovoltaic")
+
+    # Get normalized flux (particle-cm per source particle)
+    normalized_flux = fluence.mean[0][0][0]
+
+    # Calculate neutrons per second based on power output
+    # Average energy released per fission: ~200 MeV = 3.2e-11 Joules
+    energy_per_fission = 200 * 1.6e-13  # Joules
+    neutrons_per_fission = 2.4  # Average number of neutrons per fission
+
+    # Calculate fissions per second based on power
+    fissions_per_second = power_output_watts / energy_per_fission
+
+    # Calculate source strength (neutrons/second)
+    source_strength = fissions_per_second * neutrons_per_fission
+
+    # Calculate absolute flux (neutrons/cm²-s)
+    absolute_flux = normalized_flux * source_strength / photovoltaic_slice_volume
+
+    print(f"Normalized flux: {normalized_flux:.4e} particle-cm per source particle")
+    print(f"Source strength: {source_strength:.4e} neutrons/second")
+    print(f"Absolute neutron flux: {absolute_flux:.4e} neutrons/cm²-s")
+    print(
+        f"Yearly neutron fluence: {absolute_flux * 365 * 24 * 60 * 60:.4e} neutrons/cm²"
+    )
+
+    return absolute_flux
+
+
+def run_sim_with_photovoltaic_tally(
+    geometry,
+    settings,
+    materials_dict,
+    photovoltaic_cell,
+    power_output_watts,
+    photovoltaic_slice_volume,
+    batches,
+):
+    tally = create_photovoltaic_tally(photovoltaic_cell, materials_dict)
+    tallies = openmc.Tallies([tally])
+    run_sim(geometry, settings, materials_dict, tallies)
+    print_neutron_fluence_cm2s(power_output_watts, photovoltaic_slice_volume, batches)
+    # clean_directory()

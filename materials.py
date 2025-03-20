@@ -33,6 +33,7 @@ class MaterialChoice(BaseModel):
     drum: str
     fuel_cladding: str
     void: str
+    photovoltaic: str
 
 
 atoms: Dict[str, Atom] = {
@@ -58,6 +59,7 @@ atoms: Dict[str, Atom] = {
     "N14": Atom(name="N14", atomic_weight=14.003074),
     "Al": Atom(name="Al", atomic_weight=26.9815385),
     "Gd": Atom(name="Gd", atomic_weight=157.25),
+    "He": Atom(name="He", atomic_weight=4.002602),
 }
 
 
@@ -250,6 +252,28 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
             density=3.02,
             color="lightblue",
         ),
+        "Zirconium Hydride": Material(
+            composition=[
+                AtomProportion(atom=atoms["Zr"], proportion=1),
+                AtomProportion(atom=atoms["H"], proportion=1.6),
+            ],
+            density=5.9,
+            color="gray",
+        ),
+        "Zirconium Hydride Boron": Material(
+            composition=[
+                AtomProportion(atom=atoms["Zr"], proportion=1),
+                AtomProportion(atom=atoms["H"], proportion=1.6),
+                AtomProportion(atom=atoms["B"], proportion=1),
+            ],
+            density=6.2,
+            color="gray",
+        ),
+        "Silicon": Material(
+            composition=[AtomProportion(atom=atoms["Si"])],
+            density=2.33,
+            color="lightblue",
+        ),
         "TRISO": triso,
         "Silicon Carbide": silicon_carbide,
         "Heavy Water": Material(
@@ -314,8 +338,8 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
             color="darkgray",
         ),
         "Void": Material(
-            composition=[AtomProportion(atom=atoms["Zr"])],
-            density=0.01,
+            composition=[AtomProportion(atom=atoms["He"])],
+            density=1e-10,
             color="purple",
         ),
     }

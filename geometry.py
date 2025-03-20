@@ -1,4 +1,5 @@
 import openmc
+import math
 from drums import CoreDesc, make_drums, DrumDesc
 from assemblies import (
     get_assemblies_boundaries,
@@ -98,15 +99,12 @@ def define_geometry(
     neutron_shield_cylinder = (
         -openmc.ZCylinder(
             r=geometry_settings.core_desc.outer_core_radius,
-            boundary_type="vacuum",
         )
         & -openmc.ZPlane(
             z0=geometry_settings.core_desc.outer_core_height / 2,
-            boundary_type="vacuum",
         )
         & +openmc.ZPlane(
             z0=-geometry_settings.core_desc.outer_core_height / 2,
-            boundary_type="vacuum",
         )
     )
 
@@ -202,6 +200,56 @@ def define_geometry(
     ]
     neutron_shield.region = neutron_shield_shape
 
+    ### Define outer drum zone for solar cells tallies
+    photovoltaic_slice = (
+        -openmc.ZCylinder(
+            r=geometry_settings.core_desc.core_radius,
+            x0=geometry_settings.drum_desc.drum_core_distance * 2,
+        )
+        & -openmc.ZPlane(
+            z0=geometry_settings.core_desc.core_height / 2,
+        )
+        & +openmc.ZPlane(
+            z0=-geometry_settings.core_desc.core_height / 2,
+        )
+    )
+
+    photovoltaic_slice_volume = (
+        math.pi
+        * (geometry_settings.core_desc.core_radius**2)
+        * geometry_settings.core_desc.core_height
+    )
+
+    photovoltaic_cell = openmc.Cell(name="photovoltaic")
+    photovoltaic_cell.region = photovoltaic_slice
+    photovoltaic_cell.fill = materials_dict[
+        geometry_settings.material_choice.photovoltaic
+    ]
+
+    outer_drum_zone = (
+        (
+            -openmc.ZCylinder(
+                r=drums[0].radius + geometry_settings.drum_desc.drum_core_distance,
+                # x0=geometry_settings.drum_desc.drum_core_distance,
+                boundary_type="vacuum",
+            )
+            & -openmc.ZPlane(
+                z0=geometry_settings.core_desc.outer_core_height / 2 + 1,
+                boundary_type="vacuum",
+            )
+            & +openmc.ZPlane(
+                z0=-geometry_settings.core_desc.outer_core_height / 2 - 1,
+                boundary_type="vacuum",
+            )
+        )
+        & ~neutron_shield_cylinder
+        & ~photovoltaic_slice
+    )
+
+    outer_drum_zone_cell = openmc.Cell(name="outer_drum_zone")
+    outer_drum_zone_cell.region = outer_drum_zone
+    outer_drum_zone_cell.fill = materials_dict[geometry_settings.material_choice.void]
+
     universe = openmc.Universe(
         cells=[
             *assembly_cells,
@@ -220,7 +268,15 @@ def define_geometry(
             ),
             reflector,
             neutron_shield,
+            outer_drum_zone_cell,
+            photovoltaic_cell,
         ]
     )
 
-    return (openmc.Geometry(universe), universe, drums)
+    return (
+        openmc.Geometry(universe),
+        universe,
+        drums,
+        photovoltaic_cell,
+        photovoltaic_slice_volume,
+    )

@@ -20,9 +20,9 @@ from drums import (
 )
 from simlib import (
     render_geometry,
-    criticality_simulation,
     run_depletion_sim,
     make_sim_settings,
+    run_sim_with_photovoltaic_tally,
 )
 from assemblies import calculate_fuel_volume
 
@@ -39,8 +39,8 @@ half_drum = False
 hot_temp = 2000 + 273
 cold_temp = 1800 + 273
 
-reflector_thickness = 20
-neutron_shield_thickness = 80
+reflector_thickness = 30
+neutron_shield_thickness = 60
 
 u235_enrichment = 9.5 / 100
 fuel_hm_density = 0.25
@@ -49,15 +49,18 @@ render = False
 keff_simulation = True
 depletion_sim = False
 
+batches = 15000
+
 material_choice = MaterialChoice(
     moderator="Light Water",
-    neutron_shield="Gadolinium Oxide",
-    reflector="Tungsten",
+    neutron_shield="Zirconium Hydride Boron",
+    reflector="Graphite",
     fuel="TRISO",
     moderator_cladding="Aluminum",
     drum="Graphite",
     fuel_cladding="Silicon Carbide",
     void="Void",
+    photovoltaic="Silicon",
 )
 
 drum_assembly = AssemblySections(
@@ -204,7 +207,9 @@ geometry_settings = GeometrySettings(
 
 materials_dict, materials_def, colors = make_materials(u235_enrichment, material_choice)
 
-geometry, universe, drums = define_geometry(geometry_settings, materials_dict)
+geometry, universe, drums, photovoltaic_cell, photovoltaic_slice_volume = (
+    define_geometry(geometry_settings, materials_dict)
+)
 
 fuel_volume = calculate_fuel_volume(
     drum_desc=drum_desc,
@@ -262,7 +267,7 @@ print(
 if render:
     render_geometry(
         universe,
-        universe_radius=(core_desc.outer_core_radius),
+        universe_radius=(core_desc.outer_core_radius + 50),
         pixels=(2500, 2500),
         basis="xy",
         origin=(0, 0, 0.0),
@@ -271,14 +276,23 @@ if render:
         materials_dict=materials_dict,
     )
 
-settings = make_sim_settings(deterministic=True)
+settings = make_sim_settings(deterministic=True, batches=batches)
 
 if keff_simulation:
-    criticality_simulation(
+    run_sim_with_photovoltaic_tally(
         geometry,
         settings,
         materials_dict,
+        photovoltaic_cell,
+        core_power,
+        photovoltaic_slice_volume,
+        batches,
     )
+    # criticality_simulation(
+    #     geometry,
+    #     settings,
+    #     materials_dict,
+    # )
 
 if depletion_sim:
     run_depletion_sim(
