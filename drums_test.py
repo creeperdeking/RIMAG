@@ -1,4 +1,4 @@
-from drums import (
+from drum_design.drums import (
     calculate_drum_surface_in_core,
     DrumDesc,
     DrumLayer,
@@ -11,7 +11,6 @@ import math
 def test_drum_surface_in_core_zero_when_intersection_is_zero():
     drum_desc = DrumDesc(
         drum_core_distance=10,
-        drum_core_margin_inner=0,
         drum_core_margin_outer=0,
     )
     core_desc = compute_core_desc(
@@ -44,7 +43,6 @@ def test_drum_surface_in_core_zero_when_intersection_is_zero():
 def test_drum_surface_in_core_correct_when_intersection_is_half():
     drum_desc = DrumDesc(
         drum_core_distance=10,
-        drum_core_margin_inner=0,
         drum_core_margin_outer=0,
     )
     core_desc = compute_core_desc(

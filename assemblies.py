@@ -6,7 +6,7 @@ from geometry_utils import (
     AssemblySections,
     create_hollow_cylinder,
 )
-from drums import (
+from drum_design.drums import (
     CoreDesc,
     DrumLayer,
     DrumDesc,

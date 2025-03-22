@@ -1,6 +1,6 @@
 import openmc
 import math
-from drums import CoreDesc, make_drums, DrumDesc
+from drum_design.drums import CoreDesc, make_drums, DrumDesc
 from assemblies import (
     get_assemblies_boundaries,
     calculate_assembly_thickness,
@@ -63,7 +63,6 @@ def define_geometry(
         mirrored_drum_desc = DrumDesc(
             drum_core_distance=-geometry_settings.drum_desc.drum_core_distance,
             drum_core_margin_outer=geometry_settings.drum_desc.drum_core_margin_outer,
-            drum_core_margin_inner=geometry_settings.drum_desc.drum_core_margin_inner,
         )
 
     assemblies_boundary = get_assemblies_boundaries(

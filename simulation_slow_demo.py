@@ -7,12 +7,12 @@ from materials import (
     MaterialChoice,
     heavy_metals_density,
 )
-from geometry import (
+from common_lib.geometry import (
     define_geometry,
     calculate_assembly_thickness,
     GeometrySettings,
 )
-from drums import (
+from drum_design.drums import (
     calculate_drums_surface_in_core,
     radiative_heat_flux_between_plates,
     DrumDesc,
@@ -152,8 +152,7 @@ drum_desc = DrumDesc(
     drum_core_distance=core_desc.core_radius
     + (core_desc.outer_core_radius - core_desc.core_radius) / 2
     + 3,
-    drum_core_margin_inner=2,
-    drum_core_margin_outer=0.5,
+    drum_core_margin_outer=1,
 )
 
 geometry_settings = GeometrySettings(

@@ -8,7 +8,6 @@ from pydantic import BaseModel
 class DrumDesc(BaseModel):
     drum_core_distance: float
     drum_core_margin_outer: float
-    drum_core_margin_inner: float
 
 
 class DrumLayer(BaseModel):
@@ -114,7 +113,7 @@ def make_drums(
         + drum_radiuses[-1]
         - drum_desc.drum_core_distance
         - distance_between_drums
-    ) >= drum_desc.drum_core_margin_inner:
+    ) >= drum_desc.drum_core_margin_outer:
         drum_radiuses.append(drum_radiuses[-1] - distance_between_drums)
     return [
         DrumLayer(
