@@ -1,4 +1,4 @@
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 import openmc
 
@@ -8,10 +8,6 @@ from common_lib.geometry_utils import (
 )
 from common_lib.rotary_assembly import RotaryAssemblyDesc, RotaryAssemblyLayer
 from common_lib.core import CoreDesc
-
-
-def calculate_assembly_thickness(assembly_section: AssemblySections) -> float:
-    return sum(part.thickness for part in assembly_section.parts)
 
 
 def get_assemblies_boundaries(
@@ -70,14 +66,6 @@ def create_assembly_cells(
     return assembly_cells
 
 
-def make_reflector_assembly_zone_shape(core_desc: CoreDesc):
-    core_shape = -openmc.ZCylinder(r=core_desc.core_radius)
-    reflector_outer_cylinder = -openmc.ZCylinder(
-        r=core_desc.reflector_radius,
-    )
-    return ~core_shape & reflector_outer_cylinder
-
-
 def make_neutron_shield_assembly_zone_shape(core_desc: CoreDesc):
     reflector_shape = -openmc.ZCylinder(r=core_desc.reflector_radius)
     neutron_shield_outer_cylinder = -openmc.ZCylinder(
@@ -87,7 +75,7 @@ def make_neutron_shield_assembly_zone_shape(core_desc: CoreDesc):
     return ~reflector_shape & neutron_shield_outer_cylinder
 
 
-def make_assemblies_cells(
+def make_assemblies_cells_base(
     assembly_section: AssemblySections,
     last_section: AssemblySections,
     core_desc: CoreDesc,
@@ -118,4 +106,40 @@ def make_assemblies_cells(
             materials_dict,
         )
     )
+    return cells
+
+
+def make_assemblies_cells(
+    assembly_section: AssemblySections,
+    last_section: AssemblySections,
+    core_desc: CoreDesc,
+    drums: List[RotaryAssemblyLayer],
+    rotary_assembly_desc: RotaryAssemblyDesc,
+    boundary_shape,
+    materials_dict: Dict[str, openmc.Material],
+    other_rotary_assembly_desc: Optional[RotaryAssemblyDesc] = None,
+) -> List[openmc.Cell]:
+    cells = [
+        *make_assemblies_cells_base(
+            assembly_section,
+            last_section,
+            core_desc,
+            drums,
+            rotary_assembly_desc,
+            boundary_shape,
+            materials_dict,
+        )
+    ]
+    if other_rotary_assembly_desc is not None:
+        cells.extend(
+            *make_assemblies_cells_base(
+                assembly_section,
+                last_section,
+                core_desc,
+                drums,
+                other_rotary_assembly_desc,
+                boundary_shape,
+                materials_dict,
+            )
+        )
     return cells

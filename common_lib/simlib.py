@@ -95,7 +95,7 @@ def render_geometry(
     plot.colors = colors
     plot.origin = origin
     plot.show_overlaps = True
-    plot.overlap_color = "blue"
+    plot.overlap_color = "red"
     image = plot.to_ipython_image()
 
     # Save the image to a local file

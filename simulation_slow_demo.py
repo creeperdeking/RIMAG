@@ -1,30 +1,22 @@
-from common_lib.geometry_utils import (
-    AssemblySections,
-    Assembly,
-)
-from common_lib.materials import (
-    make_materials,
-    MaterialChoice,
-    heavy_metals_density,
-)
-from common_lib.geometry import (
-    GeometrySettings,
-)
-from drum_design.drum_geometry import define_drum_geometry
-from drum_design.drums import (
-    calculate_drums_surface_in_core,
-)
-from assemblies import calculate_assembly_thickness
 from common_lib.core import compute_core_desc
-from common_lib.rotary_assembly import RotaryAssemblyDesc
+from common_lib.geometry import GeometrySettings
+from common_lib.geometry_utils import (
+    Assembly,
+    AssemblySections,
+    calculate_assembly_thickness,
+)
 from common_lib.light import radiative_heat_flux_between_plates
+from common_lib.materials import MaterialChoice, heavy_metals_density, make_materials
+from common_lib.rotary_assembly import RotaryAssemblyDesc
 from common_lib.simlib import (
+    make_sim_settings,
     render_geometry,
     run_depletion_sim,
-    make_sim_settings,
     run_sim_with_photovoltaic_tally,
 )
 from drum_design.drum_assemblies import calculate_drums_fuel_volume
+from drum_design.drum_geometry import define_drum_geometry
+from drum_design.drums import calculate_drums_surface_in_core
 
 core_diameter = 50
 core_height = 50
@@ -63,7 +55,16 @@ material_choice = MaterialChoice(
     photovoltaic="Silicon",
 )
 
-drum_assembly = AssemblySections(
+outer_core_layers = AssemblySections(
+    parts=[
+        Assembly(material=material_choice.reflector, thickness=reflector_thickness),
+        Assembly(
+            material=material_choice.neutron_shield, thickness=neutron_shield_thickness
+        ),
+    ],
+)
+
+emitter_assembly = AssemblySections(
     parts=[
         ### Void
         Assembly(
@@ -128,7 +129,7 @@ inner_assembly_unique_parts2 = AssemblySections(
 inner_assembly_unique_parts_complete = AssemblySections(
     parts=[
         *inner_assembly_unique_parts1.parts,
-        *drum_assembly.parts,
+        *emitter_assembly.parts,
         *inner_assembly_unique_parts2.parts,
     ],
 )
@@ -144,8 +145,7 @@ inner_assembly_unique_parts2_thickness = calculate_assembly_thickness(
 core_desc = compute_core_desc(
     core_radius=core_diameter / 2,
     core_height=core_height,
-    reflector_thickness=reflector_thickness,
-    neutron_shield_thickness=neutron_shield_thickness,
+    outer_core_assembly=outer_core_layers,
 )
 
 rotary_assembly_desc = RotaryAssemblyDesc(
@@ -158,49 +158,32 @@ rotary_assembly_desc = RotaryAssemblyDesc(
 geometry_settings = GeometrySettings(
     assembly_section_inner=AssemblySections(
         parts=[
-            *drum_assembly.parts,
+            *emitter_assembly.parts,
             *inner_assembly_unique_parts_complete.parts,
         ],
     ),
-    assembly_section_reflector=AssemblySections(
+    assembly_section_outer_core=AssemblySections(
         parts=[
-            *drum_assembly.parts,
+            *emitter_assembly.parts,
             ### Reflector
             Assembly(
-                material=material_choice.reflector,
                 thickness=inner_assembly_unique_parts1_thickness,
             ),
-            *drum_assembly.parts,
+            *emitter_assembly.parts,
             ### Reflector
             Assembly(
-                material=material_choice.reflector,
-                thickness=inner_assembly_unique_parts2_thickness,
-            ),
-        ],
-    ),
-    assembly_section_absorber=AssemblySections(
-        parts=[
-            *drum_assembly.parts,
-            ### Reflector
-            Assembly(
-                material=material_choice.neutron_shield,
-                thickness=inner_assembly_unique_parts1_thickness,
-            ),
-            *drum_assembly.parts,
-            ### Reflector
-            Assembly(
-                material=material_choice.neutron_shield,
                 thickness=inner_assembly_unique_parts2_thickness,
             ),
         ],
     ),
     assembly_section_last=AssemblySections(
-        parts=[*drum_assembly.parts],
+        parts=[*emitter_assembly.parts],
     ),
     half_assembly=half_assembly,
     core_desc=core_desc,
     rotary_assembly_desc=rotary_assembly_desc,
     material_choice=material_choice,
+    outer_core_layers=outer_core_layers,
 )
 
 
@@ -268,7 +251,7 @@ if render:
         universe,
         universe_radius=(core_desc.outer_core_radius + 50),
         pixels=(2500, 2500),
-        basis="xy",
+        basis="xz",
         origin=(0, 0, 0.0),
         geometry=geometry,
         colors=colors,

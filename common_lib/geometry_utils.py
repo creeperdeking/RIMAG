@@ -1,11 +1,11 @@
 from pydantic import BaseModel
 import openmc
-from typing import List
+from typing import List, Optional
 
 
 class Assembly(BaseModel):
     thickness: float
-    material: str
+    material: Optional[str] = None
     is_fuel: bool = False
 
 
@@ -19,6 +19,10 @@ def create_cylinder(radius: float, height: float, boundary_type: str = "transmis
         & -openmc.ZPlane(z0=height / 2, boundary_type=boundary_type)
         & +openmc.ZPlane(z0=-height / 2, boundary_type=boundary_type)
     )
+
+
+def calculate_assembly_thickness(assembly_section: AssemblySections) -> float:
+    return sum(part.thickness for part in assembly_section.parts)
 
 
 def create_hollow_cylinder(

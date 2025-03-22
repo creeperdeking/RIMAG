@@ -11,7 +11,7 @@ class GeometrySettings(BaseModel):
     rotary_assembly_desc: RotaryAssemblyDesc
     material_choice: MaterialChoice
     assembly_section_inner: AssemblySections
-    assembly_section_reflector: AssemblySections
-    assembly_section_absorber: AssemblySections
+    assembly_section_outer_core: AssemblySections
     assembly_section_last: AssemblySections
+    outer_core_layers: AssemblySections
     half_assembly: bool = False

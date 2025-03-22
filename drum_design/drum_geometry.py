@@ -1,20 +1,90 @@
 import math
-from typing import Dict
+import copy
+from typing import Dict, List, Optional
 
-import numpy as np
 import openmc
-from drum_design.drums import make_drums
 
 from assemblies import (
-    calculate_assembly_thickness,
     get_assemblies_boundaries,
     make_assemblies_cells,
-    make_neutron_shield_assembly_zone_shape,
-    make_reflector_assembly_zone_shape,
 )
+from common_lib.core import CoreDesc
 from common_lib.geometry import GeometrySettings
-from common_lib.geometry_utils import create_cylinder
-from common_lib.rotary_assembly import RotaryAssemblyDesc
+from common_lib.geometry_utils import (
+    AssemblySections,
+    calculate_assembly_thickness,
+    create_cylinder,
+    create_hollow_cylinder,
+)
+from common_lib.rotary_assembly import RotaryAssemblyDesc, RotaryAssemblyLayer
+from drum_design.drums import make_drums
+
+
+def make_outer_core_layers(
+    outer_core_layers: AssemblySections,
+    core_desc: CoreDesc,
+    drum_zone: openmc.Cell,
+    materials_dict: Dict[str, openmc.Material],
+    other_drum_zone: Optional[openmc.Cell] = None,
+) -> List[openmc.Cell]:
+    cells = []
+    current_layer_radius = core_desc.core_radius
+    previous_layer_radius = current_layer_radius
+    for i, layer in enumerate(outer_core_layers.parts):
+        current_layer_radius = current_layer_radius + layer.thickness
+        inner_cylinder = create_cylinder(
+            previous_layer_radius, previous_layer_radius * 2
+        )
+        cylinder = (
+            create_cylinder(current_layer_radius, current_layer_radius * 2)
+            & ~inner_cylinder
+        )
+        cell = openmc.Cell(name=f"outer_core_layer_{layer.material}_{i}")
+        cell.region = cylinder & ~drum_zone
+        if other_drum_zone is not None:
+            cell.region = cell.region & ~other_drum_zone
+        cell.fill = materials_dict[layer.material]
+        cells.append(cell)
+        previous_layer_radius = current_layer_radius
+    return cells
+
+
+def make_assemblies_outer_core(
+    outer_core_layers: AssemblySections,
+    assembly_section: AssemblySections,
+    last_section: AssemblySections,
+    core_desc: CoreDesc,
+    drums: List[RotaryAssemblyLayer],
+    rotary_assembly_desc: RotaryAssemblyDesc,
+    materials_dict: Dict[str, openmc.Material],
+    mirrored_rotary_assembly_desc: Optional[RotaryAssemblyDesc] = None,
+) -> List[openmc.Cell]:
+    cells = []
+    current_layer_radius = core_desc.core_radius
+    previous_layer_radius = current_layer_radius
+    for layer in outer_core_layers.parts:
+        current_layer_radius = current_layer_radius + layer.thickness
+        boundary_shape = create_hollow_cylinder(
+            current_layer_radius, previous_layer_radius, current_layer_radius * 2
+        )
+        temp_assembly_section = copy.deepcopy(assembly_section)
+        for j, assembly_part in enumerate(temp_assembly_section.parts):
+            if assembly_part.material is None:
+                temp_assembly_section.parts[j].material = layer.material
+        cells.extend(
+            make_assemblies_cells(
+                temp_assembly_section,
+                last_section,
+                core_desc,
+                drums,
+                rotary_assembly_desc,
+                boundary_shape,
+                materials_dict,
+                mirrored_rotary_assembly_desc,
+            )
+        )
+        previous_layer_radius = current_layer_radius
+    return cells
 
 
 def define_drum_geometry(
@@ -27,20 +97,13 @@ def define_drum_geometry(
     assembly_thickness = calculate_assembly_thickness(
         geometry_settings.assembly_section_inner
     )
-    assembly_thickness_reflector = calculate_assembly_thickness(
-        geometry_settings.assembly_section_reflector
-    )
-    assembly_thickness_absorber = calculate_assembly_thickness(
-        geometry_settings.assembly_section_absorber
+    outer_core_assembly_thickness = calculate_assembly_thickness(
+        geometry_settings.assembly_section_outer_core
     )
 
-    if not np.isclose(assembly_thickness, assembly_thickness_reflector):
+    if outer_core_assembly_thickness != assembly_thickness:
         raise ValueError(
-            "Inner assembly and reflector sections must have the same thickness"
-        )
-    if not np.isclose(assembly_thickness, assembly_thickness_absorber):
-        raise ValueError(
-            "Inner assembly and absorber sections must have the same thickness"
+            "Outer core assembly thickness must be equal to the assembly thickness"
         )
 
     drums = make_drums(
@@ -49,9 +112,9 @@ def define_drum_geometry(
         assembly_thickness,
         geometry_settings.half_assembly,
     )
-    mirrored_drum_desc = None
+    mirrored_rotary_assembly_desc = None
     if geometry_settings.half_assembly:
-        mirrored_drum_desc = RotaryAssemblyDesc(
+        mirrored_rotary_assembly_desc = RotaryAssemblyDesc(
             assembly_core_distance=-geometry_settings.rotary_assembly_desc.assembly_core_distance,
             assembly_core_margin=geometry_settings.rotary_assembly_desc.assembly_core_margin,
         )
@@ -69,44 +132,34 @@ def define_drum_geometry(
             last_assembly_thickness,
             drums,
             geometry_settings.core_desc,
-            mirrored_drum_desc,
+            mirrored_rotary_assembly_desc,
             geometry_settings.core_desc.outer_core_radius,
         )
 
-    reflector_cylinder = create_cylinder(
-        geometry_settings.core_desc.reflector_radius,
-        geometry_settings.core_desc.reflector_height,
+    outer_core_boundary = create_cylinder(
+        geometry_settings.core_desc.outer_core_radius,
+        geometry_settings.core_desc.outer_core_height,
+    )
+    core_boundary = create_cylinder(
+        geometry_settings.core_desc.core_radius,
+        geometry_settings.core_desc.core_height,
     )
 
-    reflector_shape = ~assemblies_boundary & reflector_cylinder
-    if geometry_settings.half_assembly:
-        reflector_shape = (
-            ~assemblies_boundary & ~assemblies_boundary_other_side & reflector_cylinder
-        )
+    core_fill_region = core_boundary & ~assemblies_boundary
 
-    neutron_shield_cylinder = (
-        -openmc.ZCylinder(
-            r=geometry_settings.core_desc.outer_core_radius,
-        )
-        & -openmc.ZPlane(
-            z0=geometry_settings.core_desc.outer_core_height / 2,
-        )
-        & +openmc.ZPlane(
-            z0=-geometry_settings.core_desc.outer_core_height / 2,
-        )
-    )
-
-    neutron_shield_shape = (
-        ~reflector_cylinder & neutron_shield_cylinder & ~assemblies_boundary
-    )
-    if geometry_settings.half_assembly:
-        neutron_shield_shape = (
-            ~reflector_cylinder
-            & neutron_shield_cylinder
-            & ~assemblies_boundary
-            & ~assemblies_boundary_other_side
-        )
     ### Making Cells
+    core_fill_cell = openmc.Cell(name="core_fill")
+    core_fill_cell.region = core_fill_region
+    core_fill_cell.fill = materials_dict[geometry_settings.material_choice.reflector]
+
+    outer_core_layers_cells = make_outer_core_layers(
+        geometry_settings.outer_core_layers,
+        geometry_settings.core_desc,
+        assemblies_boundary,
+        materials_dict,
+        assemblies_boundary_other_side,
+    )
+
     core_shape = -openmc.ZCylinder(r=geometry_settings.core_desc.core_radius)
     assembly_cells = make_assemblies_cells(
         geometry_settings.assembly_section_inner,
@@ -116,77 +169,19 @@ def define_drum_geometry(
         geometry_settings.rotary_assembly_desc,
         core_shape,
         materials_dict,
-    )
-    assembly_cells_other_side = None
-    if geometry_settings.half_assembly:
-        assembly_cells_other_side = make_assemblies_cells(
-            geometry_settings.assembly_section_inner,
-            geometry_settings.assembly_section_last,
-            geometry_settings.core_desc,
-            drums,
-            mirrored_drum_desc,
-            core_shape,
-            materials_dict,
-        )
-
-    reflector_assembly_shape = make_reflector_assembly_zone_shape(
-        geometry_settings.core_desc
+        mirrored_rotary_assembly_desc if geometry_settings.half_assembly else None,
     )
 
-    assembly_reflector_cells = make_assemblies_cells(
-        geometry_settings.assembly_section_reflector,
+    assembly_outer_core_cells = make_assemblies_outer_core(
+        geometry_settings.outer_core_layers,
+        geometry_settings.assembly_section_outer_core,
         geometry_settings.assembly_section_last,
         geometry_settings.core_desc,
         drums,
         geometry_settings.rotary_assembly_desc,
-        reflector_assembly_shape,
         materials_dict,
+        mirrored_rotary_assembly_desc if geometry_settings.half_assembly else None,
     )
-    assembly_reflector_cells_other_side = None
-    if geometry_settings.half_assembly:
-        assembly_reflector_cells_other_side = make_assemblies_cells(
-            geometry_settings.assembly_section_reflector,
-            geometry_settings.assembly_section_last,
-            geometry_settings.core_desc,
-            drums,
-            mirrored_drum_desc,
-            reflector_assembly_shape,
-            materials_dict,
-        )
-
-    neutron_shield_assembly_shape = make_neutron_shield_assembly_zone_shape(
-        geometry_settings.core_desc
-    )
-    assembly_absorber_cells = make_assemblies_cells(
-        geometry_settings.assembly_section_absorber,
-        geometry_settings.assembly_section_last,
-        geometry_settings.core_desc,
-        drums,
-        geometry_settings.rotary_assembly_desc,
-        neutron_shield_assembly_shape,
-        materials_dict,
-    )
-    assembly_absorber_cells_other_side = None
-    if geometry_settings.half_assembly:
-        assembly_absorber_cells_other_side = make_assemblies_cells(
-            geometry_settings.assembly_section_absorber,
-            geometry_settings.assembly_section_last,
-            geometry_settings.core_desc,
-            drums,
-            mirrored_drum_desc,
-            neutron_shield_assembly_shape,
-            materials_dict,
-        )
-
-    reflector = openmc.Cell(name="reflector")
-    reflector.fill = materials_dict[geometry_settings.material_choice.reflector]
-    reflector.region = reflector_shape
-
-    neutron_shield = openmc.Cell(name="neutron_shield")
-    neutron_shield.fill = materials_dict[
-        geometry_settings.material_choice.neutron_shield
-    ]
-    neutron_shield.region = neutron_shield_shape
 
     ### Define outer drum zone for solar cells tallies
     photovoltaic_slice = (
@@ -231,7 +226,7 @@ def define_drum_geometry(
                 boundary_type="vacuum",
             )
         )
-        & ~neutron_shield_cylinder
+        & ~outer_core_boundary
         & ~photovoltaic_slice
     )
 
@@ -242,21 +237,9 @@ def define_drum_geometry(
     universe = openmc.Universe(
         cells=[
             *assembly_cells,
-            *(assembly_cells_other_side if geometry_settings.half_assembly else []),
-            *assembly_reflector_cells,
-            *(
-                assembly_reflector_cells_other_side
-                if geometry_settings.half_assembly
-                else []
-            ),
-            *assembly_absorber_cells,
-            *(
-                assembly_absorber_cells_other_side
-                if geometry_settings.half_assembly
-                else []
-            ),
-            reflector,
-            neutron_shield,
+            *assembly_outer_core_cells,
+            *outer_core_layers_cells,
+            core_fill_cell,
             outer_drum_zone_cell,
             photovoltaic_cell,
         ]
