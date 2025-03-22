@@ -40,7 +40,7 @@ hot_temp = 2000 + 273
 cold_temp = 1800 + 273
 
 reflector_thickness = 30
-neutron_shield_thickness = 60
+neutron_shield_thickness = 40
 
 u235_enrichment = 9.5 / 100
 fuel_hm_density = 0.25
@@ -49,7 +49,7 @@ render = False
 keff_simulation = True
 depletion_sim = False
 
-batches = 15000
+batches = 1500
 
 material_choice = MaterialChoice(
     moderator="Light Water",
