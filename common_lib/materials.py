@@ -30,7 +30,7 @@ class MaterialChoice(BaseModel):
     reflector: str
     fuel: str
     moderator_cladding: str
-    drum: str
+    emitter: str
     fuel_cladding: str
     void: str
     photovoltaic: str

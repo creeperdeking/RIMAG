@@ -1,9 +1,4 @@
-from typing import List, Optional, Dict
-import openmc
-
-from pydantic import BaseModel
-
-from materials import (
+from common_lib.materials import (
     create_volumic_blend,
     Material,
     AtomProportion,

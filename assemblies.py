@@ -2,16 +2,12 @@ from typing import List, Dict
 
 import openmc
 
-from geometry_utils import (
+from common_lib.geometry_utils import (
     AssemblySections,
     create_hollow_cylinder,
 )
-from drum_design.drums import (
-    CoreDesc,
-    DrumLayer,
-    DrumDesc,
-    calculate_drums_surface_in_core,
-)
+from common_lib.rotary_assembly import RotaryAssemblyDesc, RotaryAssemblyLayer
+from common_lib.core import CoreDesc
 
 
 def calculate_assembly_thickness(assembly_section: AssemblySections) -> float:
@@ -19,14 +15,13 @@ def calculate_assembly_thickness(assembly_section: AssemblySections) -> float:
 
 
 def get_assemblies_boundaries(
-    assembly_thickness: float,
     last_assembly_thickness: float,
-    drums: List[DrumLayer],
+    drums: List[RotaryAssemblyLayer],
     core_desc: CoreDesc,
-    drums_desc: DrumDesc,
+    drums_desc: RotaryAssemblyDesc,
     outer_core_radius: float,
 ):
-    distance_from_core = drums_desc.drum_core_distance
+    distance_from_core = drums_desc.assembly_core_distance
     drum_height = core_desc.core_height
     fist_assembly_radius = drums[0].radius
     last_assembly_radius = drums[-1].radius - last_assembly_thickness
@@ -44,41 +39,11 @@ def get_assemblies_boundaries(
     return assemblies_boundary
 
 
-def calculate_fuel_volume(
-    drum_desc: DrumDesc,
-    core_desc: CoreDesc,
-    assembly_section: AssemblySections,
-    drums: List[DrumLayer],
-    half_drum: bool = False,
-) -> float:
-    fuel_radius_offset = 0
-    fuel_thickness = 0
-    for assembly_part in assembly_section.parts:
-        if assembly_part.is_fuel:
-            fuel_thickness = assembly_part.thickness
-            break
-
-        fuel_radius_offset += assembly_part.thickness
-
-    fuel_drums = []
-
-    for drum in drums:
-        fuel_radius = drum.radius - fuel_radius_offset
-        fuel_drums.append(DrumLayer(radius=fuel_radius, number=drum.number))
-
-    fuel_volume = (
-        calculate_drums_surface_in_core(fuel_drums, drum_desc, core_desc)
-        * fuel_thickness
-    ) * (2 if half_drum else 1)
-
-    return fuel_volume
-
-
 def create_assembly_cells(
     assembly_section: AssemblySections,
     core_desc: CoreDesc,
-    drum: DrumLayer,
-    drum_desc: DrumDesc,
+    drum: RotaryAssemblyLayer,
+    drum_desc: RotaryAssemblyDesc,
     boundary_shape,
     materials_dict: Dict[str, openmc.Material],
 ) -> List[openmc.Cell]:
@@ -92,7 +57,7 @@ def create_assembly_cells(
                 current_radius,
                 current_radius - assembly_part.thickness,
                 drum_height,
-                distance_from_origin=drum_desc.drum_core_distance,
+                distance_from_origin=drum_desc.assembly_core_distance,
             )
             & boundary_shape
         )
@@ -126,8 +91,8 @@ def make_assemblies_cells(
     assembly_section: AssemblySections,
     last_section: AssemblySections,
     core_desc: CoreDesc,
-    drums: List[DrumLayer],
-    drum_desc: DrumDesc,
+    drums: List[RotaryAssemblyLayer],
+    drum_desc: RotaryAssemblyDesc,
     boundary_shape,
     materials_dict: Dict[str, openmc.Material],
 ) -> List[openmc.Cell]:

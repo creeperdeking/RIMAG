@@ -6,7 +6,7 @@ import pytime
 from typing import List, Dict
 from tabulate import tabulate
 import scipy.constants as cst
-from materials import MaterialChoice
+from common_lib.materials import MaterialChoice
 
 
 def clean_directory():

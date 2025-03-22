@@ -1,30 +1,30 @@
-from geometry_utils import (
+from common_lib.geometry_utils import (
     AssemblySections,
     Assembly,
 )
-from materials import (
+from common_lib.materials import (
     make_materials,
     MaterialChoice,
     heavy_metals_density,
 )
 from common_lib.geometry import (
-    define_geometry,
-    calculate_assembly_thickness,
     GeometrySettings,
 )
+from drum_design.drum_geometry import define_drum_geometry
 from drum_design.drums import (
     calculate_drums_surface_in_core,
-    radiative_heat_flux_between_plates,
-    DrumDesc,
-    compute_core_desc,
 )
-from simlib import (
+from assemblies import calculate_assembly_thickness
+from common_lib.core import compute_core_desc
+from common_lib.rotary_assembly import RotaryAssemblyDesc
+from common_lib.light import radiative_heat_flux_between_plates
+from common_lib.simlib import (
     render_geometry,
     run_depletion_sim,
     make_sim_settings,
     run_sim_with_photovoltaic_tally,
 )
-from assemblies import calculate_fuel_volume
+from drum_design.drum_assemblies import calculate_drums_fuel_volume
 
 core_diameter = 50
 core_height = 50
@@ -34,7 +34,7 @@ fuel_thickness = 0.25
 moderator_thickness = fuel_thickness / 0.3
 fuel_drum_gap = 0.09
 drum_thickness = 0.01
-half_drum = False
+half_assembly = False
 
 hot_temp = 2000 + 273
 cold_temp = 1800 + 273
@@ -57,7 +57,7 @@ material_choice = MaterialChoice(
     reflector="Graphite",
     fuel="TRISO",
     moderator_cladding="Aluminum",
-    drum="Graphite",
+    emitter="Graphite",
     fuel_cladding="Silicon Carbide",
     void="Void",
     photovoltaic="Silicon",
@@ -72,7 +72,7 @@ drum_assembly = AssemblySections(
         ),
         ### Drum
         Assembly(
-            material=material_choice.drum,
+            material=material_choice.emitter,
             thickness=drum_thickness,
         ),
         ### Void
@@ -148,11 +148,11 @@ core_desc = compute_core_desc(
     neutron_shield_thickness=neutron_shield_thickness,
 )
 
-drum_desc = DrumDesc(
-    drum_core_distance=core_desc.core_radius
+rotary_assembly_desc = RotaryAssemblyDesc(
+    assembly_core_distance=core_desc.core_radius
     + (core_desc.outer_core_radius - core_desc.core_radius) / 2
     + 3,
-    drum_core_margin_outer=1,
+    assembly_core_margin=1,
 )
 
 geometry_settings = GeometrySettings(
@@ -197,9 +197,9 @@ geometry_settings = GeometrySettings(
     assembly_section_last=AssemblySections(
         parts=[*drum_assembly.parts],
     ),
-    half_drum=half_drum,
+    half_assembly=half_assembly,
     core_desc=core_desc,
-    drum_desc=drum_desc,
+    rotary_assembly_desc=rotary_assembly_desc,
     material_choice=material_choice,
 )
 
@@ -207,23 +207,23 @@ geometry_settings = GeometrySettings(
 materials_dict, materials_def, colors = make_materials(u235_enrichment, material_choice)
 
 geometry, universe, drums, photovoltaic_cell, photovoltaic_slice_volume = (
-    define_geometry(geometry_settings, materials_dict)
+    define_drum_geometry(geometry_settings, materials_dict)
 )
 
-fuel_volume = calculate_fuel_volume(
-    drum_desc=drum_desc,
+fuel_volume = calculate_drums_fuel_volume(
+    drum_desc=rotary_assembly_desc,
     core_desc=core_desc,
     assembly_section=geometry_settings.assembly_section_inner,
     drums=drums,
-    half_drum=half_drum,
+    half_assembly=half_assembly,
 )
 
 materials_dict[material_choice.fuel].volume = fuel_volume
 
 # multiply by 2 because each drum section has two faces exposed to the fuel, and then by 2 again if there are two drum assemblies
 emissive_surface = (
-    (calculate_drums_surface_in_core(drums, drum_desc, core_desc) / 10000)
-    * (2 if half_drum else 1)
+    (calculate_drums_surface_in_core(drums, rotary_assembly_desc, core_desc) / 10000)
+    * (2 if half_assembly else 1)
     * 2
 )
 
@@ -240,7 +240,7 @@ print(
 )
 print(core_desc)
 print("biggest drum radius", drums[0].radius)
-print("half drum", half_drum)
+print("half drum", half_assembly)
 print("emissive_surface", round(emissive_surface, 2), "m2")
 print(
     "Radiative flux",
