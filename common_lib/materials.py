@@ -330,7 +330,7 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
                 AtomProportion(atom=atoms["C"]),
             ],
             density=2.52,
-            color="red",
+            color="lightgray",
         ),
         "Molybdenum": Material(
             composition=[AtomProportion(atom=atoms["Mo"])],

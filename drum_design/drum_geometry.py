@@ -6,9 +6,8 @@ import openmc
 from assemblies import (
     get_assemblies_boundaries,
     make_assemblies_cells,
-    make_assemblies_outer_core,
     make_outer_core_layers,
-    create_outer_core_assembly_section,
+    define_emitter_boundary,
 )
 from common_lib.geometry import GeometrySettings
 from common_lib.geometry_utils import (
@@ -26,18 +25,16 @@ def define_drum_geometry(
         geometry_settings.assembly_section_core
     )
 
-    outer_core_assembly_section = create_outer_core_assembly_section(
-        geometry_settings.assembly_section_core
-    )
-
     drums = make_drums(
         geometry_settings,
         assembly_thickness,
     )
 
-    assemblies_boundary = get_assemblies_boundaries(
-        geometry_settings,
+    emitter_boundary = define_emitter_boundary(
+        geometry_settings.assembly_section_core,
         drums,
+        geometry_settings.core_desc,
+        geometry_settings.rotary_assembly_desc,
     )
 
     outer_core_boundary = create_cylinder(
@@ -49,7 +46,9 @@ def define_drum_geometry(
         geometry_settings.core_desc.core_height,
     )
 
-    core_fill_region = core_boundary & ~assemblies_boundary
+    core_fill_region = core_boundary & ~get_assemblies_boundaries(
+        geometry_settings, drums, assembly_thickness
+    )
 
     ### Making Cells
     core_fill_cell = openmc.Cell(name="core_fill")
@@ -59,7 +58,7 @@ def define_drum_geometry(
     outer_core_layers_cells = make_outer_core_layers(
         geometry_settings.outer_core_layers,
         geometry_settings.core_desc,
-        assemblies_boundary,
+        emitter_boundary,
         materials_dict,
     )
 
@@ -71,13 +70,6 @@ def define_drum_geometry(
         double_assembly=geometry_settings.double_assembly,
         boundary_shape=core_boundary,
         materials_dict=materials_dict,
-    )
-
-    outer_core_assembly_cells = make_assemblies_outer_core(
-        geometry_settings,
-        drums,
-        materials_dict,
-        outer_core_assembly_section,
     )
 
     ### Define outer drum zone for solar cells tallies
@@ -92,7 +84,7 @@ def define_drum_geometry(
         & +openmc.ZPlane(
             z0=-geometry_settings.core_desc.core_height / 2,
         )
-    )
+    ) & ~emitter_boundary
 
     photovoltaic_slice_volume = (
         math.pi
@@ -125,17 +117,16 @@ def define_drum_geometry(
         )
         & ~outer_core_boundary
         & ~photovoltaic_slice
+        & ~emitter_boundary
     )
 
     outer_drum_zone_cell = openmc.Cell(name="outer_drum_zone")
     outer_drum_zone_cell.region = outer_drum_zone
     outer_drum_zone_cell.fill = materials_dict[geometry_settings.material_choice.void]
-    print(outer_core_assembly_section)
 
     universe = openmc.Universe(
         cells=[
             *core_assembly_cells,
-            *outer_core_assembly_cells,
             *outer_core_layers_cells,
             core_fill_cell,
             outer_drum_zone_cell,

@@ -25,16 +25,12 @@ class BoundariesGeometrySettings:
 def get_assemblies_boundaries(
     geometry_settings: BoundariesGeometrySettings,
     drums: List[RotaryAssemblyLayer],
+    assembly_thickness: float,
 ) -> openmc.Cell:
-    last_assembly_thickness = calculate_assembly_thickness(
-        geometry_settings.emitter_assembly
-    )
-    fist_assembly_radius = drums[0].radius
-    last_assembly_radius = drums[-1].radius - last_assembly_thickness
 
     assemblies_boundary = create_hollow_cylinder(
-        fist_assembly_radius,
-        last_assembly_radius,
+        drums[0].radius,
+        drums[-1].radius - assembly_thickness,
         geometry_settings.core_desc.core_height,
         distance_from_origin=geometry_settings.rotary_assembly_desc.assembly_core_distance,
     ) & -openmc.ZCylinder(
@@ -44,8 +40,8 @@ def get_assemblies_boundaries(
 
     if geometry_settings.double_assembly:
         assemblies_boundary = assemblies_boundary | create_hollow_cylinder(
-            fist_assembly_radius,
-            last_assembly_radius,
+            drums[0].radius,
+            drums[-1].radius - assembly_thickness,
             geometry_settings.core_desc.core_height,
             distance_from_origin=-geometry_settings.rotary_assembly_desc.assembly_core_distance,
         ) & -openmc.ZCylinder(
@@ -106,7 +102,7 @@ def make_assemblies_cells_base(
     materials_dict: Dict[str, openmc.Material],
 ) -> List[openmc.Cell]:
     cells = []
-    for drum in drums[:-1]:
+    for drum in drums:
         cells.extend(
             create_assembly_cells(
                 assembly_section,
@@ -157,46 +153,41 @@ def make_assemblies_cells(
     return cells
 
 
-def make_assemblies_outer_core(
-    geometry_settings: GeometrySettings,
+def define_emitter_boundary(
+    assembly_section: AssemblySections,
     drums: List[RotaryAssemblyLayer],
-    materials_dict: Dict[str, openmc.Material],
-    outer_core_assembly_section: AssemblySections,
-) -> List[openmc.Cell]:
-    cells = []
-    current_layer_radius = geometry_settings.core_desc.core_radius
-    previous_layer_radius = current_layer_radius
-    for layer in geometry_settings.outer_core_layers.parts:
-        current_layer_radius = current_layer_radius + layer.thickness
-        boundary_shape = create_hollow_cylinder(
-            current_layer_radius, previous_layer_radius, current_layer_radius * 2
-        )
-        temp_assembly_section = copy.deepcopy(outer_core_assembly_section)
-        for j, assembly_part in enumerate(temp_assembly_section.parts):
-            if not assembly_part.is_emitter and assembly_part.material is None:
-                print(layer.material)
-                temp_assembly_section.parts[j].material = layer.material
-        cells.extend(
-            make_assemblies_cells(
-                assembly_section=temp_assembly_section,
-                core_desc=geometry_settings.core_desc,
-                drums=drums,
-                rotary_assembly_desc=geometry_settings.rotary_assembly_desc,
-                double_assembly=geometry_settings.double_assembly,
-                boundary_shape=boundary_shape,
-                materials_dict=materials_dict,
-            )
-        )
-        previous_layer_radius = current_layer_radius
-    return cells
+    core_desc: CoreDesc,
+    drum_desc: RotaryAssemblyDesc,
+) -> openmc.Intersection:
+    outer_core_assembly_section = create_outer_core_assembly_section(assembly_section)
+    boundary_shape = None
+    for drum in drums:
+        curent_radius = drum.radius
+        for assembly_part in outer_core_assembly_section.parts:
+            if assembly_part.is_emitter:
+                additional_boundary_shape = create_hollow_cylinder(
+                    curent_radius,
+                    curent_radius - assembly_part.thickness,
+                    core_desc.core_height,
+                    distance_from_origin=drum_desc.assembly_core_distance,
+                )
+                boundary_shape = (
+                    additional_boundary_shape
+                    if boundary_shape is None
+                    else boundary_shape | additional_boundary_shape
+                )
+            curent_radius -= assembly_part.thickness
+
+    return boundary_shape
 
 
 def make_outer_core_layers(
     outer_core_layers: AssemblySections,
     core_desc: CoreDesc,
-    drum_zone: openmc.Cell,
+    emitter_boundary: openmc.Cell,
     materials_dict: Dict[str, openmc.Material],
 ) -> List[openmc.Cell]:
+
     cells = []
     current_layer_radius = core_desc.core_radius
     previous_layer_radius = current_layer_radius
@@ -210,7 +201,7 @@ def make_outer_core_layers(
             & ~core_cylinder
         )
         cell = openmc.Cell(name=f"outer_core_layer_{layer.material}_{i}")
-        cell.region = cylinder & ~drum_zone
+        cell.region = cylinder & ~emitter_boundary
         cell.fill = materials_dict[layer.material]
         cells.append(cell)
         previous_layer_radius = current_layer_radius

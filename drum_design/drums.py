@@ -55,6 +55,10 @@ def make_drums(
     geometry_settings: DrumsGeometrySettings,
     distance_between_drums: float,
 ) -> List[RotaryAssemblyLayer]:
+    core_boundary_drum_radius = (
+        geometry_settings.rotary_assembly_desc.assembly_core_distance
+        - geometry_settings.core_desc.core_radius
+    )
     outer_drum_radius = (
         geometry_settings.rotary_assembly_desc.assembly_core_distance
         + geometry_settings.core_desc.core_radius
@@ -67,13 +71,14 @@ def make_drums(
         )
     drum_radiuses = [outer_drum_radius]
 
+    assembly_core_distance = outer_drum_radius - core_boundary_drum_radius
+
     while (
-        geometry_settings.core_desc.core_radius
-        + drum_radiuses[-1]
-        - geometry_settings.rotary_assembly_desc.assembly_core_distance
-        - distance_between_drums
-    ) >= geometry_settings.rotary_assembly_desc.assembly_core_margin:
+        assembly_core_distance - distance_between_drums
+    ) > geometry_settings.rotary_assembly_desc.assembly_core_margin:
         drum_radiuses.append(drum_radiuses[-1] - distance_between_drums)
+        assembly_core_distance -= distance_between_drums
+
     return [
         RotaryAssemblyLayer(
             radius=drum_radius,

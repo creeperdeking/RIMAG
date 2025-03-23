@@ -46,7 +46,7 @@ batches = 1500
 
 material_choice = MaterialChoice(
     moderator="Light Water",
-    neutron_shield="Zirconium Hydride Boron",
+    neutron_shield="Boron Carbide",
     reflector="Graphite",
     fuel="TRISO",
     moderator_cladding="Aluminum",
