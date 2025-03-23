@@ -13,7 +13,8 @@ from common_lib.simlib import (
     make_sim_settings,
     render_geometry,
     run_depletion_sim,
-    run_sim_with_photovoltaic_tally,
+    run_keff_sim,
+    # run_sim_with_photovoltaic_tally,
 )
 from drum_design.drum_assemblies import calculate_drums_fuel_volume
 from drum_design.drum_geometry import define_drum_geometry
@@ -102,6 +103,35 @@ rotary_assembly_desc = RotaryAssemblyDesc(
     assembly_core_margin=1,
 )
 
+
+assembly_section_photovoltaic = AssemblySections(
+    parts=[
+        ### Emitter Assembly
+        emitter_assembly_placeholder,
+        ### Photovoltaic
+        Assembly(
+            material=material_choice.photovoltaic, thickness=0.02, is_fuel=True
+        ),  # is_fuel is set to True to make the volume calculation work
+        ### Cladding
+        Assembly(material="Aluminum", thickness=moderator_cladding_thickness),
+        ### Water
+        Assembly(material="Light Water", thickness=moderator_thickness - 0.02 * 2),
+        ### Cladding
+        Assembly(material="Aluminum", thickness=moderator_cladding_thickness),
+        ### Photovoltaic
+        Assembly(
+            material=material_choice.photovoltaic, thickness=0.02, is_fuel=True
+        ),  # is_fuel is set to True to make the volume calculation work
+        ### Emitter Assembly
+        emitter_assembly_placeholder,
+        ### Void
+        Assembly(
+            material="Void", thickness=fuel_cladding_thickness * 2 + fuel_thickness
+        ),
+    ]
+)
+
+
 geometry_settings = GeometrySettings(
     assembly_section_core=AssemblySections(
         parts=[
@@ -142,6 +172,7 @@ geometry_settings = GeometrySettings(
             ),
         ],
     ),
+    photovoltaic_assembly=assembly_section_photovoltaic,
     emitter_assembly=emitter_assembly,
     double_assembly=half_assembly,
     core_desc=core_desc,
@@ -153,8 +184,18 @@ geometry_settings = GeometrySettings(
 
 materials_dict, materials_def, colors = make_materials(u235_enrichment, material_choice)
 
-geometry, universe, drums, photovoltaic_cell, photovoltaic_slice_volume = (
-    define_drum_geometry(geometry_settings, materials_dict)
+# geometry, universe, drums, photovoltaic_cell, photovoltaic_slice_volume = (
+#    define_drum_geometry(geometry_settings, materials_dict)
+# )
+
+geometry, universe, drums = define_drum_geometry(geometry_settings, materials_dict)
+
+photovolatic_volume = calculate_drums_fuel_volume(
+    drum_desc=rotary_assembly_desc,
+    core_desc=core_desc,
+    assembly_section=geometry_settings.assembly_section_core,
+    drums=drums,
+    half_assembly=half_assembly,
 )
 
 fuel_volume = calculate_drums_fuel_volume(
@@ -215,7 +256,7 @@ if render:
         universe,
         universe_radius=(core_desc.outer_core_radius + 50),
         pixels=(2500, 2500),
-        basis="xy",
+        basis="xz",
         origin=(0, 0, 0.0),
         geometry=geometry,
         colors=colors,
@@ -225,15 +266,16 @@ if render:
 settings = make_sim_settings(deterministic=True, batches=batches)
 
 if keff_simulation:
-    run_sim_with_photovoltaic_tally(
-        geometry,
-        settings,
-        materials_dict,
-        photovoltaic_cell,
-        core_power,
-        photovoltaic_slice_volume,
-        batches,
-    )
+    run_keff_sim(geometry, settings, materials_dict)
+    # run_sim_with_photovoltaic_tally(
+    #     geometry,
+    #     settings,
+    #     materials_dict,
+    #     photovoltaic_cell,
+    #     core_power,
+    #     photovoltaic_slice_volume,
+    #     batches,
+    # )
 
 if depletion_sim:
     run_depletion_sim(

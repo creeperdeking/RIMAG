@@ -14,3 +14,4 @@ class GeometrySettings(BaseModel):
     outer_core_layers: AssemblySections
     double_assembly: bool = False
     emitter_assembly: AssemblySections
+    photovoltaic_assembly: AssemblySections

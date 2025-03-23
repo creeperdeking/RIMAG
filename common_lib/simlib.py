@@ -68,7 +68,7 @@ def make_sim_settings(
     return settings
 
 
-def criticality_simulation(
+def run_keff_sim(
     geometry: openmc.Geometry,
     settings: openmc.Settings,
     materials_dict: Dict[str, openmc.Material],

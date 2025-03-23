@@ -8,6 +8,7 @@ from assemblies import (
     make_assemblies_cells,
     make_outer_core_layers,
     define_emitter_boundary,
+    define_photovoltaic_boundary,
 )
 from common_lib.geometry import GeometrySettings
 from common_lib.geometry_utils import (
@@ -24,6 +25,13 @@ def define_drum_geometry(
     assembly_thickness = calculate_assembly_thickness(
         geometry_settings.assembly_section_core
     )
+    photovoltaic_assembly_thickness = calculate_assembly_thickness(
+        geometry_settings.photovoltaic_assembly
+    )
+    if assembly_thickness - photovoltaic_assembly_thickness > 1e-6:
+        raise ValueError(
+            f"Assembly thickness and photovoltaic assembly thickness must be the same. Assembly thickness: {assembly_thickness}, Photovoltaic assembly thickness: {photovoltaic_assembly_thickness}"
+        )
 
     drums = make_drums(
         geometry_settings,
@@ -45,15 +53,27 @@ def define_drum_geometry(
         geometry_settings.core_desc.core_radius,
         geometry_settings.core_desc.core_height,
     )
+    photovoltaic_boundary = define_photovoltaic_boundary(
+        geometry_settings.core_desc,
+        geometry_settings.rotary_assembly_desc.assembly_core_distance,
+        geometry_settings.double_assembly,
+    )
 
-    core_fill_region = core_boundary & ~get_assemblies_boundaries(
+    assemblies_boundary = get_assemblies_boundaries(
         geometry_settings, drums, assembly_thickness
     )
+
+    core_fill_region = core_boundary & ~assemblies_boundary
+    photovoltaic_fill_region = photovoltaic_boundary & ~assemblies_boundary
 
     ### Making Cells
     core_fill_cell = openmc.Cell(name="core_fill")
     core_fill_cell.region = core_fill_region
     core_fill_cell.fill = materials_dict[geometry_settings.material_choice.reflector]
+
+    photovoltaic_fill_cell = openmc.Cell(name="photovoltaic_fill")
+    photovoltaic_fill_cell.region = photovoltaic_fill_region
+    photovoltaic_fill_cell.fill = materials_dict[geometry_settings.material_choice.void]
 
     outer_core_layers_cells = make_outer_core_layers(
         geometry_settings.outer_core_layers,
@@ -72,38 +92,21 @@ def define_drum_geometry(
         materials_dict=materials_dict,
     )
 
-    ### Define outer drum zone for solar cells tallies
-    photovoltaic_slice = (
-        -openmc.ZCylinder(
-            r=geometry_settings.core_desc.core_radius,
-            x0=geometry_settings.rotary_assembly_desc.assembly_core_distance * 2,
-        )
-        & -openmc.ZPlane(
-            z0=geometry_settings.core_desc.core_height / 2,
-        )
-        & +openmc.ZPlane(
-            z0=-geometry_settings.core_desc.core_height / 2,
-        )
-    ) & ~emitter_boundary
-
-    photovoltaic_slice_volume = (
-        math.pi
-        * (geometry_settings.core_desc.core_radius**2)
-        * geometry_settings.core_desc.core_height
+    photovoltaic_assembly_cells = make_assemblies_cells(
+        assembly_section=geometry_settings.photovoltaic_assembly,
+        core_desc=geometry_settings.core_desc,
+        drums=drums,
+        rotary_assembly_desc=geometry_settings.rotary_assembly_desc,
+        double_assembly=geometry_settings.double_assembly,
+        boundary_shape=photovoltaic_boundary,
+        materials_dict=materials_dict,
     )
-
-    photovoltaic_cell = openmc.Cell(name="photovoltaic")
-    photovoltaic_cell.region = photovoltaic_slice
-    photovoltaic_cell.fill = materials_dict[
-        geometry_settings.material_choice.photovoltaic
-    ]
 
     outer_drum_zone = (
         (
             -openmc.ZCylinder(
                 r=drums[0].radius
                 + geometry_settings.rotary_assembly_desc.assembly_core_distance,
-                # x0=geometry_settings.drum_desc.drum_core_distance,
                 boundary_type="vacuum",
             )
             & -openmc.ZPlane(
@@ -116,7 +119,7 @@ def define_drum_geometry(
             )
         )
         & ~outer_core_boundary
-        & ~photovoltaic_slice
+        & ~photovoltaic_boundary
         & ~emitter_boundary
     )
 
@@ -128,9 +131,10 @@ def define_drum_geometry(
         cells=[
             *core_assembly_cells,
             *outer_core_layers_cells,
+            *photovoltaic_assembly_cells,
             core_fill_cell,
             outer_drum_zone_cell,
-            photovoltaic_cell,
+            photovoltaic_fill_cell,
         ]
     )
 
@@ -138,6 +142,4 @@ def define_drum_geometry(
         openmc.Geometry(universe),
         universe,
         drums,
-        photovoltaic_cell,
-        photovoltaic_slice_volume,
     )

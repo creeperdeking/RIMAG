@@ -19,9 +19,16 @@ class AssemblySections(BaseModel):
     parts: List[Assembly | EmitterPlaceholder]
 
 
-def create_cylinder(radius: float, height: float, boundary_type: str = "transmission"):
+def create_cylinder(
+    radius: float,
+    height: float,
+    distance_from_origin: float = 0,
+    boundary_type: str = "transmission",
+):
     return (
-        -openmc.ZCylinder(r=radius, boundary_type=boundary_type)
+        -openmc.ZCylinder(
+            r=radius, x0=distance_from_origin, y0=0, boundary_type=boundary_type
+        )
         & -openmc.ZPlane(z0=height / 2, boundary_type=boundary_type)
         & +openmc.ZPlane(z0=-height / 2, boundary_type=boundary_type)
     )

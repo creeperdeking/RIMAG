@@ -33,9 +33,6 @@ def get_assemblies_boundaries(
         drums[-1].radius - assembly_thickness,
         geometry_settings.core_desc.core_height,
         distance_from_origin=geometry_settings.rotary_assembly_desc.assembly_core_distance,
-    ) & -openmc.ZCylinder(
-        r=geometry_settings.core_desc.outer_core_radius,
-        boundary_type="vacuum",
     )
 
     if geometry_settings.double_assembly:
@@ -44,9 +41,6 @@ def get_assemblies_boundaries(
             drums[-1].radius - assembly_thickness,
             geometry_settings.core_desc.core_height,
             distance_from_origin=-geometry_settings.rotary_assembly_desc.assembly_core_distance,
-        ) & -openmc.ZCylinder(
-            r=geometry_settings.core_desc.outer_core_radius,
-            boundary_type="vacuum",
         )
     return assemblies_boundary
 
@@ -151,6 +145,25 @@ def make_assemblies_cells(
             )
         )
     return cells
+
+
+def define_photovoltaic_boundary(
+    core_desc: CoreDesc,
+    assembly_core_distance: float,
+    double_assembly: bool,
+) -> openmc.Intersection:
+    boundary_shape = create_cylinder(
+        core_desc.core_radius,
+        core_desc.core_height,
+        distance_from_origin=assembly_core_distance * 2,
+    )
+    if double_assembly:
+        boundary_shape = boundary_shape | create_cylinder(
+            core_desc.core_radius,
+            core_desc.core_height,
+            distance_from_origin=-assembly_core_distance * 2,
+        )
+    return boundary_shape
 
 
 def define_emitter_boundary(
