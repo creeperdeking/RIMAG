@@ -179,7 +179,7 @@ geometry_settings = GeometrySettings(
     assembly_section_last=AssemblySections(
         parts=[*emitter_assembly.parts],
     ),
-    half_assembly=half_assembly,
+    double_assembly=half_assembly,
     core_desc=core_desc,
     rotary_assembly_desc=rotary_assembly_desc,
     material_choice=material_choice,

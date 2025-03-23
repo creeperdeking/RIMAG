@@ -14,7 +14,6 @@ from common_lib.geometry_utils import (
     calculate_assembly_thickness,
     create_cylinder,
 )
-from common_lib.rotary_assembly import RotaryAssemblyDesc
 from drum_design.drums import make_drums
 
 
@@ -35,22 +34,13 @@ def define_drum_geometry(
         )
 
     drums = make_drums(
-        geometry_settings.rotary_assembly_desc,
-        geometry_settings.core_desc.core_radius,
+        geometry_settings,
         assembly_thickness,
-        geometry_settings.half_assembly,
     )
-    mirrored_rotary_assembly_desc = None
-    if geometry_settings.half_assembly:
-        mirrored_rotary_assembly_desc = RotaryAssemblyDesc(
-            assembly_core_distance=-geometry_settings.rotary_assembly_desc.assembly_core_distance,
-            assembly_core_margin=geometry_settings.rotary_assembly_desc.assembly_core_margin,
-        )
 
     assemblies_boundary = get_assemblies_boundaries(
         geometry_settings,
         drums,
-        mirrored_rotary_assembly_desc,
     )
 
     outer_core_boundary = create_cylinder(
@@ -76,22 +66,17 @@ def define_drum_geometry(
         materials_dict,
     )
 
-    assembly_cells = make_core_assemblies_cells(
-        geometry_settings.assembly_section_core,
-        geometry_settings.assembly_section_last,
-        geometry_settings.core_desc,
+    core_assembly_cells = make_core_assemblies_cells(
+        geometry_settings,
         drums,
-        geometry_settings.rotary_assembly_desc,
         core_boundary,
         materials_dict,
-        mirrored_rotary_assembly_desc if geometry_settings.half_assembly else None,
     )
 
-    assembly_outer_core_cells = make_assemblies_outer_core(
+    outer_core_assembly_cells = make_assemblies_outer_core(
         geometry_settings,
         drums,
         materials_dict,
-        mirrored_rotary_assembly_desc if geometry_settings.half_assembly else None,
     )
 
     ### Define outer drum zone for solar cells tallies
@@ -147,8 +132,8 @@ def define_drum_geometry(
 
     universe = openmc.Universe(
         cells=[
-            *assembly_cells,
-            *assembly_outer_core_cells,
+            *core_assembly_cells,
+            *outer_core_assembly_cells,
             *outer_core_layers_cells,
             core_fill_cell,
             outer_drum_zone_cell,

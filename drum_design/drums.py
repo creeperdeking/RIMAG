@@ -3,6 +3,7 @@ from typing import List
 
 from common_lib.rotary_assembly import RotaryAssemblyDesc, RotaryAssemblyLayer
 from common_lib.core import CoreDesc
+from assemblies import BoundariesGeometrySettings
 
 
 def calculate_drum_arc_length(
@@ -44,27 +45,34 @@ def calculate_drums_surface_in_core(
     return drum_surface_in_core
 
 
+class DrumsGeometrySettings:
+    rotary_assembly_desc: RotaryAssemblyDesc
+    core_desc: CoreDesc
+    double_assembly: bool
+
+
 def make_drums(
-    drum_desc: RotaryAssemblyDesc,
-    core_radius: float,
+    geometry_settings: DrumsGeometrySettings,
     distance_between_drums: float,
-    half_drum: bool = False,
 ) -> List[RotaryAssemblyLayer]:
     outer_drum_radius = (
-        drum_desc.assembly_core_distance + core_radius - drum_desc.assembly_core_margin
+        geometry_settings.rotary_assembly_desc.assembly_core_distance
+        + geometry_settings.core_desc.core_radius
+        - geometry_settings.rotary_assembly_desc.assembly_core_margin
     )
-    if half_drum:
+    if geometry_settings.double_assembly:
         outer_drum_radius = (
-            drum_desc.assembly_core_distance - drum_desc.assembly_core_margin
+            geometry_settings.rotary_assembly_desc.assembly_core_distance
+            - geometry_settings.rotary_assembly_desc.assembly_core_margin
         )
     drum_radiuses = [outer_drum_radius]
 
     while (
-        core_radius
+        geometry_settings.core_desc.core_radius
         + drum_radiuses[-1]
-        - drum_desc.assembly_core_distance
+        - geometry_settings.rotary_assembly_desc.assembly_core_distance
         - distance_between_drums
-    ) >= drum_desc.assembly_core_margin:
+    ) >= geometry_settings.rotary_assembly_desc.assembly_core_margin:
         drum_radiuses.append(drum_radiuses[-1] - distance_between_drums)
     return [
         RotaryAssemblyLayer(

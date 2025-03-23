@@ -14,10 +14,16 @@ from common_lib.rotary_assembly import RotaryAssemblyDesc, RotaryAssemblyLayer
 from common_lib.core import CoreDesc
 
 
+class BoundariesGeometrySettings:
+    assembly_section_last: AssemblySections
+    rotary_assembly_desc: RotaryAssemblyDesc
+    core_desc: CoreDesc
+    double_assembly: bool
+
+
 def get_assemblies_boundaries(
-    geometry_settings: GeometrySettings,
+    geometry_settings: BoundariesGeometrySettings,
     drums: List[RotaryAssemblyLayer],
-    mirrored_rotary_assembly_desc: Optional[RotaryAssemblyDesc] = None,
 ) -> openmc.Cell:
     last_assembly_thickness = calculate_assembly_thickness(
         geometry_settings.assembly_section_last
@@ -35,12 +41,12 @@ def get_assemblies_boundaries(
         boundary_type="vacuum",
     )
 
-    if mirrored_rotary_assembly_desc is not None:
+    if geometry_settings.double_assembly:
         assemblies_boundary = assemblies_boundary | create_hollow_cylinder(
             fist_assembly_radius,
             last_assembly_radius,
             geometry_settings.core_desc.core_height,
-            distance_from_origin=mirrored_rotary_assembly_desc.assembly_core_distance,
+            distance_from_origin=-geometry_settings.rotary_assembly_desc.assembly_core_distance,
         ) & -openmc.ZCylinder(
             r=geometry_settings.core_desc.outer_core_radius,
             boundary_type="vacuum",
@@ -123,32 +129,32 @@ def make_assemblies_cells_base(
 
 
 def make_core_assemblies_cells(
-    assembly_section: AssemblySections,
-    last_section: AssemblySections,
-    core_desc: CoreDesc,
+    geometry_settings: GeometrySettings,
     drums: List[RotaryAssemblyLayer],
-    rotary_assembly_desc: RotaryAssemblyDesc,
     boundary_shape,
     materials_dict: Dict[str, openmc.Material],
-    other_rotary_assembly_desc: Optional[RotaryAssemblyDesc] = None,
 ) -> List[openmc.Cell]:
     cells = [
         *make_assemblies_cells_base(
-            assembly_section,
-            last_section,
-            core_desc,
+            geometry_settings.assembly_section_core,
+            geometry_settings.assembly_section_last,
+            geometry_settings.core_desc,
             drums,
-            rotary_assembly_desc,
+            geometry_settings.rotary_assembly_desc,
             boundary_shape,
             materials_dict,
         )
     ]
-    if other_rotary_assembly_desc is not None:
+    if geometry_settings.double_assembly:
+        other_rotary_assembly_desc = geometry_settings.rotary_assembly_desc
+        other_rotary_assembly_desc.assembly_core_distance = (
+            -other_rotary_assembly_desc.assembly_core_distance
+        )
         cells.extend(
             *make_assemblies_cells_base(
-                assembly_section,
-                last_section,
-                core_desc,
+                geometry_settings.assembly_section_core,
+                geometry_settings.assembly_section_last,
+                geometry_settings.core_desc,
                 drums,
                 other_rotary_assembly_desc,
                 boundary_shape,
@@ -162,7 +168,6 @@ def make_assemblies_outer_core(
     geometry_settings: GeometrySettings,
     drums: List[RotaryAssemblyLayer],
     materials_dict: Dict[str, openmc.Material],
-    mirrored_rotary_assembly_desc: Optional[RotaryAssemblyDesc] = None,
 ) -> List[openmc.Cell]:
     cells = []
     current_layer_radius = geometry_settings.core_desc.core_radius
@@ -180,14 +185,10 @@ def make_assemblies_outer_core(
                 temp_assembly_section.parts[j].material = layer.material
         cells.extend(
             make_core_assemblies_cells(
-                temp_assembly_section,
-                geometry_settings.assembly_section_last,
-                geometry_settings.core_desc,
+                geometry_settings,
                 drums,
-                geometry_settings.rotary_assembly_desc,
                 boundary_shape,
                 materials_dict,
-                mirrored_rotary_assembly_desc,
             )
         )
         previous_layer_radius = current_layer_radius

@@ -14,4 +14,4 @@ class GeometrySettings(BaseModel):
     assembly_section_outer_core: AssemblySections
     assembly_section_last: AssemblySections
     outer_core_layers: AssemblySections
-    half_assembly: bool = False
+    double_assembly: bool = False
