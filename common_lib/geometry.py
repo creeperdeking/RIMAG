@@ -3,23 +3,19 @@ from typing import Dict, List
 import openmc
 from pydantic import BaseModel
 
-from assemblies import (
-    define_drum_emitter_boundary,
+from common_lib.assemblies import (
     define_photovoltaic_boundary,
     get_assemblies_boundaries,
-    make_drum_cells,
-    make_emitter_only_assembly,
     make_outer_core_layers,
-)
-from common_lib.core import CoreDesc
-from common_lib.geometry_utils import (
-    AssemblySections,
     calculate_assembly_thickness,
+    AssemblySections,
+    CoreDesc,
+)
+from common_lib.geometry_utils import (
     create_cylinder,
 )
 from common_lib.materials import MaterialChoice
 from common_lib.rotary_assembly import RotaryAssemblyDesc
-from drum_design.drums import make_drums
 
 
 class GeometrySettings(BaseModel):
@@ -54,9 +50,9 @@ def get_base_geometry(
 def define_geometry(
     geometry_settings: GeometrySettings,
     materials_dict: Dict[str, openmc.Material],
-    photovoltaic_assembly_cells: List[openmc.Cell],
-    core_assembly_cells: List[openmc.Cell],
-    emitter_assembly_cells: List[openmc.Cell],
+    photovoltaic_assembly_cells: Dict[str, openmc.Cell],
+    core_assembly_cells: Dict[str, openmc.Cell],
+    emitter_assembly_cells: Dict[str, openmc.Cell],
     emitter_boundary: openmc.Region,
     inner_assembly_radius: float,
     outer_assembly_radius: float,
@@ -135,13 +131,14 @@ def define_geometry(
     outer_empty_zone_cell = openmc.Cell(name="outer_drum_zone")
     outer_empty_zone_cell.region = outer_empty_zone
     outer_empty_zone_cell.fill = materials_dict[geometry_settings.material_choice.void]
+    print(photovoltaic_assembly_cells)
 
     universe = openmc.Universe(
         cells=[
-            *core_assembly_cells,
+            *core_assembly_cells.values(),
             *outer_core_layers_cells,
-            *photovoltaic_assembly_cells,
-            *emitter_assembly_cells,
+            *photovoltaic_assembly_cells.values(),
+            *emitter_assembly_cells.values(),
             core_fill_cell,
             outer_empty_zone_cell,
             photovoltaic_fill_cell,
@@ -151,4 +148,9 @@ def define_geometry(
     return (
         openmc.Geometry(universe),
         universe,
+        {
+            **core_assembly_cells,
+            **photovoltaic_assembly_cells,
+            **emitter_assembly_cells,
+        },
     )

@@ -1,22 +1,23 @@
 from typing import Dict, List, Optional
 
 import openmc
-
-from assemblies import create_outer_core_assembly_section
-from common_lib.core import CoreDesc
-from common_lib.geometry_utils import (
+from common_lib.assemblies import (
+    create_outer_core_assembly_section,
     AssemblySections,
+    CoreDesc,
+)
+from common_lib.geometry_utils import (
     create_hollow_cylinder,
 )
-from common_lib.rotary_assembly import RotaryAssemblyDesc, RotaryAssemblyLayer
-from drum_design.drums import RotaryAssemblyLayer, calculate_drums_surface_in_core
+from common_lib.rotary_assembly import RotaryAssemblyDesc
+from drum_design.drums import calculate_drums_surface_in_core, DrumAssemblyLayer
 
 
 def calculate_drums_fuel_volume(
     drum_desc: RotaryAssemblyDesc,
     core_desc: CoreDesc,
     assembly_section: AssemblySections,
-    drums: List[RotaryAssemblyLayer],
+    drums: List[DrumAssemblyLayer],
     half_assembly: bool = False,
 ) -> float:
     fuel_radius_offset = 0
@@ -32,7 +33,7 @@ def calculate_drums_fuel_volume(
 
     for drum in drums:
         fuel_radius = drum.radius - fuel_radius_offset
-        fuel_drums.append(RotaryAssemblyLayer(radius=fuel_radius, number=drum.number))
+        fuel_drums.append(DrumAssemblyLayer(radius=fuel_radius, number=drum.number))
 
     fuel_volume = (
         calculate_drums_surface_in_core(fuel_drums, drum_desc, core_desc)
@@ -45,11 +46,11 @@ def calculate_drums_fuel_volume(
 def make_drum_cells(
     assembly_section: AssemblySections,
     core_desc: CoreDesc,
-    drums: List[RotaryAssemblyLayer],
+    drums: List[DrumAssemblyLayer],
     rotary_assembly_desc: RotaryAssemblyDesc,
     materials_dict: Dict[str, openmc.Material],
     boundary_shape: Optional[openmc.Intersection] = None,
-) -> List[openmc.Cell]:
+) -> Dict[str, openmc.Cell]:
     shapes = {}
     for drum in drums:
         current_radius = drum.radius
@@ -61,6 +62,8 @@ def make_drum_cells(
                     core_desc.core_height,
                     distance_from_origin=rotary_assembly_desc.assembly_core_distance,
                 )
+                if boundary_shape is not None:
+                    shape = shape & boundary_shape
                 if assembly_part.material in shapes:
                     shapes[assembly_part.material] = (
                         shapes[assembly_part.material] | shape
@@ -68,21 +71,18 @@ def make_drum_cells(
                 else:
                     shapes[assembly_part.material] = shape
             current_radius -= assembly_part.thickness
-    cells = []
+    cells = {}
     for material, shape in shapes.items():
         cell = openmc.Cell(name=f"{material}")
-        if boundary_shape is not None:
-            cell.region = shape & boundary_shape
-        else:
-            cell.region = shape
+        cell.region = shape
         cell.fill = materials_dict[material]
-        cells.append(cell)
+        cells[material] = cell
     return cells
 
 
 def define_drum_emitter_boundary(
     assembly_section: AssemblySections,
-    drums: List[RotaryAssemblyLayer],
+    drums: List[DrumAssemblyLayer],
     core_desc: CoreDesc,
     drum_desc: RotaryAssemblyDesc,
 ) -> openmc.Intersection:

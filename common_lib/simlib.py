@@ -7,6 +7,7 @@ from typing import List, Dict
 from tabulate import tabulate
 import scipy.constants as cst
 from common_lib.materials import MaterialChoice
+from common_lib.assemblies import calculate_assembly_thickness
 
 
 def clean_directory():
@@ -272,3 +273,35 @@ def run_sim_with_photovoltaic_tally(
     run_sim(geometry, settings, materials_dict, tallies)
     print_neutron_fluence_cm2s(power_output_watts, photovoltaic_slice_volume, batches)
     # clean_directory()
+
+
+def print_core_characteristics(
+    heavy_metal_mass,
+    emissive_surface,
+    core_power,
+    assembly_section_core,
+    radiative_flux,
+    fuel_volume,
+):
+    print(
+        "thicc: ",
+        calculate_assembly_thickness(assembly_section_core),
+    )
+    print("emissive_surface", round(emissive_surface, 2), "m2")
+    print(
+        "Radiative flux",
+        round(
+            radiative_flux,
+        ),
+        "W/m2",
+    )
+    print("core power", round(core_power / 1e6, 2), "MW")
+    print()
+
+    print("fuel volume", fuel_volume, "cm3")
+
+    print(
+        "fuel mass",
+        heavy_metal_mass,
+        "kg",
+    )

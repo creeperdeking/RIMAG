@@ -1,22 +1,4 @@
-from pydantic import BaseModel
 import openmc
-from typing import List, Optional, Literal
-
-
-class Assembly(BaseModel):
-    thickness: float
-    material: Optional[str] = None
-    is_fuel: bool = False
-    is_emitter: Literal[False] = False
-
-
-class EmitterPlaceholder(BaseModel):
-    thickness: float
-    is_emitter: Literal[True] = True
-
-
-class AssemblySections(BaseModel):
-    parts: List[Assembly | EmitterPlaceholder]
 
 
 def create_cylinder(
@@ -32,10 +14,6 @@ def create_cylinder(
         & -openmc.ZPlane(z0=height / 2, boundary_type=boundary_type)
         & +openmc.ZPlane(z0=-height / 2, boundary_type=boundary_type)
     )
-
-
-def calculate_assembly_thickness(assembly_section: AssemblySections) -> float:
-    return sum(part.thickness for part in assembly_section.parts)
 
 
 def create_hollow_cylinder(

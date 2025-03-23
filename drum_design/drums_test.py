@@ -1,10 +1,11 @@
 import pytest
 import math
 
-from common_lib.core import compute_core_desc
+from common_lib.assemblies import compute_core_desc
 from common_lib.geometry_utils import AssemblySections
-from common_lib.rotary_assembly import RotaryAssemblyDesc, RotaryAssemblyLayer
+from common_lib.rotary_assembly import RotaryAssemblyDesc
 from drums import calculate_drum_surface_in_core
+from drum_design.drums import DrumAssemblyLayer
 
 
 def test_drum_surface_in_core_zero_when_intersection_is_zero():
@@ -17,13 +18,13 @@ def test_drum_surface_in_core_zero_when_intersection_is_zero():
         core_height=1,
         outer_core_assembly=AssemblySections(parts=[]),
     )
-    drum = RotaryAssemblyLayer(
+    drum = DrumAssemblyLayer(
         radius=5,
         number=1,
     )
     assert calculate_drum_surface_in_core(drum, core_desc, drum_desc) == 0
 
-    drum2 = RotaryAssemblyLayer(
+    drum2 = DrumAssemblyLayer(
         radius=4,
         number=1,
     )
@@ -31,7 +32,7 @@ def test_drum_surface_in_core_zero_when_intersection_is_zero():
     with pytest.raises(Exception):
         calculate_drum_surface_in_core(drum2, core_desc, drum_desc)
 
-    drum3 = RotaryAssemblyLayer(
+    drum3 = DrumAssemblyLayer(
         radius=6,
         number=1,
     )
@@ -48,7 +49,7 @@ def test_drum_surface_in_core_correct_when_intersection_is_half():
         core_height=1,
         outer_core_assembly=AssemblySections(parts=[]),
     )
-    drum = RotaryAssemblyLayer(
+    drum = DrumAssemblyLayer(
         radius=10,
         number=1,
     )

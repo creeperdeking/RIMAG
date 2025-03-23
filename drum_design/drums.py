@@ -1,13 +1,26 @@
 import math
 from typing import List
 
-from common_lib.rotary_assembly import RotaryAssemblyDesc, RotaryAssemblyLayer
-from common_lib.core import CoreDesc
-from assemblies import BoundariesGeometrySettings
+from common_lib.assemblies import CoreDesc
+from common_lib.rotary_assembly import RotaryAssemblyDesc
+from pydantic import BaseModel
+
+
+class DrumAssemblyLayer(BaseModel):
+
+    radius: float
+    """
+    The radius of the layer
+    """
+
+    number: int
+    """
+    The number of the layer
+    """
 
 
 def calculate_drum_arc_length(
-    drum: RotaryAssemblyLayer, drum_distance_from_core: float, core_radius: float
+    drum: DrumAssemblyLayer, drum_distance_from_core: float, core_radius: float
 ):
     return (
         2
@@ -20,7 +33,7 @@ def calculate_drum_arc_length(
 
 
 def calculate_drum_surface_in_core(
-    drum: RotaryAssemblyLayer, core_desc: CoreDesc, drum_desc: RotaryAssemblyDesc
+    drum: DrumAssemblyLayer, core_desc: CoreDesc, drum_desc: RotaryAssemblyDesc
 ):
     return (
         calculate_drum_arc_length(
@@ -33,7 +46,7 @@ def calculate_drum_surface_in_core(
 
 
 def calculate_drums_surface_in_core(
-    drums: List[RotaryAssemblyLayer],
+    drums: List[DrumAssemblyLayer],
     drum_desc: RotaryAssemblyDesc,
     core_desc: CoreDesc,
 ) -> float:
@@ -54,7 +67,7 @@ class DrumsGeometrySettings:
 def make_drums(
     geometry_settings: DrumsGeometrySettings,
     distance_between_drums: float,
-) -> List[RotaryAssemblyLayer]:
+) -> List[DrumAssemblyLayer]:
     core_boundary_drum_radius = (
         geometry_settings.rotary_assembly_desc.assembly_core_distance
         - geometry_settings.core_desc.core_radius
@@ -80,7 +93,7 @@ def make_drums(
         assembly_core_distance -= distance_between_drums
 
     return [
-        RotaryAssemblyLayer(
+        DrumAssemblyLayer(
             radius=drum_radius,
             number=i,
         )

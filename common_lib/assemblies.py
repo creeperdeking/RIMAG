@@ -1,15 +1,35 @@
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Literal
 import openmc
-
+from pydantic import BaseModel
 
 from common_lib.geometry_utils import (
-    Assembly,
-    AssemblySections,
     create_hollow_cylinder,
     create_cylinder,
 )
-from common_lib.rotary_assembly import RotaryAssemblyDesc, RotaryAssemblyLayer
-from common_lib.core import CoreDesc
+from common_lib.rotary_assembly import RotaryAssemblyDesc
+
+
+class CoreDesc(BaseModel):
+    core_radius: float
+    core_height: float
+    outer_core_radius: float
+    outer_core_height: float
+
+
+class Assembly(BaseModel):
+    thickness: float
+    material: Optional[str] = None
+    is_fuel: bool = False
+    is_emitter: Literal[False] = False
+
+
+class EmitterPlaceholder(BaseModel):
+    thickness: float
+    is_emitter: Literal[True] = True
+
+
+class AssemblySections(BaseModel):
+    parts: List[Assembly | EmitterPlaceholder]
 
 
 class BoundariesGeometrySettings:
@@ -17,6 +37,20 @@ class BoundariesGeometrySettings:
     rotary_assembly_desc: RotaryAssemblyDesc
     core_desc: CoreDesc
     double_assembly: bool
+
+
+def compute_core_desc(
+    core_radius: float,
+    core_height: float,
+    outer_core_assembly: AssemblySections,
+):
+    outer_core_thickness = calculate_assembly_thickness(outer_core_assembly)
+    return CoreDesc(
+        core_radius=core_radius,
+        core_height=core_height,
+        outer_core_radius=core_radius + outer_core_thickness,
+        outer_core_height=core_height + outer_core_thickness * 2,
+    )
 
 
 def get_assemblies_boundaries(
@@ -123,3 +157,7 @@ def create_outer_core_assembly_section(
         parts.append(Assembly(material=None, thickness=current_part_thickness))
 
     return AssemblySections(parts=parts)
+
+
+def calculate_assembly_thickness(assembly_section: AssemblySections) -> float:
+    return sum(part.thickness for part in assembly_section.parts)
