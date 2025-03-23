@@ -3,18 +3,19 @@ from typing import Dict
 import openmc
 
 from assemblies import (
-    define_drum_emitter_boundary,
-    define_photovoltaic_boundary,
-    make_drum_cells,
     make_emitter_only_assembly,
+)
+from drum_assemblies import (
+    define_drum_emitter_boundary,
+    make_drum_cells,
 )
 from common_lib.geometry import (
     define_geometry,
+    get_base_geometry,
     GeometrySettings,
 )
 from common_lib.geometry_utils import (
     calculate_assembly_thickness,
-    create_cylinder,
 )
 from drum_design.drums import make_drums
 
@@ -23,8 +24,8 @@ def define_drum_geometry(
     geometry_settings: GeometrySettings,
     materials_dict: Dict[str, openmc.Material],
 ):
-    assembly_thickness = calculate_assembly_thickness(
-        geometry_settings.assembly_section_core
+    assembly_thickness, core_boundary, photovoltaic_boundary = get_base_geometry(
+        geometry_settings,
     )
 
     drums = make_drums(
@@ -37,16 +38,6 @@ def define_drum_geometry(
         drums,
         geometry_settings.core_desc,
         geometry_settings.rotary_assembly_desc,
-    )
-
-    core_boundary = create_cylinder(
-        geometry_settings.core_desc.core_radius,
-        geometry_settings.core_desc.core_height,
-    )
-    photovoltaic_boundary = define_photovoltaic_boundary(
-        geometry_settings.core_desc,
-        geometry_settings.rotary_assembly_desc.assembly_core_distance,
-        geometry_settings.double_assembly,
     )
 
     ### Making Cells
@@ -90,6 +81,8 @@ def define_drum_geometry(
             emitter_boundary,
             outer_assembly_radius=drums[0].radius,
             inner_assembly_radius=drums[-1].radius - assembly_thickness,
+            core_boundary=core_boundary,
+            photovoltaic_boundary=photovoltaic_boundary,
         ),
         drums,
     )
