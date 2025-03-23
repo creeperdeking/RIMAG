@@ -84,24 +84,22 @@ def define_drum_geometry(
         materials_dict,
     )
 
-    core_assembly_cells = make_assemblies_cells(
+    core_assembly_cells = make_cells(
         assembly_section=geometry_settings.assembly_section_core,
         core_desc=geometry_settings.core_desc,
         drums=drums,
         rotary_assembly_desc=geometry_settings.rotary_assembly_desc,
-        double_assembly=geometry_settings.double_assembly,
-        boundary_shape=core_boundary,
         materials_dict=materials_dict,
+        boundary_shape=core_boundary,
     )
 
-    photovoltaic_assembly_cells = make_assemblies_cells(
+    photovoltaic_assembly_cells = make_cells(
         assembly_section=geometry_settings.photovoltaic_assembly,
         core_desc=geometry_settings.core_desc,
         drums=drums,
         rotary_assembly_desc=geometry_settings.rotary_assembly_desc,
-        double_assembly=geometry_settings.double_assembly,
-        boundary_shape=photovoltaic_boundary,
         materials_dict=materials_dict,
+        boundary_shape=photovoltaic_boundary,
     )
 
     emitter_only_assembly = make_emitter_only_assembly(
