@@ -21,81 +21,25 @@ class BoundariesGeometrySettings:
 
 def get_assemblies_boundaries(
     geometry_settings: BoundariesGeometrySettings,
-    drums: List[RotaryAssemblyLayer],
-    assembly_thickness: float,
+    outer_radius: float,
+    inner_radius: float,
 ) -> openmc.Cell:
 
     assemblies_boundary = create_hollow_cylinder(
-        drums[0].radius,
-        drums[-1].radius - assembly_thickness,
+        outer_radius,
+        inner_radius,
         geometry_settings.core_desc.core_height,
         distance_from_origin=geometry_settings.rotary_assembly_desc.assembly_core_distance,
     )
 
     if geometry_settings.double_assembly:
         assemblies_boundary = assemblies_boundary | create_hollow_cylinder(
-            drums[0].radius,
-            drums[-1].radius - assembly_thickness,
+            outer_radius,
+            inner_radius,
             geometry_settings.core_desc.core_height,
             distance_from_origin=-geometry_settings.rotary_assembly_desc.assembly_core_distance,
         )
     return assemblies_boundary
-
-
-def make_emitter_only_assembly(
-    assembly_section: AssemblySections, emitter_assembly: AssemblySections
-):
-    parts = []
-    current_part_thickness = 0
-    for assembly_part in assembly_section.parts:
-        if assembly_part.is_emitter:
-            if current_part_thickness > 0:
-                parts.append(Assembly(material=None, thickness=current_part_thickness))
-            parts.extend(emitter_assembly.parts)
-            current_part_thickness = 0
-        else:
-            current_part_thickness += assembly_part.thickness
-    if current_part_thickness > 0:
-        parts.append(Assembly(material=None, thickness=current_part_thickness))
-    return AssemblySections(parts=parts)
-
-
-def make_cells(
-    assembly_section: AssemblySections,
-    core_desc: CoreDesc,
-    drums: List[RotaryAssemblyLayer],
-    rotary_assembly_desc: RotaryAssemblyDesc,
-    materials_dict: Dict[str, openmc.Material],
-    boundary_shape: Optional[openmc.Intersection] = None,
-) -> List[openmc.Cell]:
-    shapes = {}
-    for drum in drums:
-        current_radius = drum.radius
-        for assembly_part in assembly_section.parts:
-            if not assembly_part.is_emitter and assembly_part.material is not None:
-                shape = create_hollow_cylinder(
-                    current_radius,
-                    current_radius - assembly_part.thickness,
-                    core_desc.core_height,
-                    distance_from_origin=rotary_assembly_desc.assembly_core_distance,
-                )
-                if assembly_part.material in shapes:
-                    shapes[assembly_part.material] = (
-                        shapes[assembly_part.material] | shape
-                    )
-                else:
-                    shapes[assembly_part.material] = shape
-            current_radius -= assembly_part.thickness
-    cells = []
-    for material, shape in shapes.items():
-        cell = openmc.Cell(name=f"{material}")
-        if boundary_shape is not None:
-            cell.region = shape & boundary_shape
-        else:
-            cell.region = shape
-        cell.fill = materials_dict[material]
-        cells.append(cell)
-    return cells
 
 
 def define_photovoltaic_boundary(
@@ -117,32 +61,22 @@ def define_photovoltaic_boundary(
     return boundary_shape
 
 
-def define_emitter_boundary(
-    assembly_section: AssemblySections,
-    drums: List[RotaryAssemblyLayer],
-    core_desc: CoreDesc,
-    drum_desc: RotaryAssemblyDesc,
-) -> openmc.Intersection:
-    outer_core_assembly_section = create_outer_core_assembly_section(assembly_section)
-    boundary_shape = None
-    for drum in drums:
-        curent_radius = drum.radius
-        for assembly_part in outer_core_assembly_section.parts:
-            if assembly_part.is_emitter:
-                additional_boundary_shape = create_hollow_cylinder(
-                    curent_radius,
-                    curent_radius - assembly_part.thickness,
-                    core_desc.core_height,
-                    distance_from_origin=drum_desc.assembly_core_distance,
-                )
-                boundary_shape = (
-                    additional_boundary_shape
-                    if boundary_shape is None
-                    else boundary_shape | additional_boundary_shape
-                )
-            curent_radius -= assembly_part.thickness
-
-    return boundary_shape
+def make_emitter_only_assembly(
+    assembly_section: AssemblySections, emitter_assembly: AssemblySections
+):
+    parts = []
+    current_part_thickness = 0
+    for assembly_part in assembly_section.parts:
+        if assembly_part.is_emitter:
+            if current_part_thickness > 0:
+                parts.append(Assembly(material=None, thickness=current_part_thickness))
+            parts.extend(emitter_assembly.parts)
+            current_part_thickness = 0
+        else:
+            current_part_thickness += assembly_part.thickness
+    if current_part_thickness > 0:
+        parts.append(Assembly(material=None, thickness=current_part_thickness))
+    return AssemblySections(parts=parts)
 
 
 def make_outer_core_layers(
