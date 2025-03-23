@@ -85,7 +85,7 @@ emitter_assembly = AssemblySections(
 )
 
 
-inner_assembly_unique_parts1 = AssemblySections(
+core_assembly_unique_parts1 = AssemblySections(
     parts=[
         ### Cladding
         Assembly(
@@ -105,7 +105,7 @@ inner_assembly_unique_parts1 = AssemblySections(
     ],
 )
 
-inner_assembly_unique_parts2 = AssemblySections(
+core_assembly_unique_parts2 = AssemblySections(
     parts=[
         ### Fuel Cladding
         Assembly(
@@ -126,20 +126,20 @@ inner_assembly_unique_parts2 = AssemblySections(
     ],
 )
 
-inner_assembly_unique_parts_complete = AssemblySections(
+core_assembly_unique_parts_complete = AssemblySections(
     parts=[
-        *inner_assembly_unique_parts1.parts,
+        *core_assembly_unique_parts1.parts,
         *emitter_assembly.parts,
-        *inner_assembly_unique_parts2.parts,
+        *core_assembly_unique_parts2.parts,
     ],
 )
 
-inner_assembly_unique_parts1_thickness = calculate_assembly_thickness(
-    inner_assembly_unique_parts1
+core_assembly_unique_parts1_thickness = calculate_assembly_thickness(
+    core_assembly_unique_parts1
 )
 
-inner_assembly_unique_parts2_thickness = calculate_assembly_thickness(
-    inner_assembly_unique_parts2
+core_assembly_unique_parts2_thickness = calculate_assembly_thickness(
+    core_assembly_unique_parts2
 )
 
 core_desc = compute_core_desc(
@@ -156,10 +156,10 @@ rotary_assembly_desc = RotaryAssemblyDesc(
 )
 
 geometry_settings = GeometrySettings(
-    assembly_section_inner=AssemblySections(
+    assembly_section_core=AssemblySections(
         parts=[
             *emitter_assembly.parts,
-            *inner_assembly_unique_parts_complete.parts,
+            *core_assembly_unique_parts_complete.parts,
         ],
     ),
     assembly_section_outer_core=AssemblySections(
@@ -167,12 +167,12 @@ geometry_settings = GeometrySettings(
             *emitter_assembly.parts,
             ### Reflector
             Assembly(
-                thickness=inner_assembly_unique_parts1_thickness,
+                thickness=core_assembly_unique_parts1_thickness,
             ),
             *emitter_assembly.parts,
             ### Reflector
             Assembly(
-                thickness=inner_assembly_unique_parts2_thickness,
+                thickness=core_assembly_unique_parts2_thickness,
             ),
         ],
     ),
@@ -196,7 +196,7 @@ geometry, universe, drums, photovoltaic_cell, photovoltaic_slice_volume = (
 fuel_volume = calculate_drums_fuel_volume(
     drum_desc=rotary_assembly_desc,
     core_desc=core_desc,
-    assembly_section=geometry_settings.assembly_section_inner,
+    assembly_section=geometry_settings.assembly_section_core,
     drums=drums,
     half_assembly=half_assembly,
 )
@@ -219,7 +219,7 @@ core_power = radiative_flux * emissive_surface
 print()
 print(
     "thicc: ",
-    calculate_assembly_thickness(geometry_settings.assembly_section_inner),
+    calculate_assembly_thickness(geometry_settings.assembly_section_core),
 )
 print(core_desc)
 print("biggest drum radius", drums[0].radius)

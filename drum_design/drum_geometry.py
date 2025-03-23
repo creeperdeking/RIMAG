@@ -1,98 +1,29 @@
 import math
-import copy
-from typing import Dict, List, Optional
+from typing import Dict
 
 import openmc
 
 from assemblies import (
     get_assemblies_boundaries,
-    make_assemblies_cells,
+    make_core_assemblies_cells,
+    make_assemblies_outer_core,
+    make_outer_core_layers,
 )
-from common_lib.core import CoreDesc
 from common_lib.geometry import GeometrySettings
 from common_lib.geometry_utils import (
-    AssemblySections,
     calculate_assembly_thickness,
     create_cylinder,
-    create_hollow_cylinder,
 )
-from common_lib.rotary_assembly import RotaryAssemblyDesc, RotaryAssemblyLayer
+from common_lib.rotary_assembly import RotaryAssemblyDesc
 from drum_design.drums import make_drums
-
-
-def make_outer_core_layers(
-    outer_core_layers: AssemblySections,
-    core_desc: CoreDesc,
-    drum_zone: openmc.Cell,
-    materials_dict: Dict[str, openmc.Material],
-) -> List[openmc.Cell]:
-    cells = []
-    current_layer_radius = core_desc.core_radius
-    previous_layer_radius = current_layer_radius
-    for i, layer in enumerate(outer_core_layers.parts):
-        current_layer_radius = current_layer_radius + layer.thickness
-        inner_cylinder = create_cylinder(
-            previous_layer_radius, previous_layer_radius * 2
-        )
-        cylinder = (
-            create_cylinder(current_layer_radius, current_layer_radius * 2)
-            & ~inner_cylinder
-        )
-        cell = openmc.Cell(name=f"outer_core_layer_{layer.material}_{i}")
-        cell.region = cylinder & ~drum_zone
-        cell.fill = materials_dict[layer.material]
-        cells.append(cell)
-        previous_layer_radius = current_layer_radius
-    return cells
-
-
-def make_assemblies_outer_core(
-    outer_core_layers: AssemblySections,
-    assembly_section: AssemblySections,
-    last_section: AssemblySections,
-    core_desc: CoreDesc,
-    drums: List[RotaryAssemblyLayer],
-    rotary_assembly_desc: RotaryAssemblyDesc,
-    materials_dict: Dict[str, openmc.Material],
-    mirrored_rotary_assembly_desc: Optional[RotaryAssemblyDesc] = None,
-) -> List[openmc.Cell]:
-    cells = []
-    current_layer_radius = core_desc.core_radius
-    previous_layer_radius = current_layer_radius
-    for layer in outer_core_layers.parts:
-        current_layer_radius = current_layer_radius + layer.thickness
-        boundary_shape = create_hollow_cylinder(
-            current_layer_radius, previous_layer_radius, current_layer_radius * 2
-        )
-        temp_assembly_section = copy.deepcopy(assembly_section)
-        for j, assembly_part in enumerate(temp_assembly_section.parts):
-            if assembly_part.material is None:
-                temp_assembly_section.parts[j].material = layer.material
-        cells.extend(
-            make_assemblies_cells(
-                temp_assembly_section,
-                last_section,
-                core_desc,
-                drums,
-                rotary_assembly_desc,
-                boundary_shape,
-                materials_dict,
-                mirrored_rotary_assembly_desc,
-            )
-        )
-        previous_layer_radius = current_layer_radius
-    return cells
 
 
 def define_drum_geometry(
     geometry_settings: GeometrySettings,
     materials_dict: Dict[str, openmc.Material],
 ):
-    last_assembly_thickness = calculate_assembly_thickness(
-        geometry_settings.assembly_section_last
-    )
     assembly_thickness = calculate_assembly_thickness(
-        geometry_settings.assembly_section_inner
+        geometry_settings.assembly_section_core
     )
     outer_core_assembly_thickness = calculate_assembly_thickness(
         geometry_settings.assembly_section_outer_core
@@ -117,11 +48,8 @@ def define_drum_geometry(
         )
 
     assemblies_boundary = get_assemblies_boundaries(
-        last_assembly_thickness,
+        geometry_settings,
         drums,
-        geometry_settings.core_desc,
-        geometry_settings.rotary_assembly_desc,
-        geometry_settings.core_desc.outer_core_radius,
         mirrored_rotary_assembly_desc,
     )
 
@@ -148,8 +76,8 @@ def define_drum_geometry(
         materials_dict,
     )
 
-    assembly_cells = make_assemblies_cells(
-        geometry_settings.assembly_section_inner,
+    assembly_cells = make_core_assemblies_cells(
+        geometry_settings.assembly_section_core,
         geometry_settings.assembly_section_last,
         geometry_settings.core_desc,
         drums,
@@ -160,12 +88,8 @@ def define_drum_geometry(
     )
 
     assembly_outer_core_cells = make_assemblies_outer_core(
-        geometry_settings.outer_core_layers,
-        geometry_settings.assembly_section_outer_core,
-        geometry_settings.assembly_section_last,
-        geometry_settings.core_desc,
+        geometry_settings,
         drums,
-        geometry_settings.rotary_assembly_desc,
         materials_dict,
         mirrored_rotary_assembly_desc if geometry_settings.half_assembly else None,
     )

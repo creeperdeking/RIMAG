@@ -10,7 +10,7 @@ class GeometrySettings(BaseModel):
     core_desc: CoreDesc
     rotary_assembly_desc: RotaryAssemblyDesc
     material_choice: MaterialChoice
-    assembly_section_inner: AssemblySections
+    assembly_section_core: AssemblySections
     assembly_section_outer_core: AssemblySections
     assembly_section_last: AssemblySections
     outer_core_layers: AssemblySections
