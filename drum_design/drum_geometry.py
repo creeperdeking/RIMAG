@@ -5,9 +5,10 @@ import openmc
 
 from assemblies import (
     get_assemblies_boundaries,
-    make_core_assemblies_cells,
+    make_assemblies_cells,
     make_assemblies_outer_core,
     make_outer_core_layers,
+    create_outer_core_assembly_section,
 )
 from common_lib.geometry import GeometrySettings
 from common_lib.geometry_utils import (
@@ -24,14 +25,10 @@ def define_drum_geometry(
     assembly_thickness = calculate_assembly_thickness(
         geometry_settings.assembly_section_core
     )
-    outer_core_assembly_thickness = calculate_assembly_thickness(
-        geometry_settings.assembly_section_outer_core
-    )
 
-    if outer_core_assembly_thickness != assembly_thickness:
-        raise ValueError(
-            "Outer core assembly thickness must be equal to the assembly thickness"
-        )
+    outer_core_assembly_section = create_outer_core_assembly_section(
+        geometry_settings.assembly_section_core
+    )
 
     drums = make_drums(
         geometry_settings,
@@ -66,17 +63,21 @@ def define_drum_geometry(
         materials_dict,
     )
 
-    core_assembly_cells = make_core_assemblies_cells(
-        geometry_settings,
-        drums,
-        core_boundary,
-        materials_dict,
+    core_assembly_cells = make_assemblies_cells(
+        assembly_section=geometry_settings.assembly_section_core,
+        core_desc=geometry_settings.core_desc,
+        drums=drums,
+        rotary_assembly_desc=geometry_settings.rotary_assembly_desc,
+        double_assembly=geometry_settings.double_assembly,
+        boundary_shape=core_boundary,
+        materials_dict=materials_dict,
     )
 
     outer_core_assembly_cells = make_assemblies_outer_core(
         geometry_settings,
         drums,
         materials_dict,
+        outer_core_assembly_section,
     )
 
     ### Define outer drum zone for solar cells tallies
@@ -129,6 +130,7 @@ def define_drum_geometry(
     outer_drum_zone_cell = openmc.Cell(name="outer_drum_zone")
     outer_drum_zone_cell.region = outer_drum_zone
     outer_drum_zone_cell.fill = materials_dict[geometry_settings.material_choice.void]
+    print(outer_core_assembly_section)
 
     universe = openmc.Universe(
         cells=[

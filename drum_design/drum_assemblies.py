@@ -18,7 +18,7 @@ def calculate_drums_fuel_volume(
     fuel_radius_offset = 0
     fuel_thickness = 0
     for assembly_part in assembly_section.parts:
-        if assembly_part.is_fuel:
+        if not assembly_part.is_emitter and assembly_part.is_fuel:
             fuel_thickness = assembly_part.thickness
             break
 

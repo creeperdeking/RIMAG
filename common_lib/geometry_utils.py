@@ -1,16 +1,22 @@
 from pydantic import BaseModel
 import openmc
-from typing import List, Optional
+from typing import List, Optional, Literal
 
 
 class Assembly(BaseModel):
     thickness: float
     material: Optional[str] = None
     is_fuel: bool = False
+    is_emitter: Literal[False] = False
+
+
+class EmitterPlaceholder(BaseModel):
+    thickness: float
+    is_emitter: Literal[True] = True
 
 
 class AssemblySections(BaseModel):
-    parts: List[Assembly]
+    parts: List[Assembly | EmitterPlaceholder]
 
 
 def create_cylinder(radius: float, height: float, boundary_type: str = "transmission"):

@@ -4,6 +4,7 @@ from common_lib.geometry_utils import (
     Assembly,
     AssemblySections,
     calculate_assembly_thickness,
+    EmitterPlaceholder,
 )
 from common_lib.light import radiative_heat_flux_between_plates
 from common_lib.materials import MaterialChoice, heavy_metals_density, make_materials
@@ -84,62 +85,8 @@ emitter_assembly = AssemblySections(
     ],
 )
 
-
-core_assembly_unique_parts1 = AssemblySections(
-    parts=[
-        ### Cladding
-        Assembly(
-            material=material_choice.moderator_cladding,
-            thickness=moderator_cladding_thickness,
-        ),
-        ### Moderator
-        Assembly(
-            material=material_choice.moderator,
-            thickness=moderator_thickness,
-        ),
-        ### Cladding
-        Assembly(
-            material=material_choice.moderator_cladding,
-            thickness=moderator_cladding_thickness,
-        ),
-    ],
-)
-
-core_assembly_unique_parts2 = AssemblySections(
-    parts=[
-        ### Fuel Cladding
-        Assembly(
-            material=material_choice.fuel_cladding,
-            thickness=fuel_cladding_thickness,
-        ),
-        ### Fuel
-        Assembly(
-            material=material_choice.fuel,
-            thickness=fuel_thickness,
-            is_fuel=True,
-        ),
-        ### Fuel Cladding
-        Assembly(
-            material=material_choice.fuel_cladding,
-            thickness=fuel_cladding_thickness,
-        ),
-    ],
-)
-
-core_assembly_unique_parts_complete = AssemblySections(
-    parts=[
-        *core_assembly_unique_parts1.parts,
-        *emitter_assembly.parts,
-        *core_assembly_unique_parts2.parts,
-    ],
-)
-
-core_assembly_unique_parts1_thickness = calculate_assembly_thickness(
-    core_assembly_unique_parts1
-)
-
-core_assembly_unique_parts2_thickness = calculate_assembly_thickness(
-    core_assembly_unique_parts2
+emitter_assembly_placeholder = EmitterPlaceholder(
+    thickness=calculate_assembly_thickness(emitter_assembly),
 )
 
 core_desc = compute_core_desc(
@@ -158,27 +105,44 @@ rotary_assembly_desc = RotaryAssemblyDesc(
 geometry_settings = GeometrySettings(
     assembly_section_core=AssemblySections(
         parts=[
-            *emitter_assembly.parts,
-            *core_assembly_unique_parts_complete.parts,
+            ### Emitter Assembly
+            emitter_assembly_placeholder,
+            ### Cladding
+            Assembly(
+                material=material_choice.moderator_cladding,
+                thickness=moderator_cladding_thickness,
+            ),
+            ### Moderator
+            Assembly(
+                material=material_choice.moderator,
+                thickness=moderator_thickness,
+            ),
+            ### Cladding
+            Assembly(
+                material=material_choice.moderator_cladding,
+                thickness=moderator_cladding_thickness,
+            ),
+            ### Emitter Assembly
+            emitter_assembly_placeholder,
+            ### Fuel Cladding
+            Assembly(
+                material=material_choice.fuel_cladding,
+                thickness=fuel_cladding_thickness,
+            ),
+            ### Fuel
+            Assembly(
+                material=material_choice.fuel,
+                thickness=fuel_thickness,
+                is_fuel=True,
+            ),
+            ### Fuel Cladding
+            Assembly(
+                material=material_choice.fuel_cladding,
+                thickness=fuel_cladding_thickness,
+            ),
         ],
     ),
-    assembly_section_outer_core=AssemblySections(
-        parts=[
-            *emitter_assembly.parts,
-            ### Reflector
-            Assembly(
-                thickness=core_assembly_unique_parts1_thickness,
-            ),
-            *emitter_assembly.parts,
-            ### Reflector
-            Assembly(
-                thickness=core_assembly_unique_parts2_thickness,
-            ),
-        ],
-    ),
-    assembly_section_last=AssemblySections(
-        parts=[*emitter_assembly.parts],
-    ),
+    emitter_assembly=emitter_assembly,
     double_assembly=half_assembly,
     core_desc=core_desc,
     rotary_assembly_desc=rotary_assembly_desc,
@@ -251,7 +215,7 @@ if render:
         universe,
         universe_radius=(core_desc.outer_core_radius + 50),
         pixels=(2500, 2500),
-        basis="xz",
+        basis="xy",
         origin=(0, 0, 0.0),
         geometry=geometry,
         colors=colors,
@@ -270,11 +234,6 @@ if keff_simulation:
         photovoltaic_slice_volume,
         batches,
     )
-    # criticality_simulation(
-    #     geometry,
-    #     settings,
-    #     materials_dict,
-    # )
 
 if depletion_sim:
     run_depletion_sim(

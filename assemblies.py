@@ -5,6 +5,7 @@ import openmc
 from common_lib.geometry import GeometrySettings
 
 from common_lib.geometry_utils import (
+    Assembly,
     AssemblySections,
     create_hollow_cylinder,
     create_cylinder,
@@ -15,7 +16,7 @@ from common_lib.core import CoreDesc
 
 
 class BoundariesGeometrySettings:
-    assembly_section_last: AssemblySections
+    emitter_assembly: AssemblySections
     rotary_assembly_desc: RotaryAssemblyDesc
     core_desc: CoreDesc
     double_assembly: bool
@@ -26,7 +27,7 @@ def get_assemblies_boundaries(
     drums: List[RotaryAssemblyLayer],
 ) -> openmc.Cell:
     last_assembly_thickness = calculate_assembly_thickness(
-        geometry_settings.assembly_section_last
+        geometry_settings.emitter_assembly
     )
     fist_assembly_radius = drums[0].radius
     last_assembly_radius = drums[-1].radius - last_assembly_thickness
@@ -76,11 +77,13 @@ def create_assembly_cells(
             )
             & boundary_shape
         )
+        current_radius -= assembly_part.thickness
+        if assembly_part.is_emitter:
+            continue
         cell = openmc.Cell(name=f"{assembly_part.material} {str(i)} - {drum.number}")
         cell.fill = materials_dict[assembly_part.material]
         cell.region = shape
         assembly_cells.append(cell)
-        current_radius -= assembly_part.thickness
 
     return assembly_cells
 
@@ -96,7 +99,6 @@ def make_neutron_shield_assembly_zone_shape(core_desc: CoreDesc):
 
 def make_assemblies_cells_base(
     assembly_section: AssemblySections,
-    last_section: AssemblySections,
     core_desc: CoreDesc,
     drums: List[RotaryAssemblyLayer],
     drum_desc: RotaryAssemblyDesc,
@@ -115,46 +117,37 @@ def make_assemblies_cells_base(
                 materials_dict,
             )
         )
-    cells.extend(
-        create_assembly_cells(
-            last_section,
-            core_desc,
-            drums[-1],
-            drum_desc,
-            boundary_shape,
-            materials_dict,
-        )
-    )
     return cells
 
 
-def make_core_assemblies_cells(
-    geometry_settings: GeometrySettings,
+def make_assemblies_cells(
+    assembly_section: AssemblySections,
+    core_desc: CoreDesc,
     drums: List[RotaryAssemblyLayer],
+    rotary_assembly_desc: RotaryAssemblyDesc,
+    double_assembly: bool,
     boundary_shape,
     materials_dict: Dict[str, openmc.Material],
 ) -> List[openmc.Cell]:
     cells = [
         *make_assemblies_cells_base(
-            geometry_settings.assembly_section_core,
-            geometry_settings.assembly_section_last,
-            geometry_settings.core_desc,
+            assembly_section,
+            core_desc,
             drums,
-            geometry_settings.rotary_assembly_desc,
+            rotary_assembly_desc,
             boundary_shape,
             materials_dict,
         )
     ]
-    if geometry_settings.double_assembly:
-        other_rotary_assembly_desc = geometry_settings.rotary_assembly_desc
+    if double_assembly:
+        other_rotary_assembly_desc = rotary_assembly_desc
         other_rotary_assembly_desc.assembly_core_distance = (
             -other_rotary_assembly_desc.assembly_core_distance
         )
         cells.extend(
             *make_assemblies_cells_base(
-                geometry_settings.assembly_section_core,
-                geometry_settings.assembly_section_last,
-                geometry_settings.core_desc,
+                assembly_section,
+                core_desc,
                 drums,
                 other_rotary_assembly_desc,
                 boundary_shape,
@@ -168,6 +161,7 @@ def make_assemblies_outer_core(
     geometry_settings: GeometrySettings,
     drums: List[RotaryAssemblyLayer],
     materials_dict: Dict[str, openmc.Material],
+    outer_core_assembly_section: AssemblySections,
 ) -> List[openmc.Cell]:
     cells = []
     current_layer_radius = geometry_settings.core_desc.core_radius
@@ -177,18 +171,20 @@ def make_assemblies_outer_core(
         boundary_shape = create_hollow_cylinder(
             current_layer_radius, previous_layer_radius, current_layer_radius * 2
         )
-        temp_assembly_section = copy.deepcopy(
-            geometry_settings.assembly_section_outer_core
-        )
+        temp_assembly_section = copy.deepcopy(outer_core_assembly_section)
         for j, assembly_part in enumerate(temp_assembly_section.parts):
-            if assembly_part.material is None:
+            if not assembly_part.is_emitter and assembly_part.material is None:
+                print(layer.material)
                 temp_assembly_section.parts[j].material = layer.material
         cells.extend(
-            make_core_assemblies_cells(
-                geometry_settings,
-                drums,
-                boundary_shape,
-                materials_dict,
+            make_assemblies_cells(
+                assembly_section=temp_assembly_section,
+                core_desc=geometry_settings.core_desc,
+                drums=drums,
+                rotary_assembly_desc=geometry_settings.rotary_assembly_desc,
+                double_assembly=geometry_settings.double_assembly,
+                boundary_shape=boundary_shape,
+                materials_dict=materials_dict,
             )
         )
         previous_layer_radius = current_layer_radius
@@ -219,3 +215,22 @@ def make_outer_core_layers(
         cells.append(cell)
         previous_layer_radius = current_layer_radius
     return cells
+
+
+def create_outer_core_assembly_section(
+    assembly_section_core: AssemblySections,
+) -> AssemblySections:
+    parts = []
+    current_part_thickness = 0
+    for part in assembly_section_core.parts:
+        if part.is_emitter:
+            if current_part_thickness > 0:
+                parts.append(Assembly(material=None, thickness=current_part_thickness))
+            parts.append(part)
+            current_part_thickness = 0
+        else:
+            current_part_thickness += part.thickness
+    if current_part_thickness > 0:
+        parts.append(Assembly(material=None, thickness=current_part_thickness))
+
+    return AssemblySections(parts=parts)
