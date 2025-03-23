@@ -110,6 +110,44 @@ def make_assemblies_cells_base(
     return cells
 
 
+def make_emitter_cells(
+    assembly_section: AssemblySections,
+    emitter_assembly: AssemblySections,
+    drums: List[RotaryAssemblyLayer],
+    rotary_assembly_desc: RotaryAssemblyDesc,
+    core_desc: CoreDesc,
+    materials_dict: Dict[str, openmc.Material],
+) -> List[openmc.Cell]:
+    shapes = {}
+    for drum in drums:
+        current_radius = drum.radius
+        for assembly_part in assembly_section.parts:
+            if assembly_part.is_emitter:
+                for emitter_part in emitter_assembly.parts:
+                    shape = create_hollow_cylinder(
+                        current_radius,
+                        current_radius - emitter_part.thickness,
+                        core_desc.core_height,
+                        distance_from_origin=rotary_assembly_desc.assembly_core_distance,
+                    )
+                    if emitter_part.material in shapes:
+                        shapes[emitter_part.material] = (
+                            shapes[emitter_part.material] | shape
+                        )
+                    else:
+                        shapes[emitter_part.material] = shape
+                    current_radius -= emitter_part.thickness
+            else:
+                current_radius -= assembly_part.thickness
+    cells = []
+    for material, shape in shapes.items():
+        cell = openmc.Cell(name=f"emitter {material}")
+        cell.region = shape
+        cell.fill = materials_dict[material]
+        cells.append(cell)
+    return cells
+
+
 def make_assemblies_cells(
     assembly_section: AssemblySections,
     core_desc: CoreDesc,

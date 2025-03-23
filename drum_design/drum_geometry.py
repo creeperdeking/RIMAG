@@ -9,6 +9,7 @@ from assemblies import (
     make_outer_core_layers,
     define_emitter_boundary,
     define_photovoltaic_boundary,
+    make_emitter_cells,
 )
 from common_lib.geometry import GeometrySettings
 from common_lib.geometry_utils import (
@@ -102,6 +103,15 @@ def define_drum_geometry(
         materials_dict=materials_dict,
     )
 
+    emitter_assembly_cells = make_emitter_cells(
+        assembly_section=geometry_settings.assembly_section_core,
+        emitter_assembly=geometry_settings.emitter_assembly,
+        core_desc=geometry_settings.core_desc,
+        drums=drums,
+        rotary_assembly_desc=geometry_settings.rotary_assembly_desc,
+        materials_dict=materials_dict,
+    )
+
     outer_drum_zone = (
         (
             -openmc.ZCylinder(
@@ -132,6 +142,7 @@ def define_drum_geometry(
             *core_assembly_cells,
             *outer_core_layers_cells,
             *photovoltaic_assembly_cells,
+            *emitter_assembly_cells,
             core_fill_cell,
             outer_drum_zone_cell,
             photovoltaic_fill_cell,

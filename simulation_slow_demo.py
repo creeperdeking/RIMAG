@@ -39,8 +39,8 @@ neutron_shield_thickness = 40
 u235_enrichment = 9.5 / 100
 fuel_hm_density = 0.25
 
-render = True
-keff_simulation = False
+render = False
+keff_simulation = True
 depletion_sim = False
 
 batches = 1500
@@ -256,7 +256,7 @@ if render:
         universe,
         universe_radius=(core_desc.outer_core_radius + 50),
         pixels=(2500, 2500),
-        basis="xz",
+        basis="xy",
         origin=(0, 0, 0.0),
         geometry=geometry,
         colors=colors,
