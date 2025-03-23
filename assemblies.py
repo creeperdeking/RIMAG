@@ -173,7 +173,7 @@ def make_assemblies_cells(
             -other_rotary_assembly_desc.assembly_core_distance
         )
         cells.extend(
-            *make_assemblies_cells_base(
+            make_assemblies_cells_base(
                 assembly_section,
                 core_desc,
                 drums,
