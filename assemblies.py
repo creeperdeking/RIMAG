@@ -14,24 +14,33 @@ def get_assemblies_boundaries(
     last_assembly_thickness: float,
     drums: List[RotaryAssemblyLayer],
     core_desc: CoreDesc,
-    drums_desc: RotaryAssemblyDesc,
+    rotary_assembly_desc: RotaryAssemblyDesc,
     outer_core_radius: float,
-):
-    distance_from_core = drums_desc.assembly_core_distance
-    drum_height = core_desc.core_height
+    mirrored_rotary_assembly_desc: Optional[RotaryAssemblyDesc] = None,
+) -> openmc.Cell:
     fist_assembly_radius = drums[0].radius
     last_assembly_radius = drums[-1].radius - last_assembly_thickness
 
     assemblies_boundary = create_hollow_cylinder(
         fist_assembly_radius,
         last_assembly_radius,
-        drum_height,
-        distance_from_origin=distance_from_core,
+        core_desc.core_height,
+        distance_from_origin=rotary_assembly_desc.assembly_core_distance,
     ) & -openmc.ZCylinder(
         r=outer_core_radius,
         boundary_type="vacuum",
     )
 
+    if mirrored_rotary_assembly_desc is not None:
+        assemblies_boundary = assemblies_boundary | create_hollow_cylinder(
+            fist_assembly_radius,
+            last_assembly_radius,
+            core_desc.core_height,
+            distance_from_origin=mirrored_rotary_assembly_desc.assembly_core_distance,
+        ) & -openmc.ZCylinder(
+            r=outer_core_radius,
+            boundary_type="vacuum",
+        )
     return assemblies_boundary
 
 

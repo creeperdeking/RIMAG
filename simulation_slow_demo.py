@@ -37,8 +37,8 @@ neutron_shield_thickness = 40
 u235_enrichment = 9.5 / 100
 fuel_hm_density = 0.25
 
-render = False
-keff_simulation = True
+render = True
+keff_simulation = False
 depletion_sim = False
 
 batches = 1500

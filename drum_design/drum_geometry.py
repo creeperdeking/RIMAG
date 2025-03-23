@@ -25,7 +25,6 @@ def make_outer_core_layers(
     core_desc: CoreDesc,
     drum_zone: openmc.Cell,
     materials_dict: Dict[str, openmc.Material],
-    other_drum_zone: Optional[openmc.Cell] = None,
 ) -> List[openmc.Cell]:
     cells = []
     current_layer_radius = core_desc.core_radius
@@ -41,8 +40,6 @@ def make_outer_core_layers(
         )
         cell = openmc.Cell(name=f"outer_core_layer_{layer.material}_{i}")
         cell.region = cylinder & ~drum_zone
-        if other_drum_zone is not None:
-            cell.region = cell.region & ~other_drum_zone
         cell.fill = materials_dict[layer.material]
         cells.append(cell)
         previous_layer_radius = current_layer_radius
@@ -125,16 +122,8 @@ def define_drum_geometry(
         geometry_settings.core_desc,
         geometry_settings.rotary_assembly_desc,
         geometry_settings.core_desc.outer_core_radius,
+        mirrored_rotary_assembly_desc,
     )
-    assemblies_boundary_other_side = None
-    if geometry_settings.half_assembly:
-        assemblies_boundary_other_side = get_assemblies_boundaries(
-            last_assembly_thickness,
-            drums,
-            geometry_settings.core_desc,
-            mirrored_rotary_assembly_desc,
-            geometry_settings.core_desc.outer_core_radius,
-        )
 
     outer_core_boundary = create_cylinder(
         geometry_settings.core_desc.outer_core_radius,
@@ -157,17 +146,15 @@ def define_drum_geometry(
         geometry_settings.core_desc,
         assemblies_boundary,
         materials_dict,
-        assemblies_boundary_other_side,
     )
 
-    core_shape = -openmc.ZCylinder(r=geometry_settings.core_desc.core_radius)
     assembly_cells = make_assemblies_cells(
         geometry_settings.assembly_section_inner,
         geometry_settings.assembly_section_last,
         geometry_settings.core_desc,
         drums,
         geometry_settings.rotary_assembly_desc,
-        core_shape,
+        core_boundary,
         materials_dict,
         mirrored_rotary_assembly_desc if geometry_settings.half_assembly else None,
     )
