@@ -187,6 +187,13 @@ def run_depletion_sim(
                 mat=materials_dict[material_choice.fuel], nuc="Gd157", time_units="d"
             )[1]
         ],
+        ["Np237 (mol)"]
+        + [
+            round(a / cst.Avogadro, 5)
+            for a in results.get_atoms(
+                mat=materials_dict[material_choice.fuel], nuc="Np237", time_units="d"
+            )[1]
+        ],
         ["Pu239 (mol)"]
         + [
             round(a / cst.Avogadro, 5)

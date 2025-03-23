@@ -28,7 +28,7 @@ fuel_thickness = 0.25
 moderator_thickness = fuel_thickness / 0.3
 fuel_drum_gap = 0.09
 drum_thickness = 0.01
-half_assembly = True
+half_assembly = False
 
 hot_temp = 2000 + 273
 cold_temp = 1800 + 273
@@ -39,8 +39,8 @@ neutron_shield_thickness = 40
 u235_enrichment = 9.5 / 100
 fuel_hm_density = 0.25
 
-render = True
-keff_simulation = False
+render = False
+keff_simulation = True
 depletion_sim = False
 
 batches = 1500
