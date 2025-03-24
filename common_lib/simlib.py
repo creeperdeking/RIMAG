@@ -59,10 +59,10 @@ def make_sim_settings(
     settings = openmc.Settings()
     settings.source = source
     settings.batches = batches
-    settings.inactive = 50
+    settings.inactive = 100
     settings.particles = 1000
     settings.seed = 42
-    settings.rel_max_lost_particles = 0.1
+    settings.rel_max_lost_particles = 0.01
     if not deterministic:
         settings.seed = int(pytime.time())
 

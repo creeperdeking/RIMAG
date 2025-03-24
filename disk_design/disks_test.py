@@ -1,11 +1,11 @@
 import math
 
 import pytest
-from drums import calculate_drum_surface_in_core
+from disk_design.disks import calculate_drum_surface_in_core
 
 from common_lib.assemblies import AssemblySections, compute_core_desc
 from common_lib.rotary_assembly import RotaryAssemblyDesc
-from drum_design.drums import DrumAssemblyLayer
+from disk_design.disks import DrumAssemblyLayer
 
 
 def test_drum_surface_in_core_zero_when_intersection_is_zero():

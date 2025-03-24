@@ -15,8 +15,8 @@ from common_lib.simlib import (
     run_depletion_sim,
     print_core_characteristics,
 )
-from drum_design.drum_geometry import define_drum_geometry
-from drum_design.drum_core_characteristics import calculate_drum_core_characteristics
+from disk_design.disks_geometry import define_disks_geometry
+from disk_design.disks_core_characteristics import calculate_drum_core_characteristics
 
 core_diameter = 50
 core_height = 50
@@ -32,16 +32,16 @@ hot_temp = 2000 + 273
 cold_temp = 1800 + 273
 
 reflector_thickness = 30
-neutron_shield_thickness = 70
+neutron_shield_thickness = 60
 
 u235_enrichment = 9.5 / 100
 fuel_hm_density = 0.25
 
-render = False
-keff_simulation = True
+render = True
+keff_simulation = False
 depletion_sim = False
 
-batches = 1500
+batches = 15000
 
 material_choice = MaterialChoice(
     moderator="Light Water",
@@ -181,7 +181,7 @@ geometry_settings = GeometrySettings(
 
 materials_dict, materials_def, colors = make_materials(u235_enrichment, material_choice)
 
-geometry, universe, cells, drums = define_drum_geometry(
+geometry, universe, cells, drums = define_disks_geometry(
     geometry_settings, materials_dict
 )
 
