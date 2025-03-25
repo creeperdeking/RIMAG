@@ -5,7 +5,7 @@ from common_lib.geometry import GeometrySettings
 from common_lib.light import radiative_heat_flux_between_plates
 from common_lib.materials import Material, MaterialChoice, heavy_metals_density
 from common_lib.rotary_assembly import RotaryAssemblyDesc
-from disk_design.disks_assemblies import calculate_drums_fuel_volume
+from disk_design.disks_assemblies import calculate_disks_fuel_volume
 from disk_design.disks import DiskAssemblyLayer, calculate_disks_surface_in_core
 from drum_design.drums import calculate_drums_surface_in_core
 
@@ -21,7 +21,7 @@ def calculate_disk_core_characteristics(
     hot_temp: float,
     cold_temp: float,
 ):
-    photovolatic_volume = calculate_drums_fuel_volume(
+    photovolatic_volume = calculate_disks_fuel_volume(
         drum_desc=rotary_assembly_desc,
         core_desc=core_desc,
         assembly_section=geometry_settings.assembly_section_core,
@@ -29,7 +29,7 @@ def calculate_disk_core_characteristics(
         half_assembly=half_assembly,
     )
 
-    fuel_volume = calculate_drums_fuel_volume(
+    fuel_volume = calculate_disks_fuel_volume(
         drum_desc=rotary_assembly_desc,
         core_desc=core_desc,
         assembly_section=geometry_settings.assembly_section_core,

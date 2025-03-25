@@ -14,7 +14,7 @@ from disk_design.disks import calculate_disks_surface_in_core, DiskAssemblyLayer
 from drum_design.drums import calculate_drums_surface_in_core, make_drums
 
 
-def calculate_drums_fuel_volume(
+def calculate_disks_fuel_volume(
     drum_desc: RotaryAssemblyDesc,
     core_desc: CoreDesc,
     assembly_section: AssemblySections,

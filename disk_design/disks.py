@@ -70,7 +70,6 @@ def make_disks(
         < geometry_settings.core_desc.core_height / 2
         - geometry_settings.rotary_assembly_desc.assembly_core_margin
     ):
-        print(current_disk_height)
         disks.append(
             DiskAssemblyLayer(
                 radius=disks_radius, height=current_disk_height, number=len(disks)
