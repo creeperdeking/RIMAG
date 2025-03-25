@@ -6,6 +6,7 @@ from common_lib.assemblies import make_emitter_only_assembly
 from common_lib.geometry import GeometrySettings, define_geometry, get_base_geometry
 from disk_design.disks_assemblies import define_discs_emitter_boundary, make_disks_cells
 from disk_design.disks import make_disks
+from drum_design.drums import make_drums
 
 
 def define_disks_geometry(

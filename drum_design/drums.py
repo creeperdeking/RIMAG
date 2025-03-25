@@ -50,12 +50,9 @@ def calculate_drums_surface_in_core(
     drum_desc: RotaryAssemblyDesc,
     core_desc: CoreDesc,
 ) -> float:
-    drum_surface_in_core = 0
-    for drum in drums:
-        drum_surface_in_core += calculate_drum_surface_in_core(
-            drum, core_desc, drum_desc
-        )
-    return drum_surface_in_core
+    return sum(
+        calculate_drum_surface_in_core(drum, core_desc, drum_desc) for drum in drums
+    )
 
 
 class DrumsGeometrySettings:

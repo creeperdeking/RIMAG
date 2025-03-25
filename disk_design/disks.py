@@ -1,16 +1,21 @@
-import math
 from typing import List
 
 from common_lib.assemblies import CoreDesc
 from common_lib.rotary_assembly import RotaryAssemblyDesc
 from pydantic import BaseModel
+from common_lib.geometry_utils import circle_intersection_area
 
 
-class DrumAssemblyLayer(BaseModel):
+class DiskAssemblyLayer(BaseModel):
 
     radius: float
     """
     The radius of the layer
+    """
+
+    height: float
+    """
+    The height of the layer
     """
 
     number: int
@@ -19,43 +24,24 @@ class DrumAssemblyLayer(BaseModel):
     """
 
 
-def calculate_drum_arc_length(
-    drum: DrumAssemblyLayer, drum_distance_from_core: float, core_radius: float
+def calculate_disk_surface_in_core(
+    disk: DiskAssemblyLayer, core_desc: CoreDesc, disc_desc: RotaryAssemblyDesc
 ):
-    return (
-        2
-        * drum.radius
-        * math.acos(
-            (drum_distance_from_core**2 + drum.radius**2 - core_radius**2)
-            / (2 * drum_distance_from_core * drum.radius)
-        )
+    return circle_intersection_area(
+        core_desc.core_radius,
+        disk.radius,
+        disc_desc.assembly_core_distance,
     )
 
 
-def calculate_drum_surface_in_core(
-    drum: DrumAssemblyLayer, core_desc: CoreDesc, drum_desc: RotaryAssemblyDesc
-):
-    return (
-        calculate_drum_arc_length(
-            drum,
-            drum_desc.assembly_core_distance,
-            core_desc.core_radius,
-        )
-        * core_desc.core_height
-    )
-
-
-def calculate_drums_surface_in_core(
-    drums: List[DrumAssemblyLayer],
-    drum_desc: RotaryAssemblyDesc,
+def calculate_disks_surface_in_core(
+    disks: List[DiskAssemblyLayer],
+    disc_desc: RotaryAssemblyDesc,
     core_desc: CoreDesc,
-) -> float:
-    drum_surface_in_core = 0
-    for drum in drums:
-        drum_surface_in_core += calculate_drum_surface_in_core(
-            drum, core_desc, drum_desc
-        )
-    return drum_surface_in_core
+):
+    return sum(
+        calculate_disk_surface_in_core(disk, core_desc, disc_desc) for disk in disks
+    )
 
 
 class DisksGeometrySettings:
@@ -67,36 +53,29 @@ class DisksGeometrySettings:
 # todo
 def make_disks(
     geometry_settings: DisksGeometrySettings,
-    distance_between_drums: float,
-) -> List[DrumAssemblyLayer]:
-    core_boundary_drum_radius = (
-        geometry_settings.rotary_assembly_desc.assembly_core_distance
-        - geometry_settings.core_desc.core_radius
-    )
-    outer_drum_radius = (
+    distance_between_disks: float,
+) -> List[DiskAssemblyLayer]:
+    disks_radius = (
         geometry_settings.rotary_assembly_desc.assembly_core_distance
         + geometry_settings.core_desc.core_radius
-        - geometry_settings.rotary_assembly_desc.assembly_core_margin
     )
-    if geometry_settings.double_assembly:
-        outer_drum_radius = (
-            geometry_settings.rotary_assembly_desc.assembly_core_distance
-            - geometry_settings.rotary_assembly_desc.assembly_core_margin
-        )
-    drum_radiuses = [outer_drum_radius]
-
-    assembly_core_distance = outer_drum_radius - core_boundary_drum_radius
+    current_disk_height = (
+        -geometry_settings.core_desc.core_height / 2
+        + geometry_settings.rotary_assembly_desc.assembly_core_margin
+    )
+    disks = []
 
     while (
-        assembly_core_distance - distance_between_drums
-    ) > geometry_settings.rotary_assembly_desc.assembly_core_margin:
-        drum_radiuses.append(drum_radiuses[-1] - distance_between_drums)
-        assembly_core_distance -= distance_between_drums
-
-    return [
-        DrumAssemblyLayer(
-            radius=drum_radius,
-            number=i,
+        current_disk_height + distance_between_disks
+        < geometry_settings.core_desc.core_height / 2
+        - geometry_settings.rotary_assembly_desc.assembly_core_margin
+    ):
+        print(current_disk_height)
+        disks.append(
+            DiskAssemblyLayer(
+                radius=disks_radius, height=current_disk_height, number=len(disks)
+            )
         )
-        for i, drum_radius in enumerate(drum_radiuses)
-    ]
+        current_disk_height += distance_between_disks
+
+    return disks

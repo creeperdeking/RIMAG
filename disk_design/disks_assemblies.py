@@ -10,34 +10,26 @@ from common_lib.geometry_utils import (
     create_hollow_cylinder,
 )
 from common_lib.rotary_assembly import RotaryAssemblyDesc
-from disk_design.disks import calculate_drums_surface_in_core, DrumAssemblyLayer
+from disk_design.disks import calculate_disks_surface_in_core, DiskAssemblyLayer
+from drum_design.drums import calculate_drums_surface_in_core, make_drums
 
 
 def calculate_drums_fuel_volume(
     drum_desc: RotaryAssemblyDesc,
     core_desc: CoreDesc,
     assembly_section: AssemblySections,
-    drums: List[DrumAssemblyLayer],
+    drums: List[DiskAssemblyLayer],
     half_assembly: bool = False,
 ) -> float:
-    fuel_radius_offset = 0
     fuel_thickness = 0
     for assembly_part in assembly_section.parts:
         if not assembly_part.is_emitter and assembly_part.is_fuel:
             fuel_thickness = assembly_part.thickness
             break
 
-        fuel_radius_offset += assembly_part.thickness
-
-    fuel_drums = []
-
-    for drum in drums:
-        fuel_radius = drum.radius - fuel_radius_offset
-        fuel_drums.append(DrumAssemblyLayer(radius=fuel_radius, number=drum.number))
-
+    print(calculate_disks_surface_in_core(drums, drum_desc, core_desc))
     fuel_volume = (
-        calculate_drums_surface_in_core(fuel_drums, drum_desc, core_desc)
-        * fuel_thickness
+        calculate_disks_surface_in_core(drums, drum_desc, core_desc) * fuel_thickness
     ) * (2 if half_assembly else 1)
 
     return fuel_volume
@@ -46,7 +38,7 @@ def calculate_drums_fuel_volume(
 def make_disks_cells(
     assembly_section: AssemblySections,
     core_desc: CoreDesc,
-    disks: List[DrumAssemblyLayer],
+    disks: List[DiskAssemblyLayer],
     rotary_assembly_desc: RotaryAssemblyDesc,
     materials_dict: Dict[str, openmc.Material],
     boundary_shape: Optional[openmc.Intersection] = None,
@@ -82,7 +74,7 @@ def make_disks_cells(
 
 def define_discs_emitter_boundary(
     assembly_section: AssemblySections,
-    drums: List[DrumAssemblyLayer],
+    drums: List[DiskAssemblyLayer],
     core_desc: CoreDesc,
     drum_desc: RotaryAssemblyDesc,
 ) -> openmc.Intersection:

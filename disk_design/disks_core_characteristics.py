@@ -6,14 +6,15 @@ from common_lib.light import radiative_heat_flux_between_plates
 from common_lib.materials import Material, MaterialChoice, heavy_metals_density
 from common_lib.rotary_assembly import RotaryAssemblyDesc
 from disk_design.disks_assemblies import calculate_drums_fuel_volume
-from disk_design.disks import DrumAssemblyLayer, calculate_drums_surface_in_core
+from disk_design.disks import DiskAssemblyLayer, calculate_disks_surface_in_core
+from drum_design.drums import calculate_drums_surface_in_core
 
 
 def calculate_drum_core_characteristics(
     rotary_assembly_desc: RotaryAssemblyDesc,
     core_desc: CoreDesc,
     geometry_settings: GeometrySettings,
-    drums: List[DrumAssemblyLayer],
+    disks: List[DiskAssemblyLayer],
     half_assembly: bool,
     material_choice: MaterialChoice,
     materials_def: Dict[str, Material],
@@ -24,7 +25,7 @@ def calculate_drum_core_characteristics(
         drum_desc=rotary_assembly_desc,
         core_desc=core_desc,
         assembly_section=geometry_settings.assembly_section_core,
-        drums=drums,
+        drums=disks,
         half_assembly=half_assembly,
     )
 
@@ -32,14 +33,14 @@ def calculate_drum_core_characteristics(
         drum_desc=rotary_assembly_desc,
         core_desc=core_desc,
         assembly_section=geometry_settings.assembly_section_core,
-        drums=drums,
+        drums=disks,
         half_assembly=half_assembly,
     )
 
     # multiply by 2 because each drum section has two faces exposed to the fuel, and then by 2 again if there are two drum assemblies
     emissive_surface = (
         (
-            calculate_drums_surface_in_core(drums, rotary_assembly_desc, core_desc)
+            calculate_disks_surface_in_core(disks, rotary_assembly_desc, core_desc)
             / 10000
         )
         * (2 if half_assembly else 1)
