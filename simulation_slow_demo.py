@@ -16,8 +16,7 @@ from common_lib.simlib import (
     print_core_characteristics,
 )
 from disk_design.disks_geometry import define_disks_geometry
-from drum_design.drum_core_characteristics import calculate_drum_core_characteristics
-from drum_design.drum_geometry import define_drum_geometry
+from disk_design.disks_core_characteristics import calculate_disk_core_characteristics
 
 core_diameter = 50
 core_height = 50
@@ -182,7 +181,7 @@ geometry_settings = GeometrySettings(
 
 materials_dict, materials_def, colors = make_materials(u235_enrichment, material_choice)
 
-geometry, universe, cells, drums = define_drum_geometry(
+geometry, universe, cells, drums = define_disks_geometry(
     geometry_settings, materials_dict
 )
 
@@ -193,7 +192,7 @@ geometry, universe, cells, drums = define_drum_geometry(
     fuel_volume,
     photovolatic_volume,
     radiative_flux,
-) = calculate_drum_core_characteristics(
+) = calculate_disk_core_characteristics(
     rotary_assembly_desc,
     core_desc,
     geometry_settings,

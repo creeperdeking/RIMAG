@@ -10,7 +10,7 @@ from disk_design.disks import DiskAssemblyLayer, calculate_disks_surface_in_core
 from drum_design.drums import calculate_drums_surface_in_core
 
 
-def calculate_drum_core_characteristics(
+def calculate_disk_core_characteristics(
     rotary_assembly_desc: RotaryAssemblyDesc,
     core_desc: CoreDesc,
     geometry_settings: GeometrySettings,
