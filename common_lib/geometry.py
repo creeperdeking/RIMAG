@@ -149,7 +149,7 @@ def define_geometry(
         universe,
         {
             **core_assembly_cells,
-            **photovoltaic_assembly_cells,
-            **emitter_assembly_cells,
+            # **photovoltaic_assembly_cells,
+            # **emitter_assembly_cells,
         },
     )

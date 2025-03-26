@@ -7,6 +7,7 @@ from common_lib.assemblies import (
     CoreDesc,
 )
 from common_lib.geometry_utils import (
+    create_cylinder,
     create_hollow_cylinder,
 )
 from common_lib.rotary_assembly import RotaryAssemblyDesc
@@ -27,7 +28,6 @@ def calculate_disks_fuel_volume(
             fuel_thickness = assembly_part.thickness
             break
 
-    print(calculate_disks_surface_in_core(drums, drum_desc, core_desc))
     fuel_volume = (
         calculate_disks_surface_in_core(drums, drum_desc, core_desc) * fuel_thickness
     ) * (2 if half_assembly else 1)
@@ -37,6 +37,7 @@ def calculate_disks_fuel_volume(
 
 def make_disks_cells(
     assembly_section: AssemblySections,
+    outer_core_layers: AssemblySections,
     core_desc: CoreDesc,
     disks: List[DiskAssemblyLayer],
     rotary_assembly_desc: RotaryAssemblyDesc,
@@ -44,15 +45,19 @@ def make_disks_cells(
     boundary_shape: Optional[openmc.Intersection] = None,
 ) -> Dict[str, openmc.Cell]:
     shapes = {}
-    for drum in disks:
-        current_radius = drum.radius
+    for disk in disks:
+        current_height = disk.height
         for assembly_part in assembly_section.parts:
             if not assembly_part.is_emitter and assembly_part.material is not None:
-                shape = create_hollow_cylinder(
-                    current_radius,
-                    current_radius - assembly_part.thickness,
-                    core_desc.core_height,
+                print(disk.radius)
+                print(current_height)
+                print(assembly_part.thickness)
+                print(rotary_assembly_desc.assembly_core_distance)
+                shape = create_cylinder(
+                    disk.radius,
+                    assembly_part.thickness,
                     distance_from_origin=rotary_assembly_desc.assembly_core_distance,
+                    height=current_height,
                 )
                 if boundary_shape is not None:
                     shape = shape & boundary_shape
@@ -62,7 +67,7 @@ def make_disks_cells(
                     )
                 else:
                     shapes[assembly_part.material] = shape
-            current_radius -= assembly_part.thickness
+            current_height += assembly_part.thickness
     cells = {}
     for material, shape in shapes.items():
         cell = openmc.Cell(name=f"{material}")
@@ -74,27 +79,28 @@ def make_disks_cells(
 
 def define_discs_emitter_boundary(
     assembly_section: AssemblySections,
-    drums: List[DiskAssemblyLayer],
+    disks: List[DiskAssemblyLayer],
     core_desc: CoreDesc,
     drum_desc: RotaryAssemblyDesc,
 ) -> openmc.Intersection:
     outer_core_assembly_section = create_outer_core_assembly_section(assembly_section)
     boundary_shape = None
-    for drum in drums:
-        curent_radius = drum.radius
+    for disk in disks:
+        current_height = disk.height
         for assembly_part in outer_core_assembly_section.parts:
             if assembly_part.is_emitter:
                 additional_boundary_shape = create_hollow_cylinder(
-                    curent_radius,
-                    curent_radius - assembly_part.thickness,
-                    core_desc.core_height,
+                    disk.radius,
+                    disk.radius - core_desc.core_radius * 2,
+                    assembly_part.thickness,
                     distance_from_origin=drum_desc.assembly_core_distance,
+                    height=current_height,
                 )
                 boundary_shape = (
                     additional_boundary_shape
                     if boundary_shape is None
                     else boundary_shape | additional_boundary_shape
                 )
-            curent_radius -= assembly_part.thickness
+            current_height += assembly_part.thickness
 
     return boundary_shape

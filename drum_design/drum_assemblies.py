@@ -35,8 +35,6 @@ def calculate_drums_fuel_volume(
         fuel_radius = drum.radius - fuel_radius_offset
         fuel_drums.append(DrumAssemblyLayer(radius=fuel_radius, number=drum.number))
 
-    print(calculate_drums_surface_in_core(fuel_drums, drum_desc, core_desc))
-
     fuel_volume = (
         calculate_drums_surface_in_core(fuel_drums, drum_desc, core_desc)
         * fuel_thickness

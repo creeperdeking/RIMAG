@@ -6,7 +6,6 @@ from common_lib.assemblies import make_emitter_only_assembly
 from common_lib.geometry import GeometrySettings, define_geometry, get_base_geometry
 from disk_design.disks_assemblies import define_discs_emitter_boundary, make_disks_cells
 from disk_design.disks import make_disks
-from drum_design.drums import make_drums
 
 
 def define_disks_geometry(
@@ -33,6 +32,7 @@ def define_disks_geometry(
 
     core_assembly_cells = make_disks_cells(
         assembly_section=geometry_settings.assembly_section_core,
+        outer_core_layers=geometry_settings.outer_core_layers,
         core_desc=geometry_settings.core_desc,
         disks=disks,
         rotary_assembly_desc=geometry_settings.rotary_assembly_desc,
@@ -42,6 +42,7 @@ def define_disks_geometry(
 
     photovoltaic_assembly_cells = make_disks_cells(
         assembly_section=geometry_settings.photovoltaic_assembly,
+        outer_core_layers=geometry_settings.outer_core_layers,
         core_desc=geometry_settings.core_desc,
         disks=disks,
         rotary_assembly_desc=geometry_settings.rotary_assembly_desc,
@@ -54,6 +55,7 @@ def define_disks_geometry(
             assembly_section=geometry_settings.assembly_section_core,
             emitter_assembly=geometry_settings.emitter_assembly,
         ),
+        outer_core_layers=geometry_settings.outer_core_layers,
         core_desc=geometry_settings.core_desc,
         disks=disks,
         rotary_assembly_desc=geometry_settings.rotary_assembly_desc,
@@ -68,7 +70,9 @@ def define_disks_geometry(
         emitter_assembly_cells,
         emitter_boundary,
         outer_assembly_radius=disks[0].radius,
-        inner_assembly_radius=disks[-1].radius - assembly_thickness,
+        inner_assembly_radius=geometry_settings.rotary_assembly_desc.assembly_core_distance
+        - geometry_settings.core_desc.core_radius
+        - geometry_settings.outer_core_layers.parts[0].thickness,
         core_boundary=core_boundary,
         photovoltaic_boundary=photovoltaic_boundary,
     )

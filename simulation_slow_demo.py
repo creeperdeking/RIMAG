@@ -219,10 +219,10 @@ print_core_characteristics(
 if render:
     render_geometry(
         universe,
-        universe_radius=(drums[0].radius + 10),
+        universe_radius=(5),  # (drums[0].radius + 10),
         pixels=(2500, 2500),
-        basis="xy",
-        origin=(rotary_assembly_desc.assembly_core_distance, 0, 0.0),
+        basis="xz",
+        origin=(0, 0, 0),  # (rotary_assembly_desc.assembly_core_distance, 0, 0.0),
         geometry=geometry,
         colors=colors,
         materials_dict=materials_dict,

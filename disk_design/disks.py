@@ -7,21 +7,9 @@ from common_lib.geometry_utils import circle_intersection_area
 
 
 class DiskAssemblyLayer(BaseModel):
-
     radius: float
-    """
-    The radius of the layer
-    """
-
     height: float
-    """
-    The height of the layer
-    """
-
     number: int
-    """
-    The number of the layer
-    """
 
 
 def calculate_disk_surface_in_core(
@@ -72,7 +60,9 @@ def make_disks(
     ):
         disks.append(
             DiskAssemblyLayer(
-                radius=disks_radius, height=current_disk_height, number=len(disks)
+                radius=disks_radius,
+                height=current_disk_height,
+                number=len(disks),
             )
         )
         current_disk_height += distance_between_disks
