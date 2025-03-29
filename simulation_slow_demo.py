@@ -21,14 +21,14 @@ from disk_design.disks_core_characteristics import calculate_disk_core_character
 core_diameter = 50
 core_height = 50
 moderator_cladding_thickness = 0.05
-fuel_cladding_thickness = 0.05
+fuel_cladding_thickness = 0.035
 fuel_thickness = 0.25
 moderator_thickness = fuel_thickness / 0.3
 fuel_emitter_gap = 0.09
 emitter_thickness = 0.01
 half_assembly = False
 
-hot_temp = 2000 + 273
+hot_temp = 1900 + 273
 cold_temp = 1800 + 273
 
 reflector_thickness = 30
@@ -219,10 +219,10 @@ print_core_characteristics(
 if render:
     render_geometry(
         universe,
-        universe_radius=(5),  # (drums[0].radius + 10),
+        universe_radius=(drums[0].radius + 10),
         pixels=(2500, 2500),
         basis="xz",
-        origin=(0, 0, 0),  # (rotary_assembly_desc.assembly_core_distance, 0, 0.0),
+        origin=(rotary_assembly_desc.assembly_core_distance, 0, 0.0),
         geometry=geometry,
         colors=colors,
         materials_dict=materials_dict,

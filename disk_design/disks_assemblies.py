@@ -5,6 +5,7 @@ from common_lib.assemblies import (
     create_outer_core_assembly_section,
     AssemblySections,
     CoreDesc,
+    BoundariesGeometrySettings,
 )
 from common_lib.geometry_utils import (
     create_cylinder,
@@ -13,6 +14,35 @@ from common_lib.geometry_utils import (
 from common_lib.rotary_assembly import RotaryAssemblyDesc
 from disk_design.disks import calculate_disks_surface_in_core, DiskAssemblyLayer
 from drum_design.drums import calculate_drums_surface_in_core, make_drums
+
+
+def get_disk_assemblies_boundaries(
+    geometry_settings: BoundariesGeometrySettings,
+    outer_radius: float,
+    inner_radius: float,
+    assembly_thickness: float,
+    drums: List[DiskAssemblyLayer],
+) -> openmc.Cell:
+    drums_start_height = drums[0].height
+    drums_end_height = drums[-1].height + assembly_thickness
+
+    assemblies_boundary = create_hollow_cylinder(
+        outer_radius,
+        inner_radius,
+        drums_end_height - drums_start_height,
+        distance_from_origin=geometry_settings.rotary_assembly_desc.assembly_core_distance,
+        height=(drums_end_height + drums_start_height) / 2,
+    )
+
+    if geometry_settings.double_assembly:
+        assemblies_boundary = assemblies_boundary | create_hollow_cylinder(
+            outer_radius,
+            inner_radius,
+            drums_end_height - drums_start_height,
+            distance_from_origin=-geometry_settings.rotary_assembly_desc.assembly_core_distance,
+            height=(drums_end_height + drums_start_height) / 2,
+        )
+    return assemblies_boundary
 
 
 def calculate_disks_fuel_volume(
@@ -37,7 +67,6 @@ def calculate_disks_fuel_volume(
 
 def make_disks_cells(
     assembly_section: AssemblySections,
-    outer_core_layers: AssemblySections,
     core_desc: CoreDesc,
     disks: List[DiskAssemblyLayer],
     rotary_assembly_desc: RotaryAssemblyDesc,
@@ -47,17 +76,22 @@ def make_disks_cells(
     shapes = {}
     for disk in disks:
         current_height = disk.height
+        print("------")
         for assembly_part in assembly_section.parts:
+            print("=====")
+            print(current_height)
+            print(assembly_part.thickness)
+            print(assembly_part.is_emitter)
+            if not assembly_part.is_emitter:
+                print(assembly_part.material)
             if not assembly_part.is_emitter and assembly_part.material is not None:
-                print(disk.radius)
-                print(current_height)
-                print(assembly_part.thickness)
-                print(rotary_assembly_desc.assembly_core_distance)
+                print("lesgo")
+
                 shape = create_cylinder(
                     disk.radius,
                     assembly_part.thickness,
                     distance_from_origin=rotary_assembly_desc.assembly_core_distance,
-                    height=current_height,
+                    height=current_height + assembly_part.thickness / 2,
                 )
                 if boundary_shape is not None:
                     shape = shape & boundary_shape
@@ -67,6 +101,8 @@ def make_disks_cells(
                     )
                 else:
                     shapes[assembly_part.material] = shape
+            else:
+                print("nope")
             current_height += assembly_part.thickness
     cells = {}
     for material, shape in shapes.items():

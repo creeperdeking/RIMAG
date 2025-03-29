@@ -4,7 +4,11 @@ import openmc
 
 from common_lib.assemblies import make_emitter_only_assembly
 from common_lib.geometry import GeometrySettings, define_geometry, get_base_geometry
-from drum_design.drum_assemblies import define_drum_emitter_boundary, make_drum_cells
+from drum_design.drum_assemblies import (
+    define_drum_emitter_boundary,
+    make_drum_cells,
+    get_disk_assemblies_boundaries,
+)
 from drum_design.drums import make_drums
 
 
@@ -26,6 +30,11 @@ def define_drum_geometry(
         drums,
         geometry_settings.core_desc,
         geometry_settings.rotary_assembly_desc,
+    )
+    assemblies_boundary = get_disk_assemblies_boundaries(
+        geometry_settings,
+        drums[0].radius,
+        drums[-1].radius - assembly_thickness,
     )
 
     ### Making Cells
@@ -66,10 +75,9 @@ def define_drum_geometry(
         core_assembly_cells,
         emitter_assembly_cells,
         emitter_boundary,
-        outer_assembly_radius=drums[0].radius,
-        inner_assembly_radius=drums[-1].radius - assembly_thickness,
-        core_boundary=core_boundary,
-        photovoltaic_boundary=photovoltaic_boundary,
+        assemblies_boundary,
+        core_boundary,
+        photovoltaic_boundary,
     )
 
     return (

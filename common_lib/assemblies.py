@@ -53,29 +53,6 @@ def compute_core_desc(
     )
 
 
-def get_assemblies_boundaries(
-    geometry_settings: BoundariesGeometrySettings,
-    outer_radius: float,
-    inner_radius: float,
-) -> openmc.Cell:
-
-    assemblies_boundary = create_hollow_cylinder(
-        outer_radius,
-        inner_radius,
-        geometry_settings.core_desc.core_height,
-        distance_from_origin=geometry_settings.rotary_assembly_desc.assembly_core_distance,
-    )
-
-    if geometry_settings.double_assembly:
-        assemblies_boundary = assemblies_boundary | create_hollow_cylinder(
-            outer_radius,
-            inner_radius,
-            geometry_settings.core_desc.core_height,
-            distance_from_origin=-geometry_settings.rotary_assembly_desc.assembly_core_distance,
-        )
-    return assemblies_boundary
-
-
 def define_photovoltaic_boundary(
     core_desc: CoreDesc,
     assembly_core_distance: float,

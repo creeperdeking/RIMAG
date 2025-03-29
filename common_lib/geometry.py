@@ -5,7 +5,6 @@ from pydantic import BaseModel
 
 from common_lib.assemblies import (
     define_photovoltaic_boundary,
-    get_assemblies_boundaries,
     make_outer_core_layers,
     calculate_assembly_thickness,
     AssemblySections,
@@ -54,8 +53,7 @@ def define_geometry(
     core_assembly_cells: Dict[str, openmc.Cell],
     emitter_assembly_cells: Dict[str, openmc.Cell],
     emitter_boundary: openmc.Region,
-    inner_assembly_radius: float,
-    outer_assembly_radius: float,
+    assemblies_boundary: openmc.Region,
     core_boundary: openmc.Region,
     photovoltaic_boundary: openmc.Region,
 ):
@@ -84,10 +82,6 @@ def define_geometry(
         geometry_settings.double_assembly,
     )
 
-    assemblies_boundary = get_assemblies_boundaries(
-        geometry_settings, outer_assembly_radius, inner_assembly_radius
-    )
-
     core_fill_region = core_boundary & ~assemblies_boundary
     photovoltaic_fill_region = photovoltaic_boundary & ~assemblies_boundary
 
@@ -110,8 +104,8 @@ def define_geometry(
     outer_empty_zone = (
         (
             -openmc.ZCylinder(
-                r=outer_assembly_radius
-                + geometry_settings.rotary_assembly_desc.assembly_core_distance,
+                r=geometry_settings.rotary_assembly_desc.assembly_core_distance * 2
+                + geometry_settings.core_desc.core_radius,
                 boundary_type="vacuum",
             )
             & -openmc.ZPlane(
@@ -136,11 +130,11 @@ def define_geometry(
         cells=[
             *core_assembly_cells.values(),
             *outer_core_layers_cells,
-            *photovoltaic_assembly_cells.values(),
-            *emitter_assembly_cells.values(),
+            # *photovoltaic_assembly_cells.values(),
+            # *emitter_assembly_cells.values(),
             core_fill_cell,
-            outer_empty_zone_cell,
-            photovoltaic_fill_cell,
+            # outer_empty_zone_cell,
+            # photovoltaic_fill_cell,
         ]
     )
 
@@ -149,7 +143,7 @@ def define_geometry(
         universe,
         {
             **core_assembly_cells,
-            # **photovoltaic_assembly_cells,
-            # **emitter_assembly_cells,
+            **photovoltaic_assembly_cells,
+            **emitter_assembly_cells,
         },
     )

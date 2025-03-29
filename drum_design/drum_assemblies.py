@@ -5,12 +5,36 @@ from common_lib.assemblies import (
     create_outer_core_assembly_section,
     AssemblySections,
     CoreDesc,
+    BoundariesGeometrySettings,
 )
 from common_lib.geometry_utils import (
     create_hollow_cylinder,
 )
 from common_lib.rotary_assembly import RotaryAssemblyDesc
 from drum_design.drums import calculate_drums_surface_in_core, DrumAssemblyLayer
+
+
+def get_drum_assemblies_boundaries(
+    geometry_settings: BoundariesGeometrySettings,
+    outer_radius: float,
+    inner_radius: float,
+) -> openmc.Cell:
+
+    assemblies_boundary = create_hollow_cylinder(
+        outer_radius,
+        inner_radius,
+        geometry_settings.core_desc.core_height,
+        distance_from_origin=geometry_settings.rotary_assembly_desc.assembly_core_distance,
+    )
+
+    if geometry_settings.double_assembly:
+        assemblies_boundary = assemblies_boundary | create_hollow_cylinder(
+            outer_radius,
+            inner_radius,
+            geometry_settings.core_desc.core_height,
+            distance_from_origin=-geometry_settings.rotary_assembly_desc.assembly_core_distance,
+        )
+    return assemblies_boundary
 
 
 def calculate_drums_fuel_volume(
