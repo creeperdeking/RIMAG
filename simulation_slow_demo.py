@@ -25,7 +25,7 @@ fuel_cladding_thickness = 0.035
 fuel_thickness = 0.25
 moderator_thickness = fuel_thickness / 0.3
 fuel_emitter_gap = 0.09
-emitter_thickness = 0.01
+emitter_thickness = 0.3
 half_assembly = False
 
 hot_temp = 1900 + 273

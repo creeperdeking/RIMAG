@@ -76,17 +76,8 @@ def make_disks_cells(
     shapes = {}
     for disk in disks:
         current_height = disk.height
-        print("------")
         for assembly_part in assembly_section.parts:
-            print("=====")
-            print(current_height)
-            print(assembly_part.thickness)
-            print(assembly_part.is_emitter)
-            if not assembly_part.is_emitter:
-                print(assembly_part.material)
             if not assembly_part.is_emitter and assembly_part.material is not None:
-                print("lesgo")
-
                 shape = create_cylinder(
                     disk.radius,
                     assembly_part.thickness,
@@ -101,8 +92,6 @@ def make_disks_cells(
                     )
                 else:
                     shapes[assembly_part.material] = shape
-            else:
-                print("nope")
             current_height += assembly_part.thickness
     cells = {}
     for material, shape in shapes.items():

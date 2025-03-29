@@ -36,8 +36,8 @@ def define_disks_geometry(
         geometry_settings,
         disks[0].radius,
         geometry_settings.rotary_assembly_desc.assembly_core_distance
-        - geometry_settings.core_desc.core_radius
-        - geometry_settings.outer_core_layers.parts[0].thickness,
+        - geometry_settings.core_desc.core_radius,
+        # - geometry_settings.outer_core_layers.parts[0].thickness,
         assembly_thickness,
         disks,
     )
@@ -53,32 +53,33 @@ def define_disks_geometry(
         boundary_shape=core_boundary,
     )
 
-    # photovoltaic_assembly_cells = make_disks_cells(
-    #     assembly_section=geometry_settings.photovoltaic_assembly,
-    #     core_desc=geometry_settings.core_desc,
-    #     disks=disks,
-    #     rotary_assembly_desc=geometry_settings.rotary_assembly_desc,
-    #     materials_dict=materials_dict,
-    #     boundary_shape=photovoltaic_boundary,
-    # )
+    photovoltaic_assembly_cells = make_disks_cells(
+        assembly_section=geometry_settings.photovoltaic_assembly,
+        core_desc=geometry_settings.core_desc,
+        disks=disks,
+        rotary_assembly_desc=geometry_settings.rotary_assembly_desc,
+        materials_dict=materials_dict,
+        boundary_shape=photovoltaic_boundary,
+    )
 
-    # emitter_assembly_cells = make_disks_cells(
-    #     assembly_section=make_emitter_only_assembly(
-    #         assembly_section=geometry_settings.assembly_section_core,
-    #         emitter_assembly=geometry_settings.emitter_assembly,
-    #     ),
-    #     core_desc=geometry_settings.core_desc,
-    #     disks=disks,
-    #     rotary_assembly_desc=geometry_settings.rotary_assembly_desc,
-    #     materials_dict=materials_dict,
-    # )
+    emitter_assembly_cells = make_disks_cells(
+        assembly_section=make_emitter_only_assembly(
+            assembly_section=geometry_settings.assembly_section_core,
+            emitter_assembly=geometry_settings.emitter_assembly,
+        ),
+        core_desc=geometry_settings.core_desc,
+        disks=disks,
+        rotary_assembly_desc=geometry_settings.rotary_assembly_desc,
+        materials_dict=materials_dict,
+        boundary_shape=assemblies_boundary,
+    )
 
     geometry, universe, cells = define_geometry(
         geometry_settings,
         materials_dict,
-        {},  # photovoltaic_assembly_cells,
+        photovoltaic_assembly_cells,
         core_assembly_cells,
-        {},  # emitter_assembly_cells,
+        emitter_assembly_cells,
         emitter_boundary,
         assemblies_boundary,
         core_boundary=core_boundary,

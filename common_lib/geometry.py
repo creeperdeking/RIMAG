@@ -130,11 +130,11 @@ def define_geometry(
         cells=[
             *core_assembly_cells.values(),
             *outer_core_layers_cells,
-            # *photovoltaic_assembly_cells.values(),
-            # *emitter_assembly_cells.values(),
+            *photovoltaic_assembly_cells.values(),
+            *emitter_assembly_cells.values(),
             core_fill_cell,
-            # outer_empty_zone_cell,
-            # photovoltaic_fill_cell,
+            outer_empty_zone_cell,
+            photovoltaic_fill_cell,
         ]
     )
 
