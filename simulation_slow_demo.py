@@ -37,8 +37,8 @@ neutron_shield_thickness = 60
 u235_enrichment = 9.5 / 100
 fuel_hm_density = 0.25
 
-render = True
-keff_simulation = False
+render = False
+keff_simulation = True
 depletion_sim = False
 
 batches = 15000
@@ -219,10 +219,10 @@ print_core_characteristics(
 if render:
     render_geometry(
         universe,
-        universe_radius=(drums[0].radius + 10),
+        universe_radius=(drums[0].radius * 2 + 10),
         pixels=(2500, 2500),
-        basis="xz",
-        origin=(rotary_assembly_desc.assembly_core_distance, 0, 0.0),
+        basis="xy",
+        origin=(rotary_assembly_desc.assembly_core_distance, 0, 0),
         geometry=geometry,
         colors=colors,
         materials_dict=materials_dict,

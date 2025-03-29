@@ -119,7 +119,7 @@ def define_discs_emitter_boundary(
                     disk.radius - core_desc.core_radius * 2,
                     assembly_part.thickness,
                     distance_from_origin=drum_desc.assembly_core_distance,
-                    height=current_height,
+                    height=current_height + assembly_part.thickness / 2,
                 )
                 boundary_shape = (
                     additional_boundary_shape

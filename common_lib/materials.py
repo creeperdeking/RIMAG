@@ -339,7 +339,7 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
         ),
         "Void": Material(
             composition=[AtomProportion(atom=atoms["He"])],
-            density=1e-10,
+            density=1,
             color="purple",
         ),
     }
