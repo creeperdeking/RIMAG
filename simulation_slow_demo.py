@@ -14,6 +14,7 @@ from common_lib.simlib import (
     render_geometry,
     run_depletion_sim,
     print_core_characteristics,
+    run_keff_sim,
 )
 from disk_design.disks_geometry import define_disks_geometry
 from disk_design.disks_core_characteristics import calculate_disk_core_characteristics
@@ -231,16 +232,16 @@ if render:
 settings = make_sim_settings(deterministic=True, batches=batches)
 
 if keff_simulation:
-    # run_keff_sim(geometry, settings, materials_dict)
-    run_sim_with_photovoltaic_tally(
-        geometry,
-        settings,
-        materials_dict,
-        cells[material_choice.photovoltaic],
-        core_power,
-        photovolatic_volume,
-        batches,
-    )
+    run_keff_sim(geometry, settings, materials_dict)
+    # run_sim_with_photovoltaic_tally(
+    #     geometry,
+    #     settings,
+    #     materials_dict,
+    #     cells[material_choice.photovoltaic],
+    #     core_power,
+    #     photovolatic_volume,
+    #     batches,
+    # )
 
 if depletion_sim:
     run_depletion_sim(

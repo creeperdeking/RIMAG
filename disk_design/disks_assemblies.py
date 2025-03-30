@@ -26,6 +26,11 @@ def get_disk_assemblies_boundaries(
     drums_start_height = drums[0].height
     drums_end_height = drums[-1].height + assembly_thickness
 
+    outer_core_boundary = create_cylinder(
+        geometry_settings.core_desc.outer_core_radius,
+        geometry_settings.core_desc.outer_core_height,
+    )
+
     assemblies_boundary = create_hollow_cylinder(
         outer_radius,
         inner_radius,
@@ -42,7 +47,7 @@ def get_disk_assemblies_boundaries(
             distance_from_origin=-geometry_settings.rotary_assembly_desc.assembly_core_distance,
             height=(drums_end_height + drums_start_height) / 2,
         )
-    return assemblies_boundary
+    return assemblies_boundary & outer_core_boundary
 
 
 def calculate_disks_fuel_volume(
