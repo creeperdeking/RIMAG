@@ -8,7 +8,7 @@ from tabulate import tabulate
 import scipy.constants as cst
 from common_lib.materials import MaterialChoice
 from common_lib.assemblies import calculate_assembly_thickness
-
+import matplotlib.pyplot as plt
 
 def clean_directory():
     patternlist = [
@@ -58,11 +58,19 @@ def make_sim_settings(
     # Define simulation settings
     settings = openmc.Settings()
     settings.source = source
-    settings.batches = batches
-    settings.inactive = 100
+    settings.batches = 1
+    settings.inactive = 0
     settings.particles = 1000
+    settings.precision = {'energy': 1e-7}
     settings.seed = 42
+    settings.max_tracks = 100000
     settings.rel_max_lost_particles = 0.01
+    settings.temperature = {'method': 'interpolation'}  # ensure correct thermal interpolation
+    settings.surface_tolerance = 1e-6  # (small but finite)
+    settings.max_particle_events = 100000
+    settings.event_based = True
+    settings.cutoff = {'energy_neutron': 1e-7, "time_neutron": 1e-7}  # ~0.1 μeV cutoff, adjust as needed
+    settings.track = [[1, 1, 860]]
     if not deterministic:
         settings.seed = int(pytime.time())
 
@@ -79,6 +87,12 @@ def run_keff_sim(
     print()
     print("Seed :", settings.seed, "\n")
     run_sim(geometry, settings, materials_dict)
+
+def plot_tracks(track_file_name):
+    tracks = openmc.Tracks(track_file_name)
+    print("plot?")
+    tracks.plot()
+    plt.show()
 
 
 def render_geometry(

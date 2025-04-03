@@ -15,6 +15,7 @@ from common_lib.simlib import (
     run_depletion_sim,
     print_core_characteristics,
     run_keff_sim,
+    plot_tracks,
 )
 from disk_design.disks_geometry import define_disks_geometry
 from disk_design.disks_core_characteristics import calculate_disk_core_characteristics
@@ -220,9 +221,9 @@ print_core_characteristics(
 if render:
     render_geometry(
         universe,
-        universe_radius=(drums[0].radius * 2 + 10),
+        universe_radius=(drums[0].radius + 10),
         pixels=(2500, 2500),
-        basis="xy",
+        basis="xz",
         origin=(rotary_assembly_desc.assembly_core_distance, 0, 0),
         geometry=geometry,
         colors=colors,
@@ -231,8 +232,12 @@ if render:
 
 settings = make_sim_settings(deterministic=True, batches=batches)
 
+print(materials_dict[material_choice.reflector])
+# assert False
+
 if keff_simulation:
     run_keff_sim(geometry, settings, materials_dict)
+    #plot_tracks("tracks.h5")
     # run_sim_with_photovoltaic_tally(
     #     geometry,
     #     settings,
