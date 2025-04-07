@@ -279,6 +279,7 @@ def print_core_characteristics(
     heavy_metal_mass,
     emissive_surface,
     core_power,
+    core_power_electric,
     assembly_section_core,
     radiative_flux,
     fuel_volume,
@@ -296,12 +297,12 @@ def print_core_characteristics(
         "W/m2",
     )
     print("core power", round(core_power / 1e6, 2), "MW")
-    print()
+    print("core power electric", round(core_power_electric / 1e6, 2), "MW")
 
     print("fuel volume", fuel_volume, "cm3")
 
     print(
-        "fuel mass",
+        "heavy metal mass",
         heavy_metal_mass,
         "kg",
     )

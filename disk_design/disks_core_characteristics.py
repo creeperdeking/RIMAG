@@ -7,7 +7,6 @@ from common_lib.materials import Material, MaterialChoice, heavy_metals_density
 from common_lib.rotary_assembly import RotaryAssemblyDesc
 from disk_design.disks_assemblies import calculate_disks_fuel_volume
 from disk_design.disks import DiskAssemblyLayer, calculate_disks_surface_in_core
-from drum_design.drums import calculate_drums_surface_in_core
 
 
 def calculate_disk_core_characteristics(
@@ -20,6 +19,7 @@ def calculate_disk_core_characteristics(
     materials_def: Dict[str, Material],
     hot_temp: float,
     cold_temp: float,
+    photovoltaic_efficiency: float,
 ):
     photovolatic_volume = calculate_disks_fuel_volume(
         drum_desc=rotary_assembly_desc,
@@ -50,6 +50,7 @@ def calculate_disk_core_characteristics(
     radiative_flux = radiative_heat_flux_between_plates(hot_temp, cold_temp, 0.9, 0.9)
 
     core_power = radiative_flux * emissive_surface
+    core_power_electric = core_power * photovoltaic_efficiency
 
     heavy_metal_mass = (
         fuel_volume * heavy_metals_density(materials_def[material_choice.fuel]) / 1000
@@ -59,6 +60,7 @@ def calculate_disk_core_characteristics(
         heavy_metal_mass,
         emissive_surface,
         core_power,
+        core_power_electric,
         fuel_volume,
         photovolatic_volume,
         radiative_flux,

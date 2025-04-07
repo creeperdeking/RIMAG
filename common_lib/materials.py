@@ -35,6 +35,7 @@ class MaterialChoice(BaseModel):
     fuel_cladding: str
     void: str
     photovoltaic: str
+    coolant: str
 
 
 atoms: Dict[str, Atom] = {
@@ -253,6 +254,7 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
             ],
             density=3.02,
             color="lightblue",
+            # scattering="c_B_in_BeO",
         ),
         "Zirconium Hydride": Material(
             composition=[

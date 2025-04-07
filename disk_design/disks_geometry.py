@@ -30,14 +30,15 @@ def define_disks_geometry(
         disks,
         geometry_settings.core_desc,
         geometry_settings.rotary_assembly_desc,
+        geometry_settings.outer_core_layers.parts[0].thickness,
     )
 
     assemblies_boundary = get_disk_assemblies_boundaries(
         geometry_settings,
         disks[0].radius,
         geometry_settings.rotary_assembly_desc.assembly_core_distance
-        - geometry_settings.core_desc.core_radius,
-        # - geometry_settings.outer_core_layers.parts[0].thickness,
+        - geometry_settings.core_desc.core_radius
+        - geometry_settings.outer_core_layers.parts[0].thickness,
         assembly_thickness,
         disks,
     )

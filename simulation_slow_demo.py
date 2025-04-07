@@ -18,23 +18,25 @@ from common_lib.simlib import (
 from disk_design.disks_geometry import define_disks_geometry
 from disk_design.disks_core_characteristics import calculate_disk_core_characteristics
 
-core_diameter = 50
-core_height = 50
+core_diameter = 35
+core_height = 35
 moderator_cladding_thickness = 0.05
 fuel_cladding_thickness = 0.035
 fuel_thickness = 0.25
-moderator_thickness = fuel_thickness / 0.3
+moderator_thickness = fuel_thickness * 6.5
 fuel_emitter_gap = 0.09
 emitter_thickness = 0.3
 half_assembly = False
 
-hot_temp = 1900 + 273
-cold_temp = 1800 + 273
+hot_temp = 1500 + 273
+cold_temp = 1300 + 273
 
-reflector_thickness = 30
-neutron_shield_thickness = 40
+photovoltaic_efficiency = 0.35
 
-u235_enrichment = 9.5 / 100
+reflector_thickness = 20
+neutron_shield_thickness = 50
+
+u235_enrichment = 19.5 / 100
 fuel_hm_density = 0.25
 
 
@@ -46,13 +48,14 @@ batches = 1500
 material_choice = MaterialChoice(
     moderator="Light Water",
     neutron_shield="Boron Carbide",
-    reflector="Graphite",
+    reflector="Beryllium Oxide",
     fuel="TRISO",
     moderator_cladding="Aluminum",
     emitter="Graphite",
     fuel_cladding="Silicon Carbide",
     void="Void",
     photovoltaic="Silicon",
+    coolant="Light Water",
 )
 
 outer_core_layers = AssemblySections(
@@ -112,7 +115,7 @@ assembly_section_photovoltaic = AssemblySections(
         ),  # is_fuel is set to True to make the volume calculation work
         ### Water
         Assembly(
-            material="Light Water",
+            material=material_choice.coolant,
             thickness=moderator_thickness - 0.02 * 2 + moderator_cladding_thickness * 2,
         ),
         ### Photovoltaic
@@ -189,6 +192,7 @@ geometry, universe, cells, drums = define_disks_geometry(
     heavy_metal_mass,
     emissive_surface,
     core_power,
+    core_power_electric,
     fuel_volume,
     photovolatic_volume,
     radiative_flux,
@@ -202,6 +206,7 @@ geometry, universe, cells, drums = define_disks_geometry(
     materials_def,
     hot_temp,
     cold_temp,
+    photovoltaic_efficiency,
 )
 
 materials_dict[material_choice.fuel].volume = fuel_volume
@@ -211,9 +216,15 @@ print_core_characteristics(
     heavy_metal_mass,
     emissive_surface,
     core_power,
+    core_power_electric,
     geometry_settings.assembly_section_core,
     radiative_flux,
     fuel_volume,
+)
+
+print(
+    "reactor diameter",
+    drums[0].radius + core_desc.outer_core_radius - core_desc.core_radius,
 )
 
 if run_mode == "render":
