@@ -37,11 +37,11 @@ neutron_shield_thickness = 60
 u235_enrichment = 9.5 / 100
 fuel_hm_density = 0.25
 
-render = False
-keff_simulation = True
-depletion_sim = False
 
-batches = 15000
+run_mode = "keff"
+
+
+batches = 1500
 
 material_choice = MaterialChoice(
     moderator="Light Water",
@@ -216,12 +216,12 @@ print_core_characteristics(
     fuel_volume,
 )
 
-if render:
+if run_mode == "render":
     render_geometry(
         universe,
         universe_radius=(drums[0].radius * 2 + 10),
         pixels=(2500, 2500),
-        basis="xy",
+        basis="xz",
         origin=(rotary_assembly_desc.assembly_core_distance, 0, 0),
         geometry=geometry,
         colors=colors,
@@ -230,7 +230,7 @@ if render:
 
 settings = make_sim_settings(deterministic=True, batches=batches)
 
-if keff_simulation:
+if run_mode == "keff":
     # run_keff_sim(geometry, settings, materials_dict)
     run_sim_with_photovoltaic_tally(
         geometry,
@@ -242,7 +242,7 @@ if keff_simulation:
         batches,
     )
 
-if depletion_sim:
+if run_mode == "depletion":
     run_depletion_sim(
         thermal_power=core_power,
         geometry=geometry,

@@ -126,17 +126,24 @@ def define_geometry(
     outer_empty_zone_cell.region = outer_empty_zone
     outer_empty_zone_cell.fill = materials_dict[geometry_settings.material_choice.void]
 
-    universe = openmc.Universe(
-        cells=[
-            *core_assembly_cells.values(),
-            *outer_core_layers_cells,
-            *photovoltaic_assembly_cells.values(),
-            *emitter_assembly_cells.values(),
-            core_fill_cell,
-            outer_empty_zone_cell,
-            photovoltaic_fill_cell,
-        ]
-    )
+    cells = [
+        *core_assembly_cells.values(),
+        *outer_core_layers_cells,
+        *photovoltaic_assembly_cells.values(),
+        *emitter_assembly_cells.values(),
+        core_fill_cell,
+        outer_empty_zone_cell,
+        photovoltaic_fill_cell,
+    ]
+
+    rotated_cells = []
+    for cell in cells:
+        region = cell.region
+        region = region.rotate((0, 0, 0))
+        cell.region = region
+        rotated_cells.append(cell)
+
+    universe = openmc.Universe(cells=rotated_cells)
 
     return (
         openmc.Geometry(universe),
