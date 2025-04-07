@@ -22,6 +22,7 @@ class Material(BaseModel):
     melting_point: Optional[float] = None  # K
     boiling_point: Optional[float] = None  # K
     color: Optional[str] = None
+    scattering: Optional[str] = None
 
 
 class MaterialChoice(BaseModel):
@@ -233,6 +234,7 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
             ],
             density=1,
             color="blue",
+            scattering="c_H_in_H2O",
         ),
         "Zirconium": Material(
             composition=[AtomProportion(atom=atoms["Zr"])],
@@ -283,6 +285,7 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
             ],
             density=1.105,
             color="darkblue",
+            scattering="c_D_in_D2O",
         ),
         "Tungsten": Material(
             composition=[
@@ -320,6 +323,7 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
             composition=[AtomProportion(atom=atoms["C"])],
             density=2.26,
             color="black",
+            scattering="c_Graphite",
         ),
         "Lead": Material(
             composition=[AtomProportion(atom=atoms["Pb"])], density=11.34, color="gray"
@@ -360,6 +364,8 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
                 materials_dict[name].add_nuclide(
                     atom_prop.atom.name, atom_prop.proportion
                 )
+        if material.scattering is not None:
+            materials_dict[name].add_s_alpha_beta(material.scattering)
         materials_dict[name].set_density("g/cm3", material.density)
 
     colors = {}

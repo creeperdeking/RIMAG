@@ -32,7 +32,7 @@ hot_temp = 1900 + 273
 cold_temp = 1800 + 273
 
 reflector_thickness = 30
-neutron_shield_thickness = 60
+neutron_shield_thickness = 40
 
 u235_enrichment = 9.5 / 100
 fuel_hm_density = 0.25
@@ -219,7 +219,7 @@ print_core_characteristics(
 if run_mode == "render":
     render_geometry(
         universe,
-        universe_radius=(drums[0].radius * 2 + 10),
+        universe_radius=(drums[0].radius + 10),
         pixels=(2500, 2500),
         basis="xz",
         origin=(rotary_assembly_desc.assembly_core_distance, 0, 0),
