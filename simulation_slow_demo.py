@@ -14,6 +14,7 @@ from common_lib.simlib import (
     render_geometry,
     run_depletion_sim,
     print_core_characteristics,
+    print_depletion_result,
 )
 from disk_design.disks_geometry import define_disks_geometry
 from disk_design.disks_core_characteristics import calculate_disk_core_characteristics
@@ -33,22 +34,22 @@ cold_temp = 1300 + 273
 
 photovoltaic_efficiency = 0.35
 
-reflector_thickness = 20
-neutron_shield_thickness = 50
+reflector_thickness = 40
+neutron_shield_thickness = 60
 
 u235_enrichment = 19.5 / 100
 fuel_hm_density = 0.25
 
 
-run_mode = "keff"
+run_mode = "depletion"
 
 
-batches = 1500
+batches = 500
 
 material_choice = MaterialChoice(
     moderator="Light Water",
     neutron_shield="Boron Carbide",
-    reflector="Beryllium Oxide",
+    reflector="Graphite",
     fuel="TRISO",
     moderator_cladding="Aluminum",
     emitter="Graphite",
@@ -259,9 +260,24 @@ if run_mode == "depletion":
         geometry=geometry,
         settings=settings,
         materials=materials_dict.values(),
-        materials_dict=materials_dict,
-        material_choice=material_choice,
-        fuel_mass=heavy_metal_mass,
-        sim_steps=[1, 3, 6],  # [1, 3, 6, 10, 10, 10, 10, 10],
-        steps_units="MWd/kg",
+        sim_steps=[
+            0.01,
+            0.1,
+            0.89,
+            1,
+            5,
+            23,
+            60,
+            30 * 3,
+            30 * 6,
+            30 * 6,
+            30 * 6,
+            30 * 6,
+            30 * 6,
+            30 * 6,
+        ],  # [1, 3, 6, 10, 10, 10, 10, 10],
+        steps_units="d",
+    )
+    print_depletion_result(
+        materials_dict, material_choice, core_power, heavy_metal_mass
     )

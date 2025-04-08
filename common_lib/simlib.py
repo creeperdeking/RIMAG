@@ -116,43 +116,29 @@ def compute_burnup(
     return burnup
 
 
-def run_depletion_sim(
-    thermal_power: float,
-    geometry,
-    settings,
-    materials,
-    materials_dict: Dict[str, openmc.Material],
-    material_choice: MaterialChoice,
-    fuel_mass: float,
-    sim_steps: List[float] = [],
-    steps_units: str = "d",
-):
-    fission_q = {"U235": 202.5e6}  # energy in eV # "U233": 200.1e6, "Pu239": 211.5e6
-    model = openmc.Model(geometry, materials, settings)
-    op = openmc.deplete.CoupledOperator(
-        model, "chain_endfb71_pwr.xml", fission_q=fission_q
-    )
-    max_step = 2 * op.heavy_metal / thermal_power * 1e3
-    # Check if any timestep exceeds the maximum allowed step size
-    for step in sim_steps:
-        if step > max_step:
-            raise ValueError(
-                f"Timestep {step} {steps_units} exceeds maximum allowed step size of {max_step:.2f} {steps_units}. "
-                f"This limit is based on the heavy metal content and thermal power."
-            )
-
-    openmc.deplete.CECMIntegrator(
-        op, sim_steps, thermal_power, timestep_units=steps_units
-    ).integrate()
-
+def print_depletion_result(materials_dict, material_choice, thermal_power, fuel_mass):
     results = openmc.deplete.Results("depletion_results.h5")
     time, keff = results.get_keff(time_units="d")
     uranium_burnups = compute_burnup(thermal_power, time, fuel_mass)
     results.export_to_materials(burnup_index=1)
-    results_table = [
+    hm_results_table = [
         ["Time (year)"] + [round(t / 365, 3) for t in time],
         ["Keff"] + [round(a[0], 3) for a in keff],
         ["Uranium Burnup (MWd/kgHM)"] + [round(a, 3) for a in uranium_burnups],
+        ["U232 (mol)"]
+        + [
+            round(a / cst.Avogadro, 3)
+            for a in results.get_atoms(
+                mat=materials_dict[material_choice.fuel], nuc="U232", time_units="d"
+            )[1]
+        ],
+        ["U233 (mol)"]
+        + [
+            round(a / cst.Avogadro, 3)
+            for a in results.get_atoms(
+                mat=materials_dict[material_choice.fuel], nuc="U233", time_units="d"
+            )[1]
+        ],
         ["U234 (mol)"]
         + [
             round(a / cst.Avogadro, 3)
@@ -167,25 +153,11 @@ def run_depletion_sim(
                 mat=materials_dict[material_choice.fuel], nuc="U235", time_units="d"
             )[1]
         ],
-        ["Xe135 (mol)"]
+        ["U236 (mol)"]
         + [
-            round(a / cst.Avogadro, 5)
+            round(a / cst.Avogadro, 3)
             for a in results.get_atoms(
-                mat=materials_dict[material_choice.fuel], nuc="Xe135", time_units="d"
-            )[1]
-        ],
-        ["Sm149 (mol)"]
-        + [
-            round(a / cst.Avogadro, 5)
-            for a in results.get_atoms(
-                mat=materials_dict[material_choice.fuel], nuc="Sm149", time_units="d"
-            )[1]
-        ],
-        ["Gd157 (mol)"]
-        + [
-            round(a / cst.Avogadro, 5)
-            for a in results.get_atoms(
-                mat=materials_dict[material_choice.fuel], nuc="Gd157", time_units="d"
+                mat=materials_dict[material_choice.fuel], nuc="U236", time_units="d"
             )[1]
         ],
         ["Np237 (mol)"]
@@ -193,6 +165,20 @@ def run_depletion_sim(
             round(a / cst.Avogadro, 5)
             for a in results.get_atoms(
                 mat=materials_dict[material_choice.fuel], nuc="Np237", time_units="d"
+            )[1]
+        ],
+        ["Pu238 (mol)"]
+        + [
+            round(a / cst.Avogadro, 5)
+            for a in results.get_atoms(
+                mat=materials_dict[material_choice.fuel], nuc="Pu238", time_units="d"
+            )[1]
+        ],
+        ["U238 (mol)"]
+        + [
+            round(a / cst.Avogadro, 3)
+            for a in results.get_atoms(
+                mat=materials_dict[material_choice.fuel], nuc="U238", time_units="d"
             )[1]
         ],
         ["Pu239 (mol)"]
@@ -216,9 +202,71 @@ def run_depletion_sim(
                 mat=materials_dict[material_choice.fuel], nuc="Pu241", time_units="d"
             )[1]
         ],
+        ["Pu242 (mol)"]
+        + [
+            round(a / cst.Avogadro, 5)
+            for a in results.get_atoms(
+                mat=materials_dict[material_choice.fuel], nuc="Pu242", time_units="d"
+            )[1]
+        ],
     ]
+    fission_products_results_table = [
+        ["Time (year)"] + [round(t / 365, 3) for t in time],
+        ["Keff"] + [round(a[0], 3) for a in keff],
+        ["Uranium Burnup (MWd/kgHM)"] + [round(a, 3) for a in uranium_burnups],
+        ["Xe135 (mol)"]
+        + [
+            round(a / cst.Avogadro, 5)
+            for a in results.get_atoms(
+                mat=materials_dict[material_choice.fuel], nuc="Xe135", time_units="d"
+            )[1]
+        ],
+        ["Sm149 (mol)"]
+        + [
+            round(a / cst.Avogadro, 5)
+            for a in results.get_atoms(
+                mat=materials_dict[material_choice.fuel], nuc="Sm149", time_units="d"
+            )[1]
+        ],
+        ["Gd157 (mol)"]
+        + [
+            round(a / cst.Avogadro, 5)
+            for a in results.get_atoms(
+                mat=materials_dict[material_choice.fuel], nuc="Gd157", time_units="d"
+            )[1]
+        ],
+    ]
+    print("Heavy metals")
+    print(tabulate(hm_results_table))
+    print("Notable fission products")
+    print(tabulate(fission_products_results_table))
 
-    print(tabulate(results_table))
+
+def run_depletion_sim(
+    thermal_power: float,
+    geometry,
+    settings,
+    materials,
+    sim_steps: List[float] = [],
+    steps_units: str = "d",
+):
+    fission_q = {"U235": 202.5e6}  # energy in eV # "U233": 200.1e6, "Pu239": 211.5e6
+    model = openmc.Model(geometry, materials, settings)
+    op = openmc.deplete.CoupledOperator(
+        model, "chain_endfb71_pwr.xml", fission_q=fission_q
+    )
+    max_step = 2 * op.heavy_metal / thermal_power * 1e3
+    # Check if any timestep exceeds the maximum allowed step size
+    for step in sim_steps:
+        if step > max_step:
+            print(
+                f"Timestep {step} {steps_units} exceeds maximum allowed step size of {max_step:.2f} {steps_units}. "
+                f"This limit is based on the heavy metal content and thermal power."
+            )
+
+    openmc.deplete.CECMIntegrator(
+        op, sim_steps, thermal_power, timestep_units=steps_units
+    ).integrate()
 
 
 def create_photovoltaic_tally(photovoltaic_cell, materials_dict):
