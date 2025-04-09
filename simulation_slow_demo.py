@@ -41,7 +41,7 @@ u235_enrichment = 19.5 / 100
 fuel_hm_density = 0.25
 
 
-run_mode = "depletion"
+run_mode = "keff"
 
 
 batches = 500
@@ -51,9 +51,9 @@ material_choice = MaterialChoice(
     neutron_shield="Boron Carbide",
     reflector="Graphite",
     fuel="TRISO",
-    moderator_cladding="Aluminum",
+    moderator_cladding="Zirconium",
     emitter="Graphite",
-    fuel_cladding="Silicon Carbide",
+    fuel_cladding="Zirconium Carbide",
     void="Void",
     photovoltaic="Silicon",
     coolant="Light Water",

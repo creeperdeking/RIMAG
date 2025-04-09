@@ -202,12 +202,28 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
         color="green",
     )
 
+    graphite = Material(
+        composition=[AtomProportion(atom=atoms["C"])],
+        density=2.26,
+        color="black",
+        scattering="c_Graphite",
+    )
+
     silicon_carbide = Material(
         composition=[
             AtomProportion(atom=atoms["Si"], proportion=1),
             AtomProportion(atom=atoms["C"], proportion=1),
         ],
         density=3.6,
+        color="darkgray",
+    )
+
+    zirconium_carbide = Material(
+        composition=[
+            AtomProportion(atom=atoms["Zr"], proportion=1),
+            AtomProportion(atom=atoms["C"], proportion=1),
+        ],
+        density=6.2,
         color="darkgray",
     )
 
@@ -280,6 +296,7 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
         ),
         "TRISO": triso,
         "Silicon Carbide": silicon_carbide,
+        "Zirconium Carbide": zirconium_carbide,
         "Heavy Water": Material(
             composition=[
                 AtomProportion(atom=atoms["H2"], proportion=2),
@@ -321,12 +338,7 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
             density=10.97,
             color="green",
         ),
-        "Graphite": Material(
-            composition=[AtomProportion(atom=atoms["C"])],
-            density=2.26,
-            color="black",
-            scattering="c_Graphite",
-        ),
+        "Graphite": graphite,
         "Lead": Material(
             composition=[AtomProportion(atom=atoms["Pb"])], density=11.34, color="gray"
         ),
