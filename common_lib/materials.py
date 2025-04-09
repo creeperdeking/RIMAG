@@ -12,6 +12,7 @@ class Atom(BaseModel):
 class AtomProportion(BaseModel):
     atom: Atom
     proportion: Optional[float] = 1
+    enrichment: Optional[float] = None
 
 
 class Material(BaseModel):
@@ -42,6 +43,7 @@ atoms: Dict[str, Atom] = {
     "U235": Atom(name="U235", atomic_weight=235.0439299),
     "U234": Atom(name="U234", atomic_weight=234.040947),
     "U238": Atom(name="U238", atomic_weight=238.0507884),
+    "U": Atom(name="U", atomic_weight=238.02891338),
     "H": Atom(name="H", atomic_weight=1.00794),
     "O": Atom(name="O", atomic_weight=15.9994),
     "H2": Atom(name="H2", atomic_weight=2.01410177812),
@@ -65,84 +67,6 @@ atoms: Dict[str, Atom] = {
 }
 
 
-def create_uranium(u235_enrichment, u234_enrichment=0):
-    return [
-        AtomProportion(atom=atoms["U235"], proportion=u235_enrichment),
-        AtomProportion(atom=atoms["U234"], proportion=u234_enrichment),
-        AtomProportion(
-            atom=atoms["U238"], proportion=1 - u235_enrichment - u234_enrichment
-        ),
-    ]
-
-
-def create_plutonium(pu239_enrichment, pu240_enrichment=0, pu241_enrichment=0):
-    return [
-        AtomProportion(atom=atoms["Pu239"], proportion=pu239_enrichment),
-        AtomProportion(atom=atoms["Pu240"], proportion=pu240_enrichment),
-        AtomProportion(atom=atoms["Pu241"], proportion=pu241_enrichment),
-    ]
-
-
-def create_mixed_uranium_plutonium(
-    pu239_enrichment,
-    pu240_enrichment,
-    pu241_enrichment,
-    plutonium_proportion,
-):
-    return [
-        AtomProportion(atom=atoms["U238"], proportion=(1 - plutonium_proportion)),
-        AtomProportion(
-            atom=atoms["Pu239"], proportion=pu239_enrichment * plutonium_proportion
-        ),
-        AtomProportion(
-            atom=atoms["Pu240"], proportion=pu240_enrichment * plutonium_proportion
-        ),
-        AtomProportion(
-            atom=atoms["Pu241"], proportion=pu241_enrichment * plutonium_proportion
-        ),
-    ]
-
-
-def normalize_material(material: Material) -> Material:
-    total_proportion = sum(atom_prop.proportion for atom_prop in material.composition)
-    return Material(
-        composition=[
-            AtomProportion(
-                atom=atom_prop.atom, proportion=atom_prop.proportion / total_proportion
-            )
-            for atom_prop in material.composition
-        ],
-        **{k: v for k, v in material.model_dump().items() if k not in ["composition"]},
-    )
-
-
-def multiply_composition(material: Material, factor: float) -> List[AtomProportion]:
-    return [
-        AtomProportion(atom=atom_prop.atom, proportion=atom_prop.proportion * factor)
-        for atom_prop in material.composition
-    ]
-
-
-def create_volumic_blend(volume_fraction_mat1: float, mat1: Material, mat2: Material):
-    normalized_mat1 = normalize_material(mat1)
-    normalized_mat2 = normalize_material(mat2)
-    proportion_mat2_in_blend = 1 / volume_fraction_mat1 - 1
-
-    density_blend = mat1.density * volume_fraction_mat1 + mat2.density * (
-        1 - volume_fraction_mat1
-    )
-
-    return normalize_material(
-        Material(
-            composition=[
-                *normalized_mat1.composition,
-                *multiply_composition(normalized_mat2, proportion_mat2_in_blend),
-            ],
-            density=density_blend,
-        )
-    )
-
-
 def heavy_metals_density(material: Material) -> float:
     return (
         material.density
@@ -160,36 +84,46 @@ def heavy_metals_density(material: Material) -> float:
 
 def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
     natural_uranium = Material(
-        composition=create_uranium(0.00711),
+        composition=[
+            AtomProportion(atom=atoms["U"], proportion=1),
+        ],
         density=18.95,
         color="green",
     )
-    reactor_grade_plutonium = Material(
-        composition=create_plutonium(
-            pu239_enrichment=0.8, pu240_enrichment=0.15, pu241_enrichment=0.05
-        ),
-        density=19.84,
-        color="green",
-    )
-    mixed_uranium_plutonium = Material(
-        composition=create_mixed_uranium_plutonium(
-            pu239_enrichment=0.8,
-            pu240_enrichment=0.15,
-            pu241_enrichment=0.05,
-            plutonium_proportion=0.15,
-        ),
-        density=18.95,
-        color="green",
-    )
+    # reactor_grade_plutonium = Material(
+    #     composition=create_plutonium(
+    #         pu239_enrichment=0.8, pu240_enrichment=0.15, pu241_enrichment=0.05
+    #     ),
+    #     density=19.84,
+    #     color="green",
+    # )
+    # mixed_uranium_plutonium = Material(
+    #     composition=create_mixed_uranium_plutonium(
+    #         pu239_enrichment=0.8,
+    #         pu240_enrichment=0.15,
+    #         pu241_enrichment=0.05,
+    #         plutonium_proportion=0.15,
+    #     ),
+    #     density=18.95,
+    #     color="green",
+    # )
 
     enriched_uranium = Material(
-        composition=create_uranium(uranium_enrichment),
+        composition=[
+            AtomProportion(
+                atom=atoms["U"], proportion=1, enrichment=uranium_enrichment
+            ),
+        ],
         density=18.95,
         color="green",
     )
 
     depleted_uranium = Material(
-        composition=create_uranium(0.003), density=18.95, color="green"
+        composition=[
+            AtomProportion(atom=atoms["U"], proportion=1, enrichment=0.03),
+        ],
+        density=18.95,
+        color="green",
     )
 
     uranium_oxy_carbide = Material(
@@ -226,13 +160,6 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
         density=6.2,
         color="darkgray",
     )
-
-    triso = create_volumic_blend(
-        0.25,
-        uranium_oxy_carbide,
-        silicon_carbide,
-    )
-    triso.color = "green"
 
     materials_def: Dict[str, Material] = {
         "Depleted Uranium": depleted_uranium,
@@ -294,7 +221,6 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
             density=2.33,
             color="lightblue",
         ),
-        "TRISO": triso,
         "Silicon Carbide": silicon_carbide,
         "Zirconium Carbide": zirconium_carbide,
         "Heavy Water": Material(
@@ -326,18 +252,18 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
             color="green",
         ),
         "Uranium Oxy-Carbide": uranium_oxy_carbide,
-        "Plutonium-Uranium Carbide": Material(
-            composition=mixed_uranium_plutonium.composition
-            + [AtomProportion(atom=atoms["C"], proportion=1)],
-            density=13.63,
-            color="green",
-        ),
-        "Plutonium-Uranium Oxide": Material(
-            composition=mixed_uranium_plutonium.composition
-            + [AtomProportion(atom=atoms["O"], proportion=2)],
-            density=10.97,
-            color="green",
-        ),
+        # "Plutonium-Uranium Carbide": Material(
+        #     composition=mixed_uranium_plutonium.composition
+        #     + [AtomProportion(atom=atoms["C"], proportion=1)],
+        #     density=13.63,
+        #     color="green",
+        # ),
+        # "Plutonium-Uranium Oxide": Material(
+        #     composition=mixed_uranium_plutonium.composition
+        #     + [AtomProportion(atom=atoms["O"], proportion=2)],
+        #     density=10.97,
+        #     color="green",
+        # ),
         "Graphite": graphite,
         "Lead": Material(
             composition=[AtomProportion(atom=atoms["Pb"])], density=11.34, color="gray"
@@ -369,15 +295,22 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
             continue
         materials_dict[name] = openmc.Material(name=name)
         for atom_prop in material.composition:
-            try:
+            if atom_prop.atom.name == "U":
                 materials_dict[name].add_element(
-                    atom_prop.atom.name, atom_prop.proportion
+                    atom_prop.atom.name,
+                    atom_prop.proportion,
+                    enrichment=atom_prop.enrichment,
                 )
-            except Exception as e:
-                # for nuclides we use weight percent because it is how enrichment is given
-                materials_dict[name].add_nuclide(
-                    atom_prop.atom.name, atom_prop.proportion
-                )
+            else:
+                try:
+                    materials_dict[name].add_element(
+                        atom_prop.atom.name, atom_prop.proportion
+                    )
+                except Exception as e:
+                    # for nuclides we use weight percent because it is how enrichment is given
+                    materials_dict[name].add_nuclide(
+                        atom_prop.atom.name, atom_prop.proportion
+                    )
         if material.scattering is not None:
             materials_dict[name].add_s_alpha_beta(material.scattering)
         materials_dict[name].set_density("g/cm3", material.density)
