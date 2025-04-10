@@ -19,20 +19,20 @@ from common_lib.simlib import (
 from disk_design.disks_geometry import define_disks_geometry
 from disk_design.disks_core_characteristics import calculate_disk_core_characteristics
 
-core_diameter = 120
-core_height = 120
+core_diameter = 50
+core_height = 50
 moderator_cladding_thickness = 0.05
-fuel_cladding_thickness = 0.035 + 0.25 / 4 * 3 / 2
-fuel_thickness = 0.25 / 4
-moderator_thickness = fuel_thickness * 4 * 4.5
+fuel_cladding_thickness = 0.32 / 2
+fuel_thickness = 0.12 / 4
+moderator_thickness = 1.2  # fuel_thickness * 4 * 5
 fuel_emitter_gap = 0.09
 emitter_thickness = 0.3
 half_assembly = False
 
-hot_temp = 1400 + 273
-cold_temp = 1200 + 273
+hot_temp = 1250 + 273
+cold_temp = 1150 + 273
 
-photovoltaic_efficiency = 0.35
+photovoltaic_efficiency = 0.34
 
 reflector_thickness = 40
 neutron_shield_thickness = 60
@@ -53,7 +53,7 @@ material_choice = MaterialChoice(
     fuel="Uranium Oxy-Carbide",
     moderator_cladding="Zirconium",
     emitter="Graphite",
-    fuel_cladding="Zirconium Carbide",
+    fuel_cladding="Graphite",
     void="Void",
     photovoltaic="Silicon",
     coolant="Light Water",
