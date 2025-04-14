@@ -52,7 +52,7 @@ material_choice = MaterialChoice(
     reflector="Graphite",
     fuel="Uranium Oxy-Carbide",
     moderator_cladding="Zirconium",
-    emitter="Graphite",
+    emitter="Graphite 2",
     fuel_cladding="Graphite",
     void="Void",
     photovoltaic="Silicon",
@@ -195,6 +195,7 @@ geometry, universe, cells, drums = define_disks_geometry(
     core_power,
     core_power_electric,
     fuel_volume,
+    emitter_core_volume,
     photovolatic_volume,
     radiative_flux,
 ) = calculate_disk_core_characteristics(
@@ -249,8 +250,10 @@ if run_mode == "keff":
         settings,
         materials_dict,
         cells[material_choice.photovoltaic],
+        cells[material_choice.emitter],
         core_power,
         photovolatic_volume,
+        emitter_core_volume,
         batches,
     )
 

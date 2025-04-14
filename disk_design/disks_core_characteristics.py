@@ -5,7 +5,10 @@ from common_lib.geometry import GeometrySettings
 from common_lib.light import radiative_heat_flux_between_plates
 from common_lib.materials import Material, MaterialChoice, heavy_metals_density
 from common_lib.rotary_assembly import RotaryAssemblyDesc
-from disk_design.disks_assemblies import calculate_disks_fuel_volume
+from disk_design.disks_assemblies import (
+    calculate_disks_emitter_volume,
+    calculate_disks_fuel_volume,
+)
 from disk_design.disks import DiskAssemblyLayer, calculate_disks_surface_in_core
 
 
@@ -37,6 +40,14 @@ def calculate_disk_core_characteristics(
         half_assembly=half_assembly,
     )
 
+    emitter_volume = calculate_disks_emitter_volume(
+        assembly_section=geometry_settings.assembly_section_core,
+        drums=disks,
+        drum_desc=rotary_assembly_desc,
+        core_desc=core_desc,
+        half_assembly=half_assembly,
+    )
+
     # multiply by 2 because each drum section has two faces exposed to the fuel, and then by 2 again if there are two drum assemblies
     emissive_surface = (
         (
@@ -62,6 +73,7 @@ def calculate_disk_core_characteristics(
         core_power,
         core_power_electric,
         fuel_volume,
+        emitter_volume,
         photovolatic_volume,
         radiative_flux,
     )

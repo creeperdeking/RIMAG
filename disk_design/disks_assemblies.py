@@ -1,3 +1,4 @@
+import math
 from typing import Dict, List, Optional
 
 import openmc
@@ -63,6 +64,36 @@ def calculate_disks_fuel_volume(
     ) * (2 if half_assembly else 1)
 
     return fuel_volume
+
+
+def calculate_disks_emitter_volume(
+    assembly_section: AssemblySections,
+    drums: List[DiskAssemblyLayer],
+    drum_desc: RotaryAssemblyDesc,
+    core_desc: CoreDesc,
+    half_assembly: bool = False,
+) -> float:
+    print(assembly_section)
+    print(drums)
+    print(drum_desc)
+    print(core_desc)
+    print(half_assembly)
+    emitter_thickness = 0
+    for assembly_part in assembly_section.parts:
+        if assembly_part.is_emitter:
+            emitter_thickness += assembly_part.thickness
+            continue
+
+    emitter_volume = (
+        (
+            drums[0].radius ** 2 * math.pi
+            - ((drums[0].radius - core_desc.core_radius * 2) ** 2 * math.pi)
+        )
+        * emitter_thickness
+        * len(drums)
+    ) * (2 if half_assembly else 1)
+
+    return emitter_volume
 
 
 def make_disks_cells(
