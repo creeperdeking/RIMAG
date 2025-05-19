@@ -29,7 +29,7 @@ fuel_thickness = 0.24 / 4
 moderator_thickness = 0.7  # fuel_thickness * 4 * 5
 fuel_emitter_gap = 0.05
 emitter_thickness = 0.3
-thickness_photovoltaic = 0.02
+thickness_photovoltaic = 0.0002
 
 half_assembly = False  # Unsupported right now
 
@@ -45,7 +45,7 @@ u235_enrichment = 19.5
 fuel_hm_density = 0.25
 
 
-run_mode = "render"
+run_mode = "keff"
 
 
 batches = 1500
@@ -257,7 +257,7 @@ if run_mode == "render":
         materials_dict=materials_dict,
     )
 
-settings = make_sim_settings(deterministic=True, batches=batches)
+settings = make_sim_settings(deterministic=False, batches=batches)
 
 if run_mode == "keff":
     # run_keff_sim(geometry, settings, materials_dict)

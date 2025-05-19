@@ -20,16 +20,14 @@ from drum_design.drums import calculate_drums_surface_in_core, make_drums
 def get_disk_assemblies_boundaries(
     geometry_settings: BoundariesGeometrySettings,
     outer_radius: float,
-    inner_radius: float,
     assembly_thickness: float,
     drums: List[DiskAssemblyLayer],
 ) -> openmc.Cell:
     drums_start_height = drums[0].height
     drums_end_height = drums[-1].height + assembly_thickness
 
-    assemblies_boundary = create_hollow_cylinder(
+    assemblies_boundary = create_cylinder(
         outer_radius,
-        inner_radius,
         drums_end_height - drums_start_height,
         distance_from_origin=geometry_settings.rotary_assembly_desc.assembly_core_distance,
         height=(drums_end_height + drums_start_height) / 2,
@@ -138,7 +136,6 @@ def define_discs_emitter_boundary(
     disks: List[DiskAssemblyLayer],
     core_desc: CoreDesc,
     drum_desc: RotaryAssemblyDesc,
-    inner_core_penetration: float,
 ) -> openmc.Intersection:
     outer_core_assembly_section = create_outer_core_assembly_section(assembly_section)
     boundary_shape = None
@@ -146,9 +143,8 @@ def define_discs_emitter_boundary(
         current_height = disk.height
         for assembly_part in outer_core_assembly_section.parts:
             if assembly_part.is_emitter:
-                additional_boundary_shape = create_hollow_cylinder(
+                additional_boundary_shape = create_cylinder(
                     disk.radius,
-                    disk.radius - core_desc.core_radius * 2 - inner_core_penetration,
                     assembly_part.thickness,
                     distance_from_origin=drum_desc.assembly_core_distance,
                     height=current_height + assembly_part.thickness / 2,
