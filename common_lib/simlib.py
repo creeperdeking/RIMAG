@@ -82,14 +82,24 @@ def run_keff_sim(
 
 
 def render_geometry(
-    universe, universe_radius, pixels, basis, origin, geometry, colors, materials_dict
+    universe,
+    universe_radius,
+    pixels,
+    basis,
+    origin,
+    geometry,
+    colors,
+    materials_dict,
+    universe_height=None,
 ):
+    if universe_height is None:
+        universe_height = universe_radius * 2
     materials = openmc.Materials(materials_dict.values())
     materials.export_to_xml()
     geometry.export_to_xml()
     print("Rendering geometry")
     plot = openmc.Plot()
-    plot.width = [universe_radius * 2, universe_radius * 2]
+    plot.width = [universe_radius * 2, universe_height]
     plot.pixels = pixels
     plot.basis = basis
     plot.color_by = "material"

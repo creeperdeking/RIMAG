@@ -43,7 +43,7 @@ u235_enrichment = 19.5
 fuel_hm_density = 0.25
 
 
-run_mode = "render"
+run_mode = "keff"
 
 
 batches = 500
@@ -239,8 +239,9 @@ if run_mode == "render":
     render_geometry(
         universe,
         universe_radius=(drums[0].radius + 10),
+        # universe_height=core_desc.core_height * 1.5,
         pixels=(2500, 2500),
-        basis="xz",
+        basis="xy",
         origin=(rotary_assembly_desc.assembly_core_distance, 0, 0),
         geometry=geometry,
         colors=colors,

@@ -109,12 +109,12 @@ def define_geometry(
                 boundary_type="vacuum",
             )
             & -openmc.ZPlane(
-                z0=geometry_settings.core_desc.outer_core_height / 2 + 1,
-                boundary_type="vacuum",
+                z0=geometry_settings.core_desc.outer_core_height / 2 + 0.001,
+                boundary_type="periodic",
             )
             & +openmc.ZPlane(
-                z0=-geometry_settings.core_desc.outer_core_height / 2 - 1,
-                boundary_type="vacuum",
+                z0=-geometry_settings.core_desc.outer_core_height / 2 - 0.001,
+                boundary_type="periodic",
             )
         )
         & ~outer_core_boundary

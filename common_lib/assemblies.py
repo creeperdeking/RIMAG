@@ -45,11 +45,12 @@ def compute_core_desc(
     outer_core_assembly: AssemblySections,
 ):
     outer_core_thickness = calculate_assembly_thickness(outer_core_assembly)
+    number_of_outer_core_layers = len(outer_core_assembly.parts)
     return CoreDesc(
         core_radius=core_radius,
         core_height=core_height,
         outer_core_radius=core_radius + outer_core_thickness,
-        outer_core_height=core_height + outer_core_thickness * 2,
+        outer_core_height=core_height + 0.001 * number_of_outer_core_layers,
     )
 
 
@@ -106,7 +107,7 @@ def make_outer_core_layers(
             previous_layer_radius, previous_layer_radius * 2
         )
         cylinder = (
-            create_cylinder(current_layer_radius, current_layer_radius * 2)
+            create_cylinder(current_layer_radius, core_desc.core_height + 0.001 * i)
             & ~core_cylinder
         )
         cell = openmc.Cell(name=f"outer_core_layer_{layer.material}_{i}")
