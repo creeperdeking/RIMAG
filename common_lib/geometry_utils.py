@@ -2,7 +2,7 @@ import math
 
 import openmc
 
-SPACING_CONSTANT = 0.000001
+SPACING_CONSTANT = 0.001
 
 
 def create_cylinder(

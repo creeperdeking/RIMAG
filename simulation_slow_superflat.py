@@ -22,15 +22,16 @@ from one_layer_disk_design.disks_core_characteristics import (
     calculate_disk_core_characteristics,
 )
 
-core_diameter = 70
-core_height = 70
+core_diameter = 80
 moderator_cladding_thickness = 0.05
-fuel_cladding_thickness = 0.32 / 2
-fuel_thickness = 0.12 / 4
-moderator_thickness = 1.2  # fuel_thickness * 4 * 5
-fuel_emitter_gap = 0.09
+fuel_cladding_thickness = 0.76 / 2
+fuel_thickness = 0.24 / 4
+moderator_thickness = 0.7  # fuel_thickness * 4 * 5
+fuel_emitter_gap = 0.05
 emitter_thickness = 0.3
-half_assembly = False
+thickness_photovoltaic = 0.02
+
+half_assembly = False  # Unsupported right now
 
 hot_temp = 1250 + 273
 cold_temp = 1150 + 273
@@ -44,10 +45,10 @@ u235_enrichment = 19.5
 fuel_hm_density = 0.25
 
 
-run_mode = "keff"
+run_mode = "render"
 
 
-batches = 500
+batches = 1500
 
 material_choice = MaterialChoice(
     moderator="Light Water",
@@ -157,16 +158,22 @@ assembly_section_photovoltaic = AssemblySections(
         emitter_assembly_placeholder,
         ### Photovoltaic
         Assembly(
-            material=material_choice.photovoltaic, thickness=0.02, is_fuel=True
+            material=material_choice.photovoltaic,
+            thickness=thickness_photovoltaic,
+            is_fuel=True,
         ),  # is_fuel is set to True to make the volume calculation work
         ### Water
         Assembly(
             material=material_choice.coolant,
-            thickness=moderator_thickness - 0.02 * 2 + moderator_cladding_thickness * 2,
+            thickness=moderator_thickness
+            - thickness_photovoltaic * 2
+            + moderator_cladding_thickness * 2,
         ),
         ### Photovoltaic
         Assembly(
-            material=material_choice.photovoltaic, thickness=0.02, is_fuel=True
+            material=material_choice.photovoltaic,
+            thickness=thickness_photovoltaic,
+            is_fuel=True,
         ),  # is_fuel is set to True to make the volume calculation work
         ### Emitter Assembly
         emitter_assembly_placeholder,
@@ -217,6 +224,7 @@ geometry, universe, cells, drums = define_disks_geometry(
     cold_temp,
     photovoltaic_efficiency,
 )
+
 
 materials_dict[material_choice.fuel].volume = fuel_volume
 

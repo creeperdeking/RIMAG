@@ -54,7 +54,7 @@ def calculate_disk_core_characteristics(
             calculate_disks_surface_in_core(disks, rotary_assembly_desc, core_desc)
             / 10000
         )
-        * (2 if half_assembly else 1)
+        * 2
         * 2
     )
 

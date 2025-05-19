@@ -46,13 +46,11 @@ def compute_core_desc(
     outer_core_assembly: AssemblySections,
 ):
     outer_core_thickness = calculate_assembly_thickness(outer_core_assembly)
-    number_of_outer_core_layers = len(outer_core_assembly.parts)
     return CoreDesc(
         core_radius=core_radius,
         core_height=core_height,
         outer_core_radius=core_radius + outer_core_thickness,
-        outer_core_height=core_height
-        + SPACING_CONSTANT * number_of_outer_core_layers * 2,
+        outer_core_height=core_height,
     )
 
 
@@ -105,13 +103,13 @@ def make_outer_core_layers(
     previous_layer_radius = current_layer_radius
     for i, layer in enumerate(outer_core_layers.parts):
         current_layer_radius = current_layer_radius + layer.thickness
-        core_cylinder = create_cylinder(
-            previous_layer_radius, core_desc.core_height + SPACING_CONSTANT * i * 2
+        core_cylinder = -openmc.ZCylinder(
+            r=previous_layer_radius,
         )
         cylinder = (
             create_cylinder(
                 current_layer_radius,
-                core_desc.core_height + SPACING_CONSTANT * (i + 1) * 2,
+                core_desc.core_height,
             )
             & ~core_cylinder
         )
