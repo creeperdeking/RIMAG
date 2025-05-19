@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from common_lib.geometry_utils import (
     create_hollow_cylinder,
     create_cylinder,
+    SPACING_CONSTANT,
 )
 from common_lib.rotary_assembly import RotaryAssemblyDesc
 
@@ -50,7 +51,8 @@ def compute_core_desc(
         core_radius=core_radius,
         core_height=core_height,
         outer_core_radius=core_radius + outer_core_thickness,
-        outer_core_height=core_height + 0.001 * number_of_outer_core_layers,
+        outer_core_height=core_height
+        + SPACING_CONSTANT * number_of_outer_core_layers * 2,
     )
 
 
@@ -104,10 +106,13 @@ def make_outer_core_layers(
     for i, layer in enumerate(outer_core_layers.parts):
         current_layer_radius = current_layer_radius + layer.thickness
         core_cylinder = create_cylinder(
-            previous_layer_radius, previous_layer_radius * 2
+            previous_layer_radius, core_desc.core_height + SPACING_CONSTANT * i * 2
         )
         cylinder = (
-            create_cylinder(current_layer_radius, core_desc.core_height + 0.001 * i)
+            create_cylinder(
+                current_layer_radius,
+                core_desc.core_height + SPACING_CONSTANT * (i + 1) * 2,
+            )
             & ~core_cylinder
         )
         cell = openmc.Cell(name=f"outer_core_layer_{layer.material}_{i}")

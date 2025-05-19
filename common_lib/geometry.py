@@ -3,6 +3,8 @@ from typing import Dict, List
 import openmc
 from pydantic import BaseModel
 
+from common_lib.geometry_utils import SPACING_CONSTANT
+
 from common_lib.assemblies import (
     define_photovoltaic_boundary,
     make_outer_core_layers,
@@ -109,11 +111,12 @@ def define_geometry(
                 boundary_type="vacuum",
             )
             & -openmc.ZPlane(
-                z0=geometry_settings.core_desc.outer_core_height / 2 + 0.001,
+                z0=geometry_settings.core_desc.outer_core_height / 2 + SPACING_CONSTANT,
                 boundary_type="periodic",
             )
             & +openmc.ZPlane(
-                z0=-geometry_settings.core_desc.outer_core_height / 2 - 0.001,
+                z0=-geometry_settings.core_desc.outer_core_height / 2
+                - SPACING_CONSTANT,
                 boundary_type="periodic",
             )
         )

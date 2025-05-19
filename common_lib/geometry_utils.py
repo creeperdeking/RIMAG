@@ -2,6 +2,8 @@ import math
 
 import openmc
 
+SPACING_CONSTANT = 0.000001
+
 
 def create_cylinder(
     radius: float,

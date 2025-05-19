@@ -8,6 +8,7 @@ from common_lib.assemblies import (
 from common_lib.geometry import GeometrySettings
 from common_lib.materials import MaterialChoice, make_materials
 from common_lib.rotary_assembly import RotaryAssemblyDesc
+from common_lib.geometry_utils import SPACING_CONSTANT
 from common_lib.simlib import (
     run_sim_with_photovoltaic_tally,
     make_sim_settings,
@@ -138,7 +139,7 @@ assembly_thickness = calculate_assembly_thickness(assembly_section_core)
 
 core_desc = compute_core_desc(
     core_radius=core_diameter / 2,
-    core_height=assembly_thickness + 0.001,
+    core_height=assembly_thickness + SPACING_CONSTANT * 2,
     outer_core_assembly=outer_core_layers,
 )
 
@@ -239,9 +240,9 @@ if run_mode == "render":
     render_geometry(
         universe,
         universe_radius=(drums[0].radius + 10),
-        # universe_height=core_desc.core_height * 1.5,
+        universe_height=core_desc.core_height * 1.5,
         pixels=(2500, 2500),
-        basis="xy",
+        basis="xz",
         origin=(rotary_assembly_desc.assembly_core_distance, 0, 0),
         geometry=geometry,
         colors=colors,
