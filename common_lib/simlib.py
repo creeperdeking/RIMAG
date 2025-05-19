@@ -2,7 +2,7 @@ import glob
 import openmc
 import openmc.deplete
 import os
-import pytime
+import time
 from typing import List, Dict
 from tabulate import tabulate
 import scipy.constants as cst
@@ -64,7 +64,7 @@ def make_sim_settings(
     settings.seed = 42
     settings.rel_max_lost_particles = 0.01
     if not deterministic:
-        settings.seed = int(pytime.time())
+        settings.seed = int(time.time())
 
     return settings
 
@@ -350,17 +350,17 @@ def run_sim_with_photovoltaic_tally(
     emitter_slice_volume,
     batches,
 ):
-    # tally_photovoltaic = create_photovoltaic_tally(photovoltaic_cell, materials_dict)
-    # tally_emitter = create_emitter_tally(emitter_cell, materials_dict)
-    # tallies = openmc.Tallies([tally_photovoltaic, tally_emitter])
-    # run_sim(geometry, settings, materials_dict, tallies)
+    tally_photovoltaic = create_photovoltaic_tally(photovoltaic_cell, materials_dict)
+    tally_emitter = create_emitter_tally(emitter_cell, materials_dict)
+    tallies = openmc.Tallies([tally_photovoltaic, tally_emitter])
+    run_sim(geometry, settings, materials_dict, tallies)
     print_neutron_fluence_cm2s(
         power_output_watts,
         photovoltaic_slice_volume,
         emitter_slice_volume,
         batches,
     )
-    # clean_directory()
+    clean_directory()
 
 
 def print_core_characteristics(
