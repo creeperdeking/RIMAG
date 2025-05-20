@@ -28,7 +28,7 @@ fuel_cladding_thickness = 0.94 / 2
 fuel_thickness = 0.24 / 4
 moderator_thickness = 0.9  # fuel_thickness * 4 * 5
 fuel_emitter_gap = 0.05
-emitter_thickness = 0.3
+emitter_thickness = 0.5
 thickness_photovoltaic = 0.02
 
 half_assembly = False  # Unsupported right now
@@ -74,20 +74,10 @@ outer_core_layers = AssemblySections(
 
 emitter_assembly = AssemblySections(
     parts=[
-        ### Void
-        Assembly(
-            material="Void",
-            thickness=fuel_emitter_gap,
-        ),
         ### Emitter
         Assembly(
             material=material_choice.emitter,
             thickness=emitter_thickness,
-        ),
-        ### Void
-        Assembly(
-            material="Void",
-            thickness=fuel_emitter_gap,
         ),
     ],
 )
@@ -96,10 +86,25 @@ emitter_assembly_placeholder = EmitterPlaceholder(
     thickness=calculate_assembly_thickness(emitter_assembly),
 )
 
+emitter_assembly_placeholder_parts = [
+    ### Void
+    Assembly(
+        material="Void",
+        thickness=fuel_emitter_gap,
+    ),
+    ### Emitter Assembly
+    emitter_assembly_placeholder,
+    ### Void
+    Assembly(
+        material="Void",
+        thickness=fuel_emitter_gap,
+    ),
+]
+
 assembly_section_core = AssemblySections(
     parts=[
         ### Emitter Assembly
-        emitter_assembly_placeholder,
+        *emitter_assembly_placeholder_parts,
         ### Cladding
         Assembly(
             material=material_choice.moderator_cladding,
@@ -116,7 +121,7 @@ assembly_section_core = AssemblySections(
             thickness=moderator_cladding_thickness,
         ),
         ### Emitter Assembly
-        emitter_assembly_placeholder,
+        *emitter_assembly_placeholder_parts,
         ### Fuel Cladding
         Assembly(
             material=material_choice.fuel_cladding,
@@ -155,7 +160,7 @@ rotary_assembly_desc = RotaryAssemblyDesc(
 assembly_section_photovoltaic = AssemblySections(
     parts=[
         ### Emitter Assembly
-        emitter_assembly_placeholder,
+        *emitter_assembly_placeholder_parts,
         ### Photovoltaic
         Assembly(
             material=material_choice.photovoltaic,
@@ -176,7 +181,7 @@ assembly_section_photovoltaic = AssemblySections(
             is_fuel=True,
         ),  # is_fuel is set to True to make the volume calculation work
         ### Emitter Assembly
-        emitter_assembly_placeholder,
+        *emitter_assembly_placeholder_parts,
         ### Void
         Assembly(
             material="Void", thickness=fuel_cladding_thickness * 2 + fuel_thickness
@@ -237,6 +242,7 @@ print_core_characteristics(
     geometry_settings.assembly_section_core,
     radiative_flux,
     fuel_volume,
+    drums,
 )
 
 print(

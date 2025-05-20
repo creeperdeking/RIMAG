@@ -73,16 +73,15 @@ def calculate_disks_emitter_volume(
     core_desc: CoreDesc,
     half_assembly: bool = False,
 ) -> float:
-    print(assembly_section)
-    print(drums)
-    print(drum_desc)
-    print(core_desc)
-    print(half_assembly)
+
     emitter_thickness = 0
     for assembly_part in assembly_section.parts:
         if assembly_part.is_emitter:
             emitter_thickness += assembly_part.thickness
             continue
+    print("assembly section", assembly_section.parts)
+
+    print("emitter thickness", emitter_thickness)
 
     emitter_volume = (
         (
@@ -92,6 +91,8 @@ def calculate_disks_emitter_volume(
         * emitter_thickness
         * len(drums)
     ) * (2 if half_assembly else 1)
+
+    print("emitter volume", emitter_volume)
 
     return emitter_volume
 

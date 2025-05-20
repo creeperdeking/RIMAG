@@ -8,6 +8,7 @@ from tabulate import tabulate
 import scipy.constants as cst
 from common_lib.materials import MaterialChoice
 from common_lib.assemblies import calculate_assembly_thickness
+from disk_design.disks import DiskAssemblyLayer
 
 
 def clean_directory():
@@ -434,11 +435,14 @@ def print_core_characteristics(
     assembly_section_core,
     radiative_flux,
     fuel_volume,
+    disks: List[DiskAssemblyLayer] = None,
 ):
     print(
         "thicc: ",
         calculate_assembly_thickness(assembly_section_core),
     )
+    if disks is not None:
+        print("disks radius", disks[0].radius, "m")
     print("emissive_surface", round(emissive_surface, 2), "m2")
     print(
         "Radiative flux",
