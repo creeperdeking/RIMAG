@@ -282,8 +282,35 @@ def run_depletion_sim(
 def create_photovoltaic_tally(photovoltaic_cell, materials_dict):
     tally = openmc.Tally(name="photovoltaic")
     tally.filters = [openmc.CellFilter(photovoltaic_cell)]
-    tally.scores = ["flux"]
+    tally.scores = ["flux", "absorption", "events"]
     return tally
+
+
+def create_photovoltaic_energy_tally(photovoltaic_cell, materials_dict):
+    cell_filter = openmc.CellFilter(
+        [photovoltaic_cell.id]
+    )  # replace cell.id with yours
+
+    ##############################################################################
+    # 2.  Denominator – plain flux  φ(E) dE
+    ##############################################################################
+    flux_tally = openmc.Tally(name="flux_in_cell")
+    flux_tally.filters = [cell_filter]
+    flux_tally.scores = ["flux"]  # ∫ φ(E) dE
+
+    ##############################################################################
+    # 3.  Numerator – E · φ(E) dE
+    ##############################################################################
+    # y(E)=E   (piece-wise linear, so two points is enough)
+    Emin, Emax = 0.0, 20e6  # eV (0–20 MeV, change if needed)
+    E_func_filter = openmc.EnergyFunctionFilter(
+        energy=[Emin, Emax], y=[Emin, Emax]
+    )  # multiplies score by energy
+
+    Eflux_tally = openmc.Tally(name="E_flux_in_cell")
+    Eflux_tally.filters = [cell_filter, E_func_filter]
+    Eflux_tally.scores = ["flux"]  # ∫ E φ(E) dE
+    return flux_tally, Eflux_tally
 
 
 def create_emitter_tally(emitter_cell, materials_dict):
@@ -291,6 +318,21 @@ def create_emitter_tally(emitter_cell, materials_dict):
     tally.filters = [openmc.CellFilter(emitter_cell)]
     tally.scores = ["flux"]
     return tally
+
+
+def print_neutron_energy(
+    power_output_watts,
+    photovoltaic_slice_volume,
+    emitter_slice_volume,
+    batches,
+):
+    statepoint = openmc.StatePoint(f"statepoint.{batches}.h5")
+    φ = statepoint.get_tally(name="flux_in_cell").mean.flatten()[0]  # ∫φ
+    Eφ = statepoint.get_tally(name="E_flux_in_cell").mean.flatten()[0]  # ∫Eφ
+    avg_E_eV = Eφ / φ
+    avg_E_MeV = avg_E_eV / 1e6
+    avg_E_keV = avg_E_MeV * 1e3
+    print(f"Average neutron energy in cell = {avg_E_keV:.3f} keV")
 
 
 def print_neutron_fluence_cm2s(
@@ -361,10 +403,21 @@ def run_sim_with_photovoltaic_tally(
     batches,
 ):
     tally_photovoltaic = create_photovoltaic_tally(photovoltaic_cell, materials_dict)
+    flux_tally, Eflux_tally = create_photovoltaic_energy_tally(
+        photovoltaic_cell, materials_dict
+    )
     tally_emitter = create_emitter_tally(emitter_cell, materials_dict)
-    tallies = openmc.Tallies([tally_photovoltaic, tally_emitter])
+    tallies = openmc.Tallies(
+        [tally_photovoltaic, flux_tally, Eflux_tally, tally_emitter]
+    )
     run_sim(geometry, settings, materials_dict, tallies)
     print_neutron_fluence_cm2s(
+        power_output_watts,
+        photovoltaic_slice_volume,
+        emitter_slice_volume,
+        batches,
+    )
+    print_neutron_energy(
         power_output_watts,
         photovoltaic_slice_volume,
         emitter_slice_volume,

@@ -13,6 +13,7 @@ class AtomProportion(BaseModel):
     atom: Atom
     proportion: Optional[float] = 1
     enrichment: Optional[float] = None
+    enrichment_target: Optional[str] = None
 
 
 class Material(BaseModel):
@@ -305,12 +306,16 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
             else:
                 try:
                     materials_dict[name].add_element(
-                        atom_prop.atom.name, atom_prop.proportion
+                        atom_prop.atom.name,
+                        atom_prop.proportion,
+                        enrichment=atom_prop.enrichment,
+                        enrichment_target=atom_prop.enrichment_target,
                     )
                 except Exception as e:
                     # for nuclides we use weight percent because it is how enrichment is given
                     materials_dict[name].add_nuclide(
-                        atom_prop.atom.name, atom_prop.proportion
+                        atom_prop.atom.name,
+                        atom_prop.proportion,
                     )
         if material.scattering is not None:
             materials_dict[name].add_s_alpha_beta(material.scattering)

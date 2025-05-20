@@ -24,12 +24,12 @@ from one_layer_disk_design.disks_core_characteristics import (
 
 core_diameter = 80
 moderator_cladding_thickness = 0.05
-fuel_cladding_thickness = 0.76 / 2
+fuel_cladding_thickness = 0.94 / 2
 fuel_thickness = 0.24 / 4
-moderator_thickness = 0.7  # fuel_thickness * 4 * 5
+moderator_thickness = 0.9  # fuel_thickness * 4 * 5
 fuel_emitter_gap = 0.05
 emitter_thickness = 0.3
-thickness_photovoltaic = 0.0002
+thickness_photovoltaic = 0.02
 
 half_assembly = False  # Unsupported right now
 
@@ -45,10 +45,10 @@ u235_enrichment = 19.5
 fuel_hm_density = 0.25
 
 
-run_mode = "keff"
+run_mode = ""
 
 
-batches = 1500
+batches = 10000
 
 material_choice = MaterialChoice(
     moderator="Light Water",
