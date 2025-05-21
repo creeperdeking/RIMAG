@@ -44,7 +44,7 @@ fuel_hm_density = 0.25
 run_mode = "none"
 
 
-batches = 1500
+batches = 15000
 
 material_choice = MaterialChoice(
     moderator="Graphite",

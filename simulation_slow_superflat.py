@@ -27,9 +27,9 @@ moderator_cladding_thickness = 0.05
 fuel_cladding_thickness = 0.94 / 2
 fuel_thickness = 0.24 / 4
 moderator_thickness = 0.9  # fuel_thickness * 4 * 5
-fuel_emitter_gap = 0.05
+fuel_emitter_gap = 0.1
 emitter_thickness = 0.5
-thickness_photovoltaic = 0.02
+thickness_photovoltaic = 0.2
 
 half_assembly = False  # Unsupported right now
 
@@ -39,16 +39,18 @@ cold_temp = 1150 + 273
 photovoltaic_efficiency = 0.34
 
 reflector_thickness = 40
-neutron_shield_thickness = 60
+neutron_shield_thickness = 50
 
 u235_enrichment = 19.5
 fuel_hm_density = 0.25
 
+# values are 'keff', 'render', 'depletion' or 'none' (to just show the calculated core characteristics)
+run_mode = "keff"
+# values are 'generate', 'use' or 'no'
+weight_windows = "generate"
 
-run_mode = ""
 
-
-batches = 10000
+batches = 1500
 
 material_choice = MaterialChoice(
     moderator="Light Water",
@@ -263,7 +265,14 @@ if run_mode == "render":
         materials_dict=materials_dict,
     )
 
-settings = make_sim_settings(deterministic=False, batches=batches)
+settings = make_sim_settings(
+    deterministic=False,
+    batches=batches,
+    weight_windows=weight_windows,
+    window_radius=drums[0].radius,
+    window_height=core_desc.core_height,
+    window_origin=(rotary_assembly_desc.assembly_core_distance, 0, 0),
+)
 
 if run_mode == "keff":
     # run_keff_sim(geometry, settings, materials_dict)

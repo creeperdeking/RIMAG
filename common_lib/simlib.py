@@ -3,7 +3,7 @@ import openmc
 import openmc.deplete
 import os
 import time
-from typing import List, Dict
+from typing import List, Dict, Literal
 from tabulate import tabulate
 import scipy.constants as cst
 from common_lib.materials import MaterialChoice
@@ -49,9 +49,16 @@ def run_sim(geometry, settings, materials_dict, tallies=None):
     # clean_directory()
 
 
+WeightWindows = Literal["generate", "use", "no"]
+
+
 def make_sim_settings(
     deterministic: bool = True,
     batches: int = 1500,
+    weight_windows: WeightWindows = "no",
+    window_radius: float = 0,
+    window_height: float = 0,
+    window_origin: tuple = (0, 0, 0),
 ):
     # Define neutron source
     source = openmc.Source(space=openmc.stats.Point((0, 0, 0)))
@@ -59,13 +66,55 @@ def make_sim_settings(
     # Define simulation settings
     settings = openmc.Settings()
     settings.source = source
-    settings.batches = batches
+    if weight_windows == "generate":
+        settings.batches = 200
+    else:
+        settings.batches = batches
+    print("batches", settings.batches)
     settings.inactive = 100
     settings.particles = 1000
     settings.seed = 42
+
     settings.rel_max_lost_particles = 0.01
+    settings.confidence_intervals = True
+
     if not deterministic:
         settings.seed = int(time.time())
+
+    if weight_windows == "generate":
+        # ---------------- 2.1  spatial mesh that drives the WW -------------
+        ww_mesh = openmc.RegularMesh()
+        dimension_x = int(window_radius * 2 / 10)
+        dimension_y = dimension_x
+        dimension_z = max(int(window_height / 10), 1)
+        ww_mesh.dimension = (dimension_x, dimension_y, dimension_z)
+        ww_mesh.lower_left = (
+            window_origin[0] - window_radius,
+            window_origin[1] - window_radius,
+            window_origin[2] - window_height / 2,
+        )
+        ww_mesh.upper_right = (
+            window_origin[0] + window_radius,
+            window_origin[1] + window_radius,
+            window_origin[2] + window_height / 2,
+        )
+
+        # ---------------- 2.2  generator object ----------------------------
+        wwg = openmc.WeightWindowGenerator(
+            method="magic",  # or 'fw_cadis'
+            mesh=ww_mesh,
+            max_realizations=200,  # usually = # of batches
+        )
+        settings.weight_window_generators = wwg
+    elif weight_windows == "use":
+        settings.weight_window_checkpoints = {
+            "collision": True,
+            "surface": True,
+        }  # apply at both
+        settings.weight_windows_on = True
+        settings.weight_windows = openmc.hdf5_to_wws("weight_windows.h5")
+        settings.survival_biasing = False  # usually disable; WW handles weights
+        settings.cutoff = {"weight": 1e-4, "weight_avg": 1.0}  # RR safety
 
     return settings
 
@@ -283,7 +332,11 @@ def run_depletion_sim(
 def create_photovoltaic_tally(photovoltaic_cell, materials_dict):
     tally = openmc.Tally(name="photovoltaic")
     tally.filters = [openmc.CellFilter(photovoltaic_cell)]
-    tally.scores = ["flux", "absorption", "events"]
+    tally.scores = [
+        "flux",
+        "absorption",
+        "events",
+    ]  # careful, changing the order can mess up output
     return tally
 
 
@@ -317,14 +370,15 @@ def create_photovoltaic_energy_tally(photovoltaic_cell, materials_dict):
 def create_emitter_tally(emitter_cell, materials_dict):
     tally = openmc.Tally(name="emitter")
     tally.filters = [openmc.CellFilter(emitter_cell)]
-    tally.scores = ["flux"]
+    tally.scores = [
+        "flux",
+        "absorption",
+        "events",
+    ]  # careful, changing the order can mess up output
     return tally
 
 
 def print_neutron_energy(
-    power_output_watts,
-    photovoltaic_slice_volume,
-    emitter_slice_volume,
     batches,
 ):
     statepoint = openmc.StatePoint(f"statepoint.{batches}.h5")
@@ -419,9 +473,6 @@ def run_sim_with_photovoltaic_tally(
         batches,
     )
     print_neutron_energy(
-        power_output_watts,
-        photovoltaic_slice_volume,
-        emitter_slice_volume,
         batches,
     )
     clean_directory()
