@@ -8,7 +8,6 @@ from tabulate import tabulate
 import scipy.constants as cst
 from common_lib.materials import MaterialChoice
 from common_lib.assemblies import calculate_assembly_thickness
-from disk_design.disks import DiskAssemblyLayer
 
 
 def clean_directory():
@@ -162,7 +161,6 @@ def render_geometry(
     # Save the image to a local file
     with open("plot.png", "wb") as f:
         f.write(image.data)
-    clean_directory()
 
 
 def compute_burnup(
@@ -486,7 +484,7 @@ def print_core_characteristics(
     assembly_section_core,
     radiative_flux,
     fuel_volume,
-    disks: List[DiskAssemblyLayer] = None,
+    disks: List = None,
 ):
     print(
         "thicc: ",

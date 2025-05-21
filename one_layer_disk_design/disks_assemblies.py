@@ -13,8 +13,10 @@ from common_lib.geometry_utils import (
     create_hollow_cylinder,
 )
 from common_lib.rotary_assembly import RotaryAssemblyDesc
-from disk_design.disks import calculate_disks_surface_in_core, DiskAssemblyLayer
-from drum_design.drums import calculate_drums_surface_in_core, make_drums
+from one_layer_disk_design.disks import (
+    calculate_disks_surface_in_core,
+    DiskAssemblyLayer,
+)
 
 
 def get_disk_assemblies_boundaries(
@@ -32,15 +34,6 @@ def get_disk_assemblies_boundaries(
         distance_from_origin=geometry_settings.rotary_assembly_desc.assembly_core_distance,
         height=(drums_end_height + drums_start_height) / 2,
     )
-
-    if geometry_settings.double_assembly:
-        assemblies_boundary = assemblies_boundary | create_hollow_cylinder(
-            outer_radius,
-            inner_radius,
-            drums_end_height - drums_start_height,
-            distance_from_origin=-geometry_settings.rotary_assembly_desc.assembly_core_distance,
-            height=(drums_end_height + drums_start_height) / 2,
-        )
     return assemblies_boundary
 
 
