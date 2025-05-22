@@ -58,26 +58,27 @@ def calculate_disks_fuel_volume(
 
 def calculate_disks_emitter_volume(
     assembly_section: AssemblySections,
+    emitter_assembly: AssemblySections,
     drums: List[DiskAssemblyLayer],
     drum_desc: RotaryAssemblyDesc,
     core_desc: CoreDesc,
 ) -> float:
-    print(assembly_section)
-    print(drums)
-    print(drum_desc)
-    print(core_desc)
     emitter_thickness = 0
-    for assembly_part in assembly_section.parts:
+    for assembly_part in emitter_assembly.parts:
         if assembly_part.is_emitter:
             emitter_thickness += assembly_part.thickness
-            continue
+    emitters_per_layer = 0
+    for assembly_part in assembly_section.parts:
+        if assembly_part.is_emitter:
+            emitters_per_layer += 1
 
+    total_emitter_thickness = emitter_thickness * emitters_per_layer
     emitter_volume = (
         (
             drums[0].radius ** 2 * math.pi
             - ((drums[0].radius - core_desc.core_radius * 2) ** 2 * math.pi)
         )
-        * emitter_thickness
+        * total_emitter_thickness
         * len(drums)
     )
 

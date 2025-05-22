@@ -21,7 +21,7 @@ class Assembly(BaseModel):
     thickness: float
     material: Optional[str] = None
     is_fuel: bool = False
-    is_emitter: Literal[False] = False
+    is_emitter: Optional[bool] = False
     is_emitter_gap: Optional[bool] = False
 
 

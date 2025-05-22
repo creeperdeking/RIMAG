@@ -86,6 +86,7 @@ emitter_assembly = AssemblySections(
         Assembly(
             material=material_choice.emitter,
             thickness=emitter_thickness,
+            is_emitter=True,
         ),
         ### Void
         Assembly(
