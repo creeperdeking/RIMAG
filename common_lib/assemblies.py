@@ -58,12 +58,14 @@ def compute_core_desc(
 def define_photovoltaic_boundary(
     core_desc: CoreDesc,
     assembly_core_distance: float,
-    double_assembly: bool,
+    rotary_assembly_radius: float,
 ) -> openmc.Intersection:
     boundary_shape = create_cylinder(
-        core_desc.core_radius,
+        rotary_assembly_radius,
         core_desc.core_height,
-        distance_from_origin=assembly_core_distance * 2,
+        distance_from_origin=assembly_core_distance,
+    ) & +openmc.ZCylinder(
+        r=core_desc.outer_core_radius,
     )
     return boundary_shape
 
@@ -77,7 +79,15 @@ def make_emitter_only_assembly(
         if assembly_part.is_emitter:
             if current_part_thickness > 0:
                 parts.append(Assembly(material=None, thickness=current_part_thickness))
-            parts.extend(emitter_assembly.parts)
+            new_parts = []
+            for part in emitter_assembly.parts:
+                if part.is_emitter:
+                    part_dict = part.model_dump()
+                    part_dict.pop("is_emitter", None)
+                    new_parts.append(Assembly(**part_dict, is_emitter=False))
+                else:
+                    new_parts.append(part)
+            parts.extend(new_parts)
             current_part_thickness = 0
         else:
             current_part_thickness += assembly_part.thickness

@@ -43,7 +43,7 @@ def get_base_geometry(
     photovoltaic_boundary = define_photovoltaic_boundary(
         geometry_settings.core_desc,
         geometry_settings.rotary_assembly_desc.assembly_core_distance,
-        geometry_settings.double_assembly,
+        geometry_settings.rotary_assembly_desc.rotary_assembly_radius,
     )
     return assembly_thickness, core_boundary, photovoltaic_boundary
 
