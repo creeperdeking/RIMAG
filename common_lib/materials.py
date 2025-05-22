@@ -266,7 +266,12 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
         #     color="green",
         # ),
         "Graphite": graphite,
-        "Graphite 2": graphite,
+        "Graphite 2": Material(
+            composition=[AtomProportion(atom=atoms["C"])],
+            density=2.26,
+            color="yellow",
+            scattering="c_Graphite",
+        ),
         "Lead": Material(
             composition=[AtomProportion(atom=atoms["Pb"])], density=11.34, color="gray"
         ),

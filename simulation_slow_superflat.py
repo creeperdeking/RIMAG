@@ -10,6 +10,7 @@ from common_lib.materials import MaterialChoice, make_materials
 from common_lib.rotary_assembly import RotaryAssemblyDesc
 from common_lib.geometry_utils import SPACING_CONSTANT
 from common_lib.simlib import (
+    run_keff_sim,
     run_sim_with_photovoltaic_tally,
     make_sim_settings,
     render_geometry,
@@ -31,15 +32,13 @@ fuel_emitter_gap = 0.1
 emitter_thickness = 0.5
 thickness_photovoltaic = 0.2
 
-half_assembly = False  # Unsupported right now
-
 hot_temp = 1250 + 273
 cold_temp = 1150 + 273
 
 photovoltaic_efficiency = 0.34
 
-reflector_thickness = 40
-neutron_shield_thickness = 50
+reflector_thickness = 30
+neutron_shield_thickness = 90
 
 u235_enrichment = 19.5
 fuel_hm_density = 0.25
@@ -47,10 +46,10 @@ fuel_hm_density = 0.25
 # values are 'keff', 'render', 'depletion' or 'none' (to just show the calculated core characteristics)
 run_mode = "keff"
 # values are 'generate', 'use' or 'no'
-weight_windows = "generate"
+weight_windows = "use"
 
 
-batches = 1500
+batches = 7500
 
 material_choice = MaterialChoice(
     moderator="Light Water",
@@ -123,7 +122,7 @@ assembly_section_core = AssemblySections(
             thickness=moderator_cladding_thickness,
         ),
         ### Emitter Assembly
-        *emitter_assembly_placeholder_parts,
+        # *emitter_assembly_placeholder_parts,
         ### Fuel Cladding
         Assembly(
             material=material_choice.fuel_cladding,
@@ -183,7 +182,7 @@ assembly_section_photovoltaic = AssemblySections(
             is_fuel=True,
         ),  # is_fuel is set to True to make the volume calculation work
         ### Emitter Assembly
-        *emitter_assembly_placeholder_parts,
+        # *emitter_assembly_placeholder_parts,
         ### Void
         Assembly(
             material="Void", thickness=fuel_cladding_thickness * 2 + fuel_thickness
@@ -196,7 +195,6 @@ geometry_settings = GeometrySettings(
     assembly_section_core=assembly_section_core,
     photovoltaic_assembly=assembly_section_photovoltaic,
     emitter_assembly=emitter_assembly,
-    double_assembly=half_assembly,
     core_desc=core_desc,
     rotary_assembly_desc=rotary_assembly_desc,
     material_choice=material_choice,
@@ -224,7 +222,6 @@ geometry, universe, cells, drums = define_disks_geometry(
     core_desc,
     geometry_settings,
     drums,
-    half_assembly,
     material_choice,
     materials_def,
     hot_temp,
@@ -252,14 +249,21 @@ print(
     drums[0].radius + core_desc.outer_core_radius - core_desc.core_radius,
 )
 
+print("core_height", core_desc.core_height)
+
 if run_mode == "render":
     render_geometry(
         universe,
-        universe_radius=(drums[0].radius + 10),
-        universe_height=core_desc.core_height * 1.5,
+        universe_radius=(drums[0].radius + 100),
+        universe_height=drums[0].radius * 2
+        + 10,  # core_desc.core_height * 1.5, # drums[0].radius * 2 + 10,
         pixels=(2500, 2500),
-        basis="xz",
-        origin=(rotary_assembly_desc.assembly_core_distance, 0, 0),
+        basis="xy",
+        origin=(
+            rotary_assembly_desc.assembly_core_distance,
+            0,
+            0.2,
+        ),
         geometry=geometry,
         colors=colors,
         materials_dict=materials_dict,

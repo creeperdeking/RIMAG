@@ -20,7 +20,6 @@ def calculate_disk_core_characteristics(
     core_desc: CoreDesc,
     geometry_settings: GeometrySettings,
     disks: List[DiskAssemblyLayer],
-    half_assembly: bool,
     material_choice: MaterialChoice,
     materials_def: Dict[str, Material],
     hot_temp: float,
@@ -32,7 +31,6 @@ def calculate_disk_core_characteristics(
         core_desc=core_desc,
         assembly_section=geometry_settings.assembly_section_core,
         drums=disks,
-        half_assembly=half_assembly,
     )
 
     fuel_volume = calculate_disks_fuel_volume(
@@ -40,7 +38,6 @@ def calculate_disk_core_characteristics(
         core_desc=core_desc,
         assembly_section=geometry_settings.assembly_section_core,
         drums=disks,
-        half_assembly=half_assembly,
     )
 
     emitter_volume = calculate_disks_emitter_volume(
@@ -48,7 +45,6 @@ def calculate_disk_core_characteristics(
         drums=disks,
         drum_desc=rotary_assembly_desc,
         core_desc=core_desc,
-        half_assembly=half_assembly,
     )
 
     # multiply by 2 because each drum section has two faces exposed to the fuel, and then by 2 again if there are two drum assemblies

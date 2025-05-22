@@ -44,11 +44,35 @@ def generate_XML(geometry, settings, tallies, materials_dict):
 
 def run_sim(geometry, settings, materials_dict, tallies=None):
     generate_XML(geometry, settings, tallies, materials_dict)
-    openmc.run(threads=16)
+    openmc.run(threads=16, geometry_debug=True)
     # clean_directory()
 
 
 WeightWindows = Literal["generate", "use", "no"]
+
+
+def make_ww_mesh(
+    window_radius: float,
+    window_height: float,
+    window_origin: tuple,
+    cell_dimension: float = 10,
+):
+    ww_mesh = openmc.RegularMesh()
+    dimension_x = int(window_radius * 2 / cell_dimension)
+    dimension_y = dimension_x
+    dimension_z = max(int(window_height / cell_dimension), 1)
+    ww_mesh.dimension = (dimension_x, dimension_y, dimension_z)
+    ww_mesh.lower_left = (
+        window_origin[0] - window_radius,
+        window_origin[1] - window_radius,
+        window_origin[2] - window_height / 2,
+    )
+    ww_mesh.upper_right = (
+        window_origin[0] + window_radius,
+        window_origin[1] + window_radius,
+        window_origin[2] + window_height / 2,
+    )
+    return ww_mesh
 
 
 def make_sim_settings(
@@ -61,16 +85,19 @@ def make_sim_settings(
 ):
     # Define neutron source
     source = openmc.Source(space=openmc.stats.Point((0, 0, 0)))
-
     # Define simulation settings
     settings = openmc.Settings()
+    settings.inactive = 100
+    UPDATE_INTERVAL = 10
+    WEIGHT_WINDOWS_BATCHES = 100 * UPDATE_INTERVAL + settings.inactive
+
     settings.source = source
     if weight_windows == "generate":
-        settings.batches = 200
+        settings.batches = WEIGHT_WINDOWS_BATCHES
     else:
         settings.batches = batches
     print("batches", settings.batches)
-    settings.inactive = 100
+
     settings.particles = 1000
     settings.seed = 42
 
@@ -81,28 +108,13 @@ def make_sim_settings(
         settings.seed = int(time.time())
 
     if weight_windows == "generate":
-        # ---------------- 2.1  spatial mesh that drives the WW -------------
-        ww_mesh = openmc.RegularMesh()
-        dimension_x = int(window_radius * 2 / 10)
-        dimension_y = dimension_x
-        dimension_z = max(int(window_height / 10), 1)
-        ww_mesh.dimension = (dimension_x, dimension_y, dimension_z)
-        ww_mesh.lower_left = (
-            window_origin[0] - window_radius,
-            window_origin[1] - window_radius,
-            window_origin[2] - window_height / 2,
-        )
-        ww_mesh.upper_right = (
-            window_origin[0] + window_radius,
-            window_origin[1] + window_radius,
-            window_origin[2] + window_height / 2,
-        )
+        ww_mesh = make_ww_mesh(window_radius, window_height, window_origin)
 
-        # ---------------- 2.2  generator object ----------------------------
         wwg = openmc.WeightWindowGenerator(
             method="magic",  # or 'fw_cadis'
             mesh=ww_mesh,
-            max_realizations=200,  # usually = # of batches
+            max_realizations=WEIGHT_WINDOWS_BATCHES,  # usually = # of batches
+            update_interval=UPDATE_INTERVAL,
         )
         settings.weight_window_generators = wwg
     elif weight_windows == "use":
