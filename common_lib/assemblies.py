@@ -22,6 +22,7 @@ class Assembly(BaseModel):
     material: Optional[str] = None
     is_fuel: bool = False
     is_emitter: Literal[False] = False
+    is_emitter_gap: Optional[bool] = False
 
 
 class EmitterPlaceholder(BaseModel):
@@ -64,12 +65,6 @@ def define_photovoltaic_boundary(
         core_desc.core_height,
         distance_from_origin=assembly_core_distance * 2,
     )
-    if double_assembly:
-        boundary_shape = boundary_shape | create_cylinder(
-            core_desc.core_radius,
-            core_desc.core_height,
-            distance_from_origin=-assembly_core_distance * 2,
-        )
     return boundary_shape
 
 

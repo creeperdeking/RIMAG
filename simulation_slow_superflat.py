@@ -22,15 +22,16 @@ from one_layer_disk_design.disks_geometry import define_disks_geometry
 from one_layer_disk_design.disks_core_characteristics import (
     calculate_disk_core_characteristics,
 )
+from one_layer_disk_design.disks import get_disks_radius
 
 core_diameter = 80
 moderator_cladding_thickness = 0.05
 fuel_cladding_thickness = 0.94 / 2
-fuel_thickness = 0.24 / 4
-moderator_thickness = 0.9  # fuel_thickness * 4 * 5
+fuel_thickness = 0.24 / 4 / 2
+moderator_thickness = 0.4  # fuel_thickness * 4 * 5
 fuel_emitter_gap = 0.1
 emitter_thickness = 0.5
-thickness_photovoltaic = 0.2
+thickness_photovoltaic = 0.02
 
 hot_temp = 1250 + 273
 cold_temp = 1150 + 273
@@ -44,7 +45,7 @@ u235_enrichment = 19.5
 fuel_hm_density = 0.25
 
 # values are 'keff', 'render', 'depletion' or 'none' (to just show the calculated core characteristics)
-run_mode = "keff"
+run_mode = "render"
 # values are 'generate', 'use' or 'no'
 weight_windows = "use"
 
@@ -75,10 +76,22 @@ outer_core_layers = AssemblySections(
 
 emitter_assembly = AssemblySections(
     parts=[
+        ### Void
+        Assembly(
+            material="Void",
+            thickness=fuel_emitter_gap,
+            is_emitter_gap=True,
+        ),
         ### Emitter
         Assembly(
             material=material_choice.emitter,
             thickness=emitter_thickness,
+        ),
+        ### Void
+        Assembly(
+            material="Void",
+            thickness=fuel_emitter_gap,
+            is_emitter_gap=True,
         ),
     ],
 )
@@ -87,25 +100,8 @@ emitter_assembly_placeholder = EmitterPlaceholder(
     thickness=calculate_assembly_thickness(emitter_assembly),
 )
 
-emitter_assembly_placeholder_parts = [
-    ### Void
-    Assembly(
-        material="Void",
-        thickness=fuel_emitter_gap,
-    ),
-    ### Emitter Assembly
-    emitter_assembly_placeholder,
-    ### Void
-    Assembly(
-        material="Void",
-        thickness=fuel_emitter_gap,
-    ),
-]
-
 assembly_section_core = AssemblySections(
     parts=[
-        ### Emitter Assembly
-        *emitter_assembly_placeholder_parts,
         ### Cladding
         Assembly(
             material=material_choice.moderator_cladding,
@@ -122,8 +118,7 @@ assembly_section_core = AssemblySections(
             thickness=moderator_cladding_thickness,
         ),
         ### Emitter Assembly
-        # *emitter_assembly_placeholder_parts,
-        ### Fuel Cladding
+        emitter_assembly_placeholder,
         Assembly(
             material=material_choice.fuel_cladding,
             thickness=fuel_cladding_thickness,
@@ -133,11 +128,6 @@ assembly_section_core = AssemblySections(
             material=material_choice.fuel,
             thickness=fuel_thickness,
             is_fuel=True,
-        ),
-        ### Fuel Cladding
-        Assembly(
-            material=material_choice.fuel_cladding,
-            thickness=fuel_cladding_thickness,
         ),
     ],
 )
@@ -149,19 +139,22 @@ core_desc = compute_core_desc(
     core_height=assembly_thickness + SPACING_CONSTANT * 2,
     outer_core_assembly=outer_core_layers,
 )
-
-rotary_assembly_desc = RotaryAssemblyDesc(
-    assembly_core_distance=core_desc.core_radius
+assembly_core_distance = (
+    core_desc.core_radius
     + (core_desc.outer_core_radius - core_desc.core_radius) / 2
-    + 3,
+    + 3
+)
+rotary_assembly_desc = RotaryAssemblyDesc(
+    assembly_core_distance=assembly_core_distance,
     assembly_core_margin=1,
+    rotary_assembly_radius=get_disks_radius(
+        assembly_core_distance, core_desc.core_radius
+    ),
 )
 
 
 assembly_section_photovoltaic = AssemblySections(
     parts=[
-        ### Emitter Assembly
-        *emitter_assembly_placeholder_parts,
         ### Photovoltaic
         Assembly(
             material=material_choice.photovoltaic,
@@ -182,7 +175,7 @@ assembly_section_photovoltaic = AssemblySections(
             is_fuel=True,
         ),  # is_fuel is set to True to make the volume calculation work
         ### Emitter Assembly
-        # *emitter_assembly_placeholder_parts,
+        emitter_assembly_placeholder,
         ### Void
         Assembly(
             material="Void", thickness=fuel_cladding_thickness * 2 + fuel_thickness
@@ -255,10 +248,10 @@ if run_mode == "render":
     render_geometry(
         universe,
         universe_radius=(drums[0].radius + 100),
-        universe_height=drums[0].radius * 2
-        + 10,  # core_desc.core_height * 1.5, # drums[0].radius * 2 + 10,
+        universe_height=core_desc.core_height
+        * 1.5,  # core_desc.core_height * 1.5, # drums[0].radius * 2 + 10,
         pixels=(2500, 2500),
-        basis="xy",
+        basis="xz",
         origin=(
             rotary_assembly_desc.assembly_core_distance,
             0,

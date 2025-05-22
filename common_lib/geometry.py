@@ -59,8 +59,8 @@ def define_geometry(
     core_boundary: openmc.Region,
     photovoltaic_boundary: openmc.Region,
 ):
-    assembly_thickness = calculate_assembly_thickness(
-        geometry_settings.assembly_section_core
+    assembly_thickness, core_boundary, photovoltaic_boundary = get_base_geometry(
+        geometry_settings
     )
     photovoltaic_assembly_thickness = calculate_assembly_thickness(
         geometry_settings.photovoltaic_assembly
@@ -73,15 +73,6 @@ def define_geometry(
     outer_core_boundary = create_cylinder(
         geometry_settings.core_desc.outer_core_radius,
         geometry_settings.core_desc.outer_core_height,
-    )
-    core_boundary = create_cylinder(
-        geometry_settings.core_desc.core_radius,
-        geometry_settings.core_desc.core_height,
-    )
-    photovoltaic_boundary = define_photovoltaic_boundary(
-        geometry_settings.core_desc,
-        geometry_settings.rotary_assembly_desc.assembly_core_distance,
-        geometry_settings.double_assembly,
     )
 
     core_fill_region = core_boundary & ~assemblies_boundary

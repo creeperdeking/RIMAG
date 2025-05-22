@@ -38,14 +38,20 @@ class DisksGeometrySettings:
     double_assembly: bool
 
 
-# todo
+def get_disks_radius(
+    assembly_core_distance: float,
+    core_radius: float,
+):
+    return assembly_core_distance + core_radius
+
+
 def make_disks(
     geometry_settings: DisksGeometrySettings,
     assembly_thickness: float,
 ) -> List[DiskAssemblyLayer]:
-    disks_radius = (
-        geometry_settings.rotary_assembly_desc.assembly_core_distance
-        + geometry_settings.core_desc.core_radius
+    disks_radius = get_disks_radius(
+        geometry_settings.rotary_assembly_desc.assembly_core_distance,
+        geometry_settings.core_desc.core_radius,
     )
     current_disk_height = -assembly_thickness / 2
     disks = []
