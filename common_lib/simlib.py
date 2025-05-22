@@ -44,7 +44,7 @@ def generate_XML(geometry, settings, tallies, materials_dict):
 
 def run_sim(geometry, settings, materials_dict, tallies=None):
     generate_XML(geometry, settings, tallies, materials_dict)
-    openmc.run(threads=16, geometry_debug=True)
+    openmc.run(threads=16, geometry_debug=False)
     # clean_directory()
 
 

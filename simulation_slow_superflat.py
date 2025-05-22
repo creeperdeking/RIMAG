@@ -47,7 +47,7 @@ fuel_hm_density = 0.25
 # values are 'keff', 'render', 'depletion' or 'none' (to just show the calculated core characteristics)
 run_mode = "render"
 # values are 'generate', 'use' or 'no'
-weight_windows = "use"
+weight_windows = "no"
 
 
 batches = 7500
@@ -248,7 +248,7 @@ print("core_height", core_desc.core_height)
 if run_mode == "render":
     render_geometry(
         universe,
-        universe_radius=(drums[0].radius + 100),
+        universe_radius=(drums[0].radius * 2),
         universe_height=core_desc.core_height
         * 1.5,  # core_desc.core_height * 1.5, # drums[0].radius * 2 + 10,
         pixels=(2500, 2500),
@@ -256,7 +256,7 @@ if run_mode == "render":
         origin=(
             rotary_assembly_desc.assembly_core_distance,
             0,
-            0.2,
+            -0,
         ),
         geometry=geometry,
         colors=colors,
