@@ -11,6 +11,7 @@ from common_lib.assemblies import (
 from common_lib.geometry_utils import (
     create_cylinder,
     create_hollow_cylinder,
+    circle_intersection_area,
 )
 from common_lib.rotary_assembly import RotaryAssemblyDesc
 from one_layer_disk_design.disks import (
@@ -54,6 +55,36 @@ def calculate_disks_fuel_volume(
     )
 
     return fuel_volume
+
+
+def calculate_photovoltaic_volume(
+    drum_desc: RotaryAssemblyDesc,
+    core_desc: CoreDesc,
+    assembly_section: AssemblySections,
+    drums: List[DiskAssemblyLayer],
+) -> float:
+    print(f"Rotary assembly radius: {drum_desc.rotary_assembly_radius}")
+    print(f"Assembly core distance: {drum_desc.assembly_core_distance}")
+    print(f"Core outer radius: {core_desc.outer_core_radius}")
+    # First, calculate the area of one photovoltaic layer
+    photovoltaic_area = (
+        drum_desc.rotary_assembly_radius**2 * math.pi
+        - circle_intersection_area(
+            core_desc.outer_core_radius,
+            drum_desc.rotary_assembly_radius,
+            drum_desc.assembly_core_distance,
+        )
+    )
+    print(f"Photovoltaic area: {photovoltaic_area}")
+    photovoltaic_thickness = 0
+    for assembly_part in assembly_section.parts:
+        if assembly_part.is_photovoltaic:
+            photovoltaic_thickness += assembly_part.thickness
+    print(f"Photovoltaic thickness: {photovoltaic_thickness}")
+
+    photovoltaic_volume = photovoltaic_area * photovoltaic_thickness * len(drums)
+
+    return photovoltaic_volume
 
 
 def calculate_disks_emitter_volume(

@@ -45,7 +45,7 @@ u235_enrichment = 19.5
 fuel_hm_density = 0.25
 
 # values are 'keff', 'render', 'depletion' or 'none' (to just show the calculated core characteristics)
-run_mode = "render"
+run_mode = "keff"
 # values are 'generate', 'use' or 'no'
 weight_windows = "no"
 
@@ -160,7 +160,7 @@ assembly_section_photovoltaic = AssemblySections(
         Assembly(
             material=material_choice.photovoltaic,
             thickness=thickness_photovoltaic,
-            is_fuel=True,
+            is_photovoltaic=True,
         ),  # is_fuel is set to True to make the volume calculation work
         ### Water
         Assembly(
@@ -173,7 +173,7 @@ assembly_section_photovoltaic = AssemblySections(
         Assembly(
             material=material_choice.photovoltaic,
             thickness=thickness_photovoltaic,
-            is_fuel=True,
+            is_photovoltaic=True,
         ),  # is_fuel is set to True to make the volume calculation work
         ### Emitter Assembly
         emitter_assembly_placeholder,

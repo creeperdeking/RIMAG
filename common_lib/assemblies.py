@@ -23,9 +23,10 @@ class Assembly(BaseModel):
     is_fuel: bool = False
     is_emitter: Optional[bool] = False
     is_emitter_gap: Optional[bool] = False
+    is_photovoltaic: Optional[bool] = False
 
 
-class EmitterPlaceholder(BaseModel):
+class EmitterPlaceholder(Assembly):
     thickness: float
     is_emitter: Literal[True] = True
 
