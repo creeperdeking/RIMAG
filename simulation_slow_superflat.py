@@ -45,7 +45,7 @@ u235_enrichment = 19.5
 fuel_hm_density = 0.25
 
 # values are 'keff', 'render', 'depletion' or 'none' (to just show the calculated core characteristics)
-run_mode = "keff"
+run_mode = "render"
 # values are 'generate', 'use' or 'no'
 weight_windows = "generate"
 
@@ -149,9 +149,7 @@ core_desc = compute_core_desc(
     outer_core_assembly=outer_core_layers,
 )
 assembly_core_distance = (
-    core_desc.core_radius
-    + (core_desc.outer_core_radius - core_desc.core_radius) / 2
-    + 3
+    core_desc.core_radius + (core_desc.outer_core_radius - core_desc.core_radius) / 2
 )
 rotary_assembly_desc = RotaryAssemblyDesc(
     assembly_core_distance=assembly_core_distance,
@@ -274,14 +272,14 @@ if run_mode == "render":
     render_geometry(
         universe,
         universe_radius=(drums[0].radius * 2),
-        universe_height=core_desc.core_height
-        * 1.5,  # core_desc.core_height * 1.5, # drums[0].radius * 2 + 10,
+        universe_height=drums[0].radius * 2
+        + 10,  # core_desc.core_height * 1.5, # drums[0].radius * 2 + 10,
         pixels=(2500, 2500),
-        basis="xz",
+        basis="xy",
         origin=(
             rotary_assembly_desc.assembly_core_distance,
             0,
-            -0,
+            -0.2,
         ),
         geometry=geometry,
         colors=colors,

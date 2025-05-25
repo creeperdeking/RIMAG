@@ -7,7 +7,7 @@ from common_lib.geometry import GeometrySettings, define_geometry, get_base_geom
 from one_layer_disk_design.disks_assemblies import (
     define_discs_emitter_boundary,
     make_disks_cells,
-    get_disk_assemblies_boundaries,
+    get_disks_boundaries,
 )
 from one_layer_disk_design.disks import make_disks
 
@@ -30,11 +30,14 @@ def define_disks_geometry(
         disks,
         geometry_settings.core_desc,
         geometry_settings.rotary_assembly_desc,
+        0.0,
     )
 
-    assemblies_boundary = get_disk_assemblies_boundaries(
+    assemblies_boundary = get_disks_boundaries(
         geometry_settings,
         disks[0].radius,
+        geometry_settings.rotary_assembly_desc.assembly_core_distance
+        - geometry_settings.core_desc.core_radius,
         assembly_thickness,
         disks,
     )
