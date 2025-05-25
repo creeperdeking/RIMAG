@@ -23,14 +23,15 @@ from common_lib.simlib import (
 from one_layer_disk_design.disks_geometry import define_disks_geometry
 from one_layer_disk_design.disks_core_characteristics import (
     calculate_disk_core_characteristics,
+    sanity_check_triso_fuel_volume,
 )
 from one_layer_disk_design.disks import get_disks_radius
 
 core_diameter = 80
 moderator_cladding_thickness = 0.05
-fuel_cladding_thickness = 0.94 / 2
-fuel_thickness = 0.24 / 4
-moderator_thickness = 1  # fuel_thickness * 4 * 5
+fuel_thickness = 0.12
+fuel_cladding_thickness = (1 - fuel_thickness) / 2
+moderator_thickness = 1
 fuel_emitter_gap = 0.1
 emitter_thickness = 0.5
 thickness_photovoltaic = 0.02
@@ -44,7 +45,7 @@ reflector_thickness = 40
 neutron_shield_thickness = 90
 
 u235_enrichment = 19.5
-fuel_hm_density = 0.25
+fuel_burnup = 75  # MWd/kgHM
 
 # values are 'keff', 'render', 'depletion' or 'none' (to just show the calculated core characteristics)
 run_mode = ""
@@ -53,6 +54,8 @@ weight_windows = "generate"
 
 
 batches = 7500
+
+sanity_check_triso_fuel_volume(fuel_thickness, fuel_cladding_thickness * 2)
 
 material_choice = MaterialChoice(
     moderator="Light Water",
@@ -236,6 +239,7 @@ geometry, universe, cells, drums = define_disks_geometry(
     emitter_core_volume,
     photovolatic_volume,
     radiative_flux,
+    fuel_lifetime,
 ) = calculate_disk_core_characteristics(
     rotary_assembly_desc,
     core_desc,
@@ -246,6 +250,7 @@ geometry, universe, cells, drums = define_disks_geometry(
     hot_temp,
     cold_temp,
     photovoltaic_efficiency,
+    fuel_burnup,
 )
 
 
@@ -260,6 +265,7 @@ print_core_characteristics(
     geometry_settings.assembly_section_core,
     radiative_flux,
     fuel_volume,
+    fuel_lifetime,
     drums,
 )
 

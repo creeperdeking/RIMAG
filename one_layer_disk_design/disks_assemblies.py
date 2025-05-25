@@ -49,7 +49,7 @@ def calculate_disks_fuel_volume(
     fuel_thickness = 0
     for assembly_part in assembly_section.parts:
         if not assembly_part.is_emitter and assembly_part.is_fuel:
-            fuel_thickness = assembly_part.thickness
+            fuel_thickness += assembly_part.thickness
             break
 
     fuel_volume = (

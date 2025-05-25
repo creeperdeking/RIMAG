@@ -57,7 +57,7 @@ def make_ww_mesh(
     window_radius: float,
     window_height: float,
     window_origin: tuple,
-    cell_dimension: float = 10,
+    cell_dimension: float = 20,
 ):
     window_height = window_height * 1.1
     ww_mesh = openmc.RegularMesh()
@@ -108,8 +108,8 @@ def make_sim_settings(
     # Define simulation settings
     settings = openmc.Settings()
     settings.inactive = 100
-    UPDATE_INTERVAL = 10
-    WEIGHT_WINDOWS_BATCHES = 100 * UPDATE_INTERVAL + settings.inactive
+    UPDATE_INTERVAL = 2
+    WEIGHT_WINDOWS_BATCHES = 50 * UPDATE_INTERVAL + settings.inactive
 
     settings.source = source
     if weight_windows == "generate":
@@ -517,6 +517,7 @@ def print_core_characteristics(
     assembly_section_core,
     radiative_flux,
     fuel_volume,
+    fuel_lifetime,
     disks: List = None,
 ):
     print(
@@ -543,3 +544,4 @@ def print_core_characteristics(
         heavy_metal_mass,
         "kg",
     )
+    print("fuel lifetime", fuel_lifetime, "years")
