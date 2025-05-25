@@ -5,7 +5,7 @@ from common_lib.assemblies import (
     AssemblySections,
     EmitterPlaceholder,
 )
-from common_lib.geometry import GeometrySettings
+from common_lib.geometry import GeometrySettings, get_outer_empty_zone_parameters
 from common_lib.materials import MaterialChoice, make_materials
 from common_lib.rotary_assembly import RotaryAssemblyDesc
 from common_lib.geometry_utils import SPACING_CONSTANT
@@ -17,6 +17,8 @@ from common_lib.simlib import (
     run_depletion_sim,
     print_core_characteristics,
     print_depletion_result,
+    make_ww_mesh,
+    check_ww_mesh_is_inside_geometry,
 )
 from one_layer_disk_design.disks_geometry import define_disks_geometry
 from one_layer_disk_design.disks_core_characteristics import (
@@ -38,14 +40,14 @@ cold_temp = 1150 + 273
 
 photovoltaic_efficiency = 0.34
 
-reflector_thickness = 30
+reflector_thickness = 40
 neutron_shield_thickness = 90
 
 u235_enrichment = 19.5
 fuel_hm_density = 0.25
 
 # values are 'keff', 'render', 'depletion' or 'none' (to just show the calculated core characteristics)
-run_mode = "render"
+run_mode = ""
 # values are 'generate', 'use' or 'no'
 weight_windows = "generate"
 
@@ -286,13 +288,16 @@ if run_mode == "render":
         materials_dict=materials_dict,
     )
 
+outer_empty_zone_parameters = get_outer_empty_zone_parameters(geometry_settings)
+
 settings = make_sim_settings(
     deterministic=False,
     batches=batches,
     weight_windows=weight_windows,
-    window_radius=drums[0].radius,
+    window_radius=outer_empty_zone_parameters.radius,
     window_height=core_desc.core_height,
-    window_origin=(rotary_assembly_desc.assembly_core_distance, 0, 0),
+    window_origin=(outer_empty_zone_parameters.x0, 0, 0),
+    geometry=geometry,
 )
 
 if run_mode == "keff":

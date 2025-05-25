@@ -8,6 +8,8 @@ from tabulate import tabulate
 import scipy.constants as cst
 from common_lib.materials import MaterialChoice
 from common_lib.assemblies import calculate_assembly_thickness
+import numpy as np
+from common_lib.geometry import GeometrySettings
 
 
 def clean_directory():
@@ -57,6 +59,7 @@ def make_ww_mesh(
     window_origin: tuple,
     cell_dimension: float = 10,
 ):
+    window_height = window_height * 1.1
     ww_mesh = openmc.RegularMesh()
     dimension_x = int(window_radius * 2 / cell_dimension)
     dimension_y = dimension_x
@@ -75,6 +78,22 @@ def make_ww_mesh(
     return ww_mesh
 
 
+def check_ww_mesh_is_inside_geometry(mesh, geometry):
+    # geometry extents
+    ll_geom, ur_geom = geometry.bounding_box  # returns 2×3 array (x,y,z)
+    # :contentReference[oaicite:0]{index=0}
+
+    # does every coordinate lie inside the mesh?
+    inside = np.all(mesh.lower_left <= ll_geom) and np.all(mesh.upper_right >= ur_geom)
+
+    if inside:
+        print("✅  mesh covers the whole geometry")
+    else:
+        print("❌  mesh misses part of the geometry")
+        print("    geometry ll:", ll_geom, "  mesh ll:", mesh.lower_left)
+        print("    geometry ur:", ur_geom, "  mesh ur:", mesh.upper_right)
+
+
 def make_sim_settings(
     deterministic: bool = True,
     batches: int = 1500,
@@ -82,6 +101,7 @@ def make_sim_settings(
     window_radius: float = 0,
     window_height: float = 0,
     window_origin: tuple = (0, 0, 0),
+    geometry: openmc.Geometry = None,
 ):
     # Define neutron source
     source = openmc.Source(space=openmc.stats.Point((0, 0, 0)))
@@ -109,6 +129,7 @@ def make_sim_settings(
 
     if weight_windows == "generate":
         ww_mesh = make_ww_mesh(window_radius, window_height, window_origin)
+        check_ww_mesh_is_inside_geometry(ww_mesh, geometry)
 
         wwg = openmc.WeightWindowGenerator(
             method="magic",  # or 'fw_cadis'

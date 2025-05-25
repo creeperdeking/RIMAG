@@ -48,6 +48,22 @@ def get_base_geometry(
     return assembly_thickness, core_boundary, photovoltaic_boundary
 
 
+class OuterEmptyZoneParameters(BaseModel):
+    radius: float
+    x0: float
+
+
+def get_outer_empty_zone_parameters(
+    geometry_settings: GeometrySettings,
+) -> OuterEmptyZoneParameters:
+    return OuterEmptyZoneParameters(
+        radius=geometry_settings.rotary_assembly_desc.rotary_assembly_radius
+        + geometry_settings.outer_core_layers.parts[0].thickness / 2,
+        x0=geometry_settings.rotary_assembly_desc.assembly_core_distance
+        + geometry_settings.outer_core_layers.parts[0].thickness / 2,
+    )
+
+
 def define_geometry(
     geometry_settings: GeometrySettings,
     materials_dict: Dict[str, openmc.Material],
@@ -74,6 +90,22 @@ def define_geometry(
         geometry_settings.core_desc.outer_core_radius,
         geometry_settings.core_desc.outer_core_height,
     )
+    outer_empty_zone_parameters = get_outer_empty_zone_parameters(geometry_settings)
+    outer_empty_zone_boundary = (
+        -openmc.ZCylinder(
+            r=outer_empty_zone_parameters.radius,
+            x0=outer_empty_zone_parameters.x0,
+            boundary_type="vacuum",
+        )
+        & -openmc.ZPlane(
+            z0=geometry_settings.core_desc.outer_core_height / 2 + SPACING_CONSTANT,
+            boundary_type="periodic",
+        )
+        & +openmc.ZPlane(
+            z0=-geometry_settings.core_desc.outer_core_height / 2 - SPACING_CONSTANT,
+            boundary_type="periodic",
+        )
+    )
 
     core_fill_region = core_boundary & ~assemblies_boundary
     photovoltaic_fill_region = photovoltaic_boundary & ~assemblies_boundary
@@ -92,25 +124,11 @@ def define_geometry(
         geometry_settings.core_desc,
         emitter_boundary,
         materials_dict,
+        outer_empty_zone_boundary,
     )
 
     outer_empty_zone = (
-        (
-            -openmc.ZCylinder(
-                r=geometry_settings.rotary_assembly_desc.assembly_core_distance * 2
-                + geometry_settings.core_desc.core_radius,
-                boundary_type="vacuum",
-            )
-            & -openmc.ZPlane(
-                z0=geometry_settings.core_desc.outer_core_height / 2 + SPACING_CONSTANT,
-                boundary_type="periodic",
-            )
-            & +openmc.ZPlane(
-                z0=-geometry_settings.core_desc.outer_core_height / 2
-                - SPACING_CONSTANT,
-                boundary_type="periodic",
-            )
-        )
+        outer_empty_zone_boundary
         & ~outer_core_boundary
         & ~photovoltaic_boundary
         & ~emitter_boundary
