@@ -27,8 +27,8 @@ from one_layer_disk_design.disks import get_disks_radius
 core_diameter = 80
 moderator_cladding_thickness = 0.05
 fuel_cladding_thickness = 0.94 / 2
-fuel_thickness = 0.24 / 4 / 2
-moderator_thickness = 0.4  # fuel_thickness * 4 * 5
+fuel_thickness = 0.24 / 4
+moderator_thickness = 1  # fuel_thickness * 4 * 5
 fuel_emitter_gap = 0.1
 emitter_thickness = 0.5
 thickness_photovoltaic = 0.02
@@ -47,7 +47,7 @@ fuel_hm_density = 0.25
 # values are 'keff', 'render', 'depletion' or 'none' (to just show the calculated core characteristics)
 run_mode = "keff"
 # values are 'generate', 'use' or 'no'
-weight_windows = "no"
+weight_windows = "generate"
 
 
 batches = 7500
@@ -120,6 +120,7 @@ assembly_section_core = AssemblySections(
         ),
         ### Emitter Assembly
         emitter_assembly_placeholder,
+        ### Fuel Cladding
         Assembly(
             material=material_choice.fuel_cladding,
             thickness=fuel_cladding_thickness,
@@ -130,6 +131,13 @@ assembly_section_core = AssemblySections(
             thickness=fuel_thickness,
             is_fuel=True,
         ),
+        ### Fuel Cladding
+        Assembly(
+            material=material_choice.fuel_cladding,
+            thickness=fuel_cladding_thickness,
+        ),
+        ### Emitter Assembly
+        emitter_assembly_placeholder,
     ],
 )
 
@@ -177,10 +185,27 @@ assembly_section_photovoltaic = AssemblySections(
         ),  # is_fuel is set to True to make the volume calculation work
         ### Emitter Assembly
         emitter_assembly_placeholder,
-        ### Void
+        ### Photovoltaic
         Assembly(
-            material="Void", thickness=fuel_cladding_thickness * 2 + fuel_thickness
+            material=material_choice.photovoltaic,
+            thickness=thickness_photovoltaic,
+            is_photovoltaic=True,
+        ),  # is_fuel is set to True to make the volume calculation work
+        ### Water
+        Assembly(
+            material=material_choice.coolant,
+            thickness=fuel_thickness
+            - thickness_photovoltaic * 2
+            + fuel_cladding_thickness * 2,
         ),
+        ### Photovoltaic
+        Assembly(
+            material=material_choice.photovoltaic,
+            thickness=thickness_photovoltaic,
+            is_photovoltaic=True,
+        ),  # is_fuel is set to True to make the volume calculation work
+        ### Emitter Assembly
+        emitter_assembly_placeholder,
     ]
 )
 
