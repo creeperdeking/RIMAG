@@ -48,19 +48,18 @@ u235_enrichment = 19.5
 fuel_burnup = 75  # MWd/kgHM
 
 # values are 'keff', 'render', 'depletion' or 'none' (to just show the calculated core characteristics)
-run_mode = ""
+run_mode = "keff"
 # values are 'generate', 'use' or 'no'
-weight_windows = "generate"
+weight_windows = "no"
 
-
-batches = 7500
+batches = 500000
 
 sanity_check_triso_fuel_volume(fuel_thickness, fuel_cladding_thickness * 2)
 
 material_choice = MaterialChoice(
     moderator="Light Water",
     neutron_shield="Boron Carbide",
-    reflector="Graphite",
+    reflector="Light Water",
     fuel="Uranium Oxy-Carbide",
     moderator_cladding="Zirconium",
     emitter="Graphite 2",

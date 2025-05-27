@@ -46,7 +46,7 @@ def generate_XML(geometry, settings, tallies, materials_dict):
 
 def run_sim(geometry, settings, materials_dict, tallies=None):
     generate_XML(geometry, settings, tallies, materials_dict)
-    openmc.run(threads=16, geometry_debug=False)
+    openmc.run(threads=16, geometry_debug=True)
     # clean_directory()
 
 
@@ -104,7 +104,7 @@ def make_sim_settings(
     geometry: openmc.Geometry = None,
 ):
     # Define neutron source
-    source = openmc.Source(space=openmc.stats.Point((0, 0, 0)))
+    source = openmc.IndependentSource(space=openmc.stats.Point((0, 0, 0)))
     # Define simulation settings
     settings = openmc.Settings()
     settings.inactive = 100
@@ -435,6 +435,11 @@ def print_neutron_fluence_cm2s(
     normalized_flux_photovoltaic = fluence_photovoltaic.mean[0][0][0]
     normalized_flux_emitter = fluence_emitter.mean[0][0][0]
 
+    # Get absorption in photovoltaic
+    absorption_photovoltaic = fluence_photovoltaic.mean[0][0][1]
+    # Get absorption in emitter
+    absorption_emitter = fluence_emitter.mean[0][0][1]
+
     # Calculate neutrons per second based on power output
     # Average energy released per fission: ~200 MeV = 3.2e-11 Joules
     energy_per_fission = 200 * 1.6e-13  # Joules
@@ -463,6 +468,10 @@ def print_neutron_fluence_cm2s(
     print(
         f"Yearly neutron fluence: {absolute_flux_photovoltaic * 365 * 24 * 60 * 60:.4e} neutrons/cm²"
     )
+    print(f"Absorption: {absorption_photovoltaic:.4e} neutrons/cm²-s")
+    print(
+        f"Yearly absorption: {absorption_photovoltaic * 365 * 24 * 60 * 60:.4e} neutrons/cm²"
+    )
     print("--------------------------------")
 
     print("emitter")
@@ -473,6 +482,10 @@ def print_neutron_fluence_cm2s(
     print(f"Absolute neutron flux: {absolute_flux_emitter:.4e} neutrons/cm²-s")
     print(
         f"Yearly neutron fluence: {absolute_flux_emitter * 365 * 24 * 60 * 60:.4e} neutrons/cm²"
+    )
+    print(f"Absorption: {absorption_emitter:.4e} neutrons/cm²-s")
+    print(
+        f"Yearly absorption: {absorption_emitter * 365 * 24 * 60 * 60:.4e} neutrons/cm²"
     )
     print("--------------------------------")
 
