@@ -58,8 +58,8 @@ sanity_check_triso_fuel_volume(fuel_thickness, fuel_cladding_thickness * 2)
 
 material_choice = MaterialChoice(
     moderator="Light Water",
-    neutron_shield="Boron Carbide",
-    reflector="Light Water",
+    neutron_shield="Borotron",
+    reflector="Graphite",
     fuel="Uranium Oxy-Carbide",
     moderator_cladding="Zirconium",
     emitter="Graphite 2",

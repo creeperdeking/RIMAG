@@ -468,9 +468,9 @@ def print_neutron_fluence_cm2s(
     print(
         f"Yearly neutron fluence: {absolute_flux_photovoltaic * 365 * 24 * 60 * 60:.4e} neutrons/cm²"
     )
-    print(f"Absorption: {absorption_photovoltaic:.4e} neutrons/cm²-s")
+    print(f"Absorption: {absorption_photovoltaic:.4e} neutrons/cm3-s")
     print(
-        f"Yearly absorption: {absorption_photovoltaic * 365 * 24 * 60 * 60:.4e} neutrons/cm²"
+        f"Yearly absorption: {absorption_photovoltaic * 365 * 24 * 60 * 60:.4e} neutrons/cm3"
     )
     print("--------------------------------")
 
@@ -483,9 +483,9 @@ def print_neutron_fluence_cm2s(
     print(
         f"Yearly neutron fluence: {absolute_flux_emitter * 365 * 24 * 60 * 60:.4e} neutrons/cm²"
     )
-    print(f"Absorption: {absorption_emitter:.4e} neutrons/cm²-s")
+    print(f"Absorption: {absorption_emitter:.4e} neutrons/cm3-s")
     print(
-        f"Yearly absorption: {absorption_emitter * 365 * 24 * 60 * 60:.4e} neutrons/cm²"
+        f"Yearly absorption: {absorption_emitter * 365 * 24 * 60 * 60:.4e} neutrons/cm3"
     )
     print("--------------------------------")
 

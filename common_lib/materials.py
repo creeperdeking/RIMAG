@@ -27,6 +27,11 @@ class Material(BaseModel):
     scattering: Optional[str] = None
 
 
+class MixedMaterial(BaseModel):
+    materials: List[str]
+    proportions: List[float]
+
+
 class MaterialChoice(BaseModel):
     moderator: str
     neutron_shield: str
@@ -153,6 +158,12 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
         color="darkgray",
     )
 
+    boron = Material(
+        composition=[AtomProportion(atom=atoms["B"])],
+        density=2.34,
+        color="lightgray",
+    )
+
     zirconium_carbide = Material(
         composition=[
             AtomProportion(atom=atoms["Zr"], proportion=1),
@@ -160,6 +171,15 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
         ],
         density=6.2,
         color="darkgray",
+    )
+
+    polyethylene = Material(
+        composition=[
+            AtomProportion(atom=atoms["C"], proportion=2),
+            AtomProportion(atom=atoms["H"], proportion=4),
+        ],
+        density=0.96,
+        color="lightgray",
     )
 
     materials_def: Dict[str, Material] = {
@@ -293,12 +313,27 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
             density=1e-10,
             color="purple",
         ),
+        "Boron": boron,
+        "Polyethylene": polyethylene,
+    }
+
+    material_mixed_def = {
+        "Borotron": MixedMaterial(
+            materials=["Boron", "Polyethylene"],
+            proportions=[0.05, 0.95],
+        ),
     }
 
     materials_dict = {}
 
+    used_materials = set(material_choice.model_dump().values())
+    for name, material in material_mixed_def.items():
+        if name in used_materials:
+            used_materials.update(material.materials)
+    print(used_materials)
+
     for name, material in materials_def.items():
-        if name not in material_choice.model_dump().values():
+        if name not in used_materials:
             continue
         materials_dict[name] = openmc.Material(name=name)
         for atom_prop in material.composition:
@@ -325,6 +360,14 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
         if material.scattering is not None:
             materials_dict[name].add_s_alpha_beta(material.scattering)
         materials_dict[name].set_density("g/cm3", material.density)
+
+    for name, mixed_material in material_mixed_def.items():
+        mat_list = [
+            materials_dict[material_name] for material_name in mixed_material.materials
+        ]
+        materials_dict[name] = openmc.Material.mix_materials(
+            mat_list, mixed_material.proportions, "wo"
+        )
 
     colors = {}
     for name, material in materials_def.items():
