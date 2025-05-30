@@ -3,9 +3,7 @@ import openmc
 from pydantic import BaseModel
 
 from common_lib.geometry_utils import (
-    create_hollow_cylinder,
     create_cylinder,
-    SPACING_CONSTANT,
 )
 from common_lib.rotary_assembly import RotaryAssemblyDesc
 
@@ -56,7 +54,7 @@ def compute_core_desc(
     )
 
 
-def define_photovoltaic_boundary(
+def define_photovoltaic_boundary_large(
     core_desc: CoreDesc,
     assembly_core_distance: float,
     rotary_assembly_radius: float,
@@ -67,6 +65,18 @@ def define_photovoltaic_boundary(
         distance_from_origin=assembly_core_distance,
     ) & +openmc.ZCylinder(
         r=core_desc.outer_core_radius,
+    )
+    return boundary_shape
+
+
+def define_photovoltaic_boundary_small(
+    core_desc: CoreDesc,
+    rotary_assembly_desc: RotaryAssemblyDesc,
+) -> openmc.Intersection:
+    boundary_shape = create_cylinder(
+        core_desc.core_radius,
+        core_desc.core_height,
+        distance_from_origin=rotary_assembly_desc.assembly_core_distance * 2,
     )
     return boundary_shape
 

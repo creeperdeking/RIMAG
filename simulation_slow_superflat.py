@@ -5,7 +5,11 @@ from common_lib.assemblies import (
     AssemblySections,
     EmitterPlaceholder,
 )
-from common_lib.geometry import GeometrySettings, get_outer_empty_zone_parameters
+from common_lib.geometry import (
+    GeometrySettings,
+    get_outer_empty_zone_parameters,
+    check_assembly_thickness_equal,
+)
 from common_lib.materials import MaterialChoice, make_materials
 from common_lib.rotary_assembly import RotaryAssemblyDesc
 from common_lib.geometry_utils import SPACING_CONSTANT
@@ -52,7 +56,7 @@ run_mode = "keff"
 # values are 'generate', 'use' or 'no'
 weight_windows = "no"
 
-batches = 500000
+batches = 250000  # 500000
 
 sanity_check_triso_fuel_volume(fuel_thickness, fuel_cladding_thickness * 2)
 
@@ -67,15 +71,40 @@ material_choice = MaterialChoice(
     void="Void",
     photovoltaic="Silicon",
     coolant="Light Water",
+    neutron_shield_2="Boron Carbide",
+    gamma_shield="Lead",
 )
 
-outer_core_layers = AssemblySections(
+outer_core_layers_inside_shaft = AssemblySections(
     parts=[
         Assembly(material=material_choice.reflector, thickness=reflector_thickness),
         Assembly(
             material=material_choice.neutron_shield, thickness=neutron_shield_thickness
         ),
+        Assembly(
+            material="Void",
+            thickness=10,
+        ),
     ],
+)
+
+outer_core_layers_between_disks = AssemblySections(
+    parts=[
+        Assembly(material=material_choice.reflector, thickness=reflector_thickness),
+        Assembly(
+            material=material_choice.neutron_shield_2,
+            thickness=neutron_shield_thickness,
+        ),
+        Assembly(
+            material="Lead",
+            thickness=10,
+        ),
+    ],
+)
+
+check_assembly_thickness_equal(
+    outer_core_layers_inside_shaft,
+    outer_core_layers_between_disks,
 )
 
 emitter_assembly = AssemblySections(
@@ -150,7 +179,7 @@ assembly_thickness = calculate_assembly_thickness(assembly_section_core)
 core_desc = compute_core_desc(
     core_radius=core_diameter / 2,
     core_height=assembly_thickness + SPACING_CONSTANT * 2,
-    outer_core_assembly=outer_core_layers,
+    outer_core_assembly=outer_core_layers_inside_shaft,
 )
 assembly_core_distance = (
     core_desc.core_radius + (core_desc.outer_core_radius - core_desc.core_radius) / 2
@@ -219,7 +248,8 @@ geometry_settings = GeometrySettings(
     core_desc=core_desc,
     rotary_assembly_desc=rotary_assembly_desc,
     material_choice=material_choice,
-    outer_core_layers=outer_core_layers,
+    outer_core_layers_inside_shaft=outer_core_layers_inside_shaft,
+    outer_core_layers_between_disks=outer_core_layers_between_disks,
 )
 
 
@@ -286,7 +316,7 @@ if run_mode == "render":
         origin=(
             rotary_assembly_desc.assembly_core_distance,
             0,
-            -0.2,
+            -0.65,
         ),
         geometry=geometry,
         colors=colors,
@@ -317,6 +347,7 @@ if run_mode == "keff":
         photovolatic_volume,
         emitter_core_volume,
         batches,
+        particle_type="photon",
     )
 
 if run_mode == "depletion":

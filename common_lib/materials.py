@@ -43,6 +43,8 @@ class MaterialChoice(BaseModel):
     void: str
     photovoltaic: str
     coolant: str
+    neutron_shield_2: str
+    gamma_shield: str
 
 
 atoms: Dict[str, Atom] = {
@@ -297,8 +299,8 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
         ),
         "Boron Carbide": Material(
             composition=[
-                AtomProportion(atom=atoms["B"]),
-                AtomProportion(atom=atoms["C"]),
+                AtomProportion(atom=atoms["B"], proportion=4),
+                AtomProportion(atom=atoms["C"], proportion=1),
             ],
             density=2.52,
             color="lightgray",

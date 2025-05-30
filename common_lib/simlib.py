@@ -110,7 +110,7 @@ def make_sim_settings(
     settings.inactive = 100
     UPDATE_INTERVAL = 2
     WEIGHT_WINDOWS_BATCHES = 50 * UPDATE_INTERVAL + settings.inactive
-
+    settings.photon_transport = True
     settings.source = source
     if weight_windows == "generate":
         settings.batches = WEIGHT_WINDOWS_BATCHES
@@ -360,9 +360,14 @@ def run_depletion_sim(
     ).integrate()
 
 
-def create_photovoltaic_tally(photovoltaic_cell, materials_dict):
+def create_photovoltaic_tally(
+    photovoltaic_cell, materials_dict, particle_type: Literal["neutron", "photon"]
+):
     tally = openmc.Tally(name="photovoltaic")
-    tally.filters = [openmc.CellFilter(photovoltaic_cell)]
+    tally.filters = [
+        openmc.CellFilter(photovoltaic_cell),
+        openmc.ParticleFilter(particle_type),
+    ]
     tally.scores = [
         "flux",
         "absorption",
@@ -371,16 +376,20 @@ def create_photovoltaic_tally(photovoltaic_cell, materials_dict):
     return tally
 
 
-def create_photovoltaic_energy_tally(photovoltaic_cell, materials_dict):
+def create_photovoltaic_energy_tally(
+    photovoltaic_cell, materials_dict, particle_type: Literal["neutron", "photon"]
+):
     cell_filter = openmc.CellFilter(
         [photovoltaic_cell.id]
     )  # replace cell.id with yours
+
+    particle_filter = openmc.ParticleFilter(particle_type)
 
     ##############################################################################
     # 2.  Denominator – plain flux  φ(E) dE
     ##############################################################################
     flux_tally = openmc.Tally(name="flux_in_cell")
-    flux_tally.filters = [cell_filter]
+    flux_tally.filters = [cell_filter, particle_filter]
     flux_tally.scores = ["flux"]  # ∫ φ(E) dE
 
     ##############################################################################
@@ -393,14 +402,19 @@ def create_photovoltaic_energy_tally(photovoltaic_cell, materials_dict):
     )  # multiplies score by energy
 
     Eflux_tally = openmc.Tally(name="E_flux_in_cell")
-    Eflux_tally.filters = [cell_filter, E_func_filter]
+    Eflux_tally.filters = [cell_filter, particle_filter, E_func_filter]
     Eflux_tally.scores = ["flux"]  # ∫ E φ(E) dE
     return flux_tally, Eflux_tally
 
 
-def create_emitter_tally(emitter_cell, materials_dict):
+def create_emitter_tally(
+    emitter_cell, materials_dict, particle_type: Literal["neutron", "photon"]
+):
     tally = openmc.Tally(name="emitter")
-    tally.filters = [openmc.CellFilter(emitter_cell)]
+    tally.filters = [
+        openmc.CellFilter(emitter_cell),
+        openmc.ParticleFilter(particle_type),
+    ]
     tally.scores = [
         "flux",
         "absorption",
@@ -500,12 +514,15 @@ def run_sim_with_photovoltaic_tally(
     photovoltaic_slice_volume,
     emitter_slice_volume,
     batches,
+    particle_type: Literal["neutron", "photon"] = "neutron",
 ):
-    tally_photovoltaic = create_photovoltaic_tally(photovoltaic_cell, materials_dict)
-    flux_tally, Eflux_tally = create_photovoltaic_energy_tally(
-        photovoltaic_cell, materials_dict
+    tally_photovoltaic = create_photovoltaic_tally(
+        photovoltaic_cell, materials_dict, particle_type
     )
-    tally_emitter = create_emitter_tally(emitter_cell, materials_dict)
+    flux_tally, Eflux_tally = create_photovoltaic_energy_tally(
+        photovoltaic_cell, materials_dict, particle_type
+    )
+    tally_emitter = create_emitter_tally(emitter_cell, materials_dict, particle_type)
     tallies = openmc.Tallies(
         [tally_photovoltaic, flux_tally, Eflux_tally, tally_emitter]
     )

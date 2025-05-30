@@ -59,15 +59,12 @@ def calculate_disks_fuel_volume(
     return fuel_volume
 
 
-def calculate_photovoltaic_volume(
+def calculate_photovoltaic_volume_large(
     drum_desc: RotaryAssemblyDesc,
     core_desc: CoreDesc,
     assembly_section: AssemblySections,
     drums: List[DiskAssemblyLayer],
 ) -> float:
-    print(f"Rotary assembly radius: {drum_desc.rotary_assembly_radius}")
-    print(f"Assembly core distance: {drum_desc.assembly_core_distance}")
-    print(f"Core outer radius: {core_desc.outer_core_radius}")
     # First, calculate the area of one photovoltaic layer
     photovoltaic_area = (
         drum_desc.rotary_assembly_radius**2 * math.pi
@@ -77,12 +74,28 @@ def calculate_photovoltaic_volume(
             drum_desc.assembly_core_distance,
         )
     )
-    print(f"Photovoltaic area: {photovoltaic_area}")
     photovoltaic_thickness = 0
     for assembly_part in assembly_section.parts:
         if assembly_part.is_photovoltaic:
             photovoltaic_thickness += assembly_part.thickness
-    print(f"Photovoltaic thickness: {photovoltaic_thickness}")
+
+    photovoltaic_volume = photovoltaic_area * photovoltaic_thickness * len(drums)
+
+    return photovoltaic_volume
+
+
+def calculate_photovoltaic_volume_small(
+    drum_desc: RotaryAssemblyDesc,
+    core_desc: CoreDesc,
+    assembly_section: AssemblySections,
+    drums: List[DiskAssemblyLayer],
+) -> float:
+    # First, calculate the area of one photovoltaic layer
+    photovoltaic_area = core_desc.core_radius**2 * math.pi
+    photovoltaic_thickness = 0
+    for assembly_part in assembly_section.parts:
+        if assembly_part.is_photovoltaic:
+            photovoltaic_thickness += assembly_part.thickness
 
     photovoltaic_volume = photovoltaic_area * photovoltaic_thickness * len(drums)
 
