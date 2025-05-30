@@ -423,7 +423,7 @@ def create_emitter_tally(
     return tally
 
 
-def print_neutron_energy(
+def print_neutron_energy_photovoltaics(
     batches,
 ):
     statepoint = openmc.StatePoint(f"statepoint.{batches}.h5")
@@ -486,6 +486,9 @@ def print_neutron_fluence_cm2s(
     print(
         f"Yearly absorption: {absorption_photovoltaic * 365 * 24 * 60 * 60:.4e} neutrons/cm3"
     )
+    print_neutron_energy_photovoltaics(
+        batches,
+    )
     print("--------------------------------")
 
     print("emitter")
@@ -533,9 +536,7 @@ def run_sim_with_photovoltaic_tally(
         emitter_slice_volume,
         batches,
     )
-    print_neutron_energy(
-        batches,
-    )
+
     clean_directory()
 
 
