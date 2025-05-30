@@ -8,6 +8,8 @@ from tabulate import tabulate
 import scipy.constants as cst
 from common_lib.materials import MaterialChoice
 from common_lib.assemblies import calculate_assembly_thickness
+import numpy as np
+from common_lib.geometry import GeometrySettings
 
 
 def clean_directory():
@@ -44,11 +46,52 @@ def generate_XML(geometry, settings, tallies, materials_dict):
 
 def run_sim(geometry, settings, materials_dict, tallies=None):
     generate_XML(geometry, settings, tallies, materials_dict)
-    openmc.run(threads=16)
+    openmc.run(threads=16, geometry_debug=True)
     # clean_directory()
 
 
 WeightWindows = Literal["generate", "use", "no"]
+
+
+def make_ww_mesh(
+    window_radius: float,
+    window_height: float,
+    window_origin: tuple,
+    cell_dimension: float = 20,
+):
+    window_height = window_height * 1.1
+    ww_mesh = openmc.RegularMesh()
+    dimension_x = int(window_radius * 2 / cell_dimension)
+    dimension_y = dimension_x
+    dimension_z = max(int(window_height / cell_dimension), 1)
+    ww_mesh.dimension = (dimension_x, dimension_y, dimension_z)
+    ww_mesh.lower_left = (
+        window_origin[0] - window_radius,
+        window_origin[1] - window_radius,
+        window_origin[2] - window_height / 2,
+    )
+    ww_mesh.upper_right = (
+        window_origin[0] + window_radius,
+        window_origin[1] + window_radius,
+        window_origin[2] + window_height / 2,
+    )
+    return ww_mesh
+
+
+def check_ww_mesh_is_inside_geometry(mesh, geometry):
+    # geometry extents
+    ll_geom, ur_geom = geometry.bounding_box  # returns 2×3 array (x,y,z)
+    # :contentReference[oaicite:0]{index=0}
+
+    # does every coordinate lie inside the mesh?
+    inside = np.all(mesh.lower_left <= ll_geom) and np.all(mesh.upper_right >= ur_geom)
+
+    if inside:
+        print("✅  mesh covers the whole geometry")
+    else:
+        print("❌  mesh misses part of the geometry")
+        print("    geometry ll:", ll_geom, "  mesh ll:", mesh.lower_left)
+        print("    geometry ur:", ur_geom, "  mesh ur:", mesh.upper_right)
 
 
 def make_sim_settings(
@@ -58,19 +101,23 @@ def make_sim_settings(
     window_radius: float = 0,
     window_height: float = 0,
     window_origin: tuple = (0, 0, 0),
+    geometry: openmc.Geometry = None,
 ):
     # Define neutron source
-    source = openmc.Source(space=openmc.stats.Point((0, 0, 0)))
-
+    source = openmc.IndependentSource(space=openmc.stats.Point((0, 0, 0)))
     # Define simulation settings
     settings = openmc.Settings()
+    settings.inactive = 100
+    UPDATE_INTERVAL = 2
+    WEIGHT_WINDOWS_BATCHES = 50 * UPDATE_INTERVAL + settings.inactive
+    settings.photon_transport = True
     settings.source = source
     if weight_windows == "generate":
-        settings.batches = 200
+        settings.batches = WEIGHT_WINDOWS_BATCHES
     else:
         settings.batches = batches
     print("batches", settings.batches)
-    settings.inactive = 100
+
     settings.particles = 1000
     settings.seed = 42
 
@@ -81,28 +128,14 @@ def make_sim_settings(
         settings.seed = int(time.time())
 
     if weight_windows == "generate":
-        # ---------------- 2.1  spatial mesh that drives the WW -------------
-        ww_mesh = openmc.RegularMesh()
-        dimension_x = int(window_radius * 2 / 10)
-        dimension_y = dimension_x
-        dimension_z = max(int(window_height / 10), 1)
-        ww_mesh.dimension = (dimension_x, dimension_y, dimension_z)
-        ww_mesh.lower_left = (
-            window_origin[0] - window_radius,
-            window_origin[1] - window_radius,
-            window_origin[2] - window_height / 2,
-        )
-        ww_mesh.upper_right = (
-            window_origin[0] + window_radius,
-            window_origin[1] + window_radius,
-            window_origin[2] + window_height / 2,
-        )
+        ww_mesh = make_ww_mesh(window_radius, window_height, window_origin)
+        check_ww_mesh_is_inside_geometry(ww_mesh, geometry)
 
-        # ---------------- 2.2  generator object ----------------------------
         wwg = openmc.WeightWindowGenerator(
             method="magic",  # or 'fw_cadis'
             mesh=ww_mesh,
-            max_realizations=200,  # usually = # of batches
+            max_realizations=WEIGHT_WINDOWS_BATCHES,  # usually = # of batches
+            update_interval=UPDATE_INTERVAL,
         )
         settings.weight_window_generators = wwg
     elif weight_windows == "use":
@@ -327,9 +360,14 @@ def run_depletion_sim(
     ).integrate()
 
 
-def create_photovoltaic_tally(photovoltaic_cell, materials_dict):
+def create_photovoltaic_tally(
+    photovoltaic_cell, materials_dict, particle_type: Literal["neutron", "photon"]
+):
     tally = openmc.Tally(name="photovoltaic")
-    tally.filters = [openmc.CellFilter(photovoltaic_cell)]
+    tally.filters = [
+        openmc.CellFilter(photovoltaic_cell),
+        openmc.ParticleFilter(particle_type),
+    ]
     tally.scores = [
         "flux",
         "absorption",
@@ -338,16 +376,20 @@ def create_photovoltaic_tally(photovoltaic_cell, materials_dict):
     return tally
 
 
-def create_photovoltaic_energy_tally(photovoltaic_cell, materials_dict):
+def create_photovoltaic_energy_tally(
+    photovoltaic_cell, materials_dict, particle_type: Literal["neutron", "photon"]
+):
     cell_filter = openmc.CellFilter(
         [photovoltaic_cell.id]
     )  # replace cell.id with yours
+
+    particle_filter = openmc.ParticleFilter(particle_type)
 
     ##############################################################################
     # 2.  Denominator – plain flux  φ(E) dE
     ##############################################################################
     flux_tally = openmc.Tally(name="flux_in_cell")
-    flux_tally.filters = [cell_filter]
+    flux_tally.filters = [cell_filter, particle_filter]
     flux_tally.scores = ["flux"]  # ∫ φ(E) dE
 
     ##############################################################################
@@ -360,14 +402,19 @@ def create_photovoltaic_energy_tally(photovoltaic_cell, materials_dict):
     )  # multiplies score by energy
 
     Eflux_tally = openmc.Tally(name="E_flux_in_cell")
-    Eflux_tally.filters = [cell_filter, E_func_filter]
+    Eflux_tally.filters = [cell_filter, particle_filter, E_func_filter]
     Eflux_tally.scores = ["flux"]  # ∫ E φ(E) dE
     return flux_tally, Eflux_tally
 
 
-def create_emitter_tally(emitter_cell, materials_dict):
+def create_emitter_tally(
+    emitter_cell, materials_dict, particle_type: Literal["neutron", "photon"]
+):
     tally = openmc.Tally(name="emitter")
-    tally.filters = [openmc.CellFilter(emitter_cell)]
+    tally.filters = [
+        openmc.CellFilter(emitter_cell),
+        openmc.ParticleFilter(particle_type),
+    ]
     tally.scores = [
         "flux",
         "absorption",
@@ -376,7 +423,7 @@ def create_emitter_tally(emitter_cell, materials_dict):
     return tally
 
 
-def print_neutron_energy(
+def print_neutron_energy_photovoltaics(
     batches,
 ):
     statepoint = openmc.StatePoint(f"statepoint.{batches}.h5")
@@ -401,6 +448,11 @@ def print_neutron_fluence_cm2s(
     # Get normalized flux (particle-cm per source particle)
     normalized_flux_photovoltaic = fluence_photovoltaic.mean[0][0][0]
     normalized_flux_emitter = fluence_emitter.mean[0][0][0]
+
+    # Get absorption in photovoltaic
+    absorption_photovoltaic = fluence_photovoltaic.mean[0][0][1]
+    # Get absorption in emitter
+    absorption_emitter = fluence_emitter.mean[0][0][1]
 
     # Calculate neutrons per second based on power output
     # Average energy released per fission: ~200 MeV = 3.2e-11 Joules
@@ -430,6 +482,13 @@ def print_neutron_fluence_cm2s(
     print(
         f"Yearly neutron fluence: {absolute_flux_photovoltaic * 365 * 24 * 60 * 60:.4e} neutrons/cm²"
     )
+    print(f"Absorption: {absorption_photovoltaic:.4e} neutrons/cm3-s")
+    print(
+        f"Yearly absorption: {absorption_photovoltaic * 365 * 24 * 60 * 60:.4e} neutrons/cm3"
+    )
+    print_neutron_energy_photovoltaics(
+        batches,
+    )
     print("--------------------------------")
 
     print("emitter")
@@ -440,6 +499,10 @@ def print_neutron_fluence_cm2s(
     print(f"Absolute neutron flux: {absolute_flux_emitter:.4e} neutrons/cm²-s")
     print(
         f"Yearly neutron fluence: {absolute_flux_emitter * 365 * 24 * 60 * 60:.4e} neutrons/cm²"
+    )
+    print(f"Absorption: {absorption_emitter:.4e} neutrons/cm3-s")
+    print(
+        f"Yearly absorption: {absorption_emitter * 365 * 24 * 60 * 60:.4e} neutrons/cm3"
     )
     print("--------------------------------")
 
@@ -454,12 +517,15 @@ def run_sim_with_photovoltaic_tally(
     photovoltaic_slice_volume,
     emitter_slice_volume,
     batches,
+    particle_type: Literal["neutron", "photon"] = "neutron",
 ):
-    tally_photovoltaic = create_photovoltaic_tally(photovoltaic_cell, materials_dict)
-    flux_tally, Eflux_tally = create_photovoltaic_energy_tally(
-        photovoltaic_cell, materials_dict
+    tally_photovoltaic = create_photovoltaic_tally(
+        photovoltaic_cell, materials_dict, particle_type
     )
-    tally_emitter = create_emitter_tally(emitter_cell, materials_dict)
+    flux_tally, Eflux_tally = create_photovoltaic_energy_tally(
+        photovoltaic_cell, materials_dict, particle_type
+    )
+    tally_emitter = create_emitter_tally(emitter_cell, materials_dict, particle_type)
     tallies = openmc.Tallies(
         [tally_photovoltaic, flux_tally, Eflux_tally, tally_emitter]
     )
@@ -470,9 +536,7 @@ def run_sim_with_photovoltaic_tally(
         emitter_slice_volume,
         batches,
     )
-    print_neutron_energy(
-        batches,
-    )
+
     clean_directory()
 
 
@@ -484,6 +548,7 @@ def print_core_characteristics(
     assembly_section_core,
     radiative_flux,
     fuel_volume,
+    fuel_lifetime,
     disks: List = None,
 ):
     print(
@@ -510,3 +575,4 @@ def print_core_characteristics(
         heavy_metal_mass,
         "kg",
     )
+    print("fuel lifetime", fuel_lifetime, "years")

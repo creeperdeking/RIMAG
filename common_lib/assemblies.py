@@ -3,9 +3,7 @@ import openmc
 from pydantic import BaseModel
 
 from common_lib.geometry_utils import (
-    create_hollow_cylinder,
     create_cylinder,
-    SPACING_CONSTANT,
 )
 from common_lib.rotary_assembly import RotaryAssemblyDesc
 
@@ -21,10 +19,12 @@ class Assembly(BaseModel):
     thickness: float
     material: Optional[str] = None
     is_fuel: bool = False
-    is_emitter: Literal[False] = False
+    is_emitter: Optional[bool] = False
+    is_emitter_gap: Optional[bool] = False
+    is_photovoltaic: Optional[bool] = False
 
 
-class EmitterPlaceholder(BaseModel):
+class EmitterPlaceholder(Assembly):
     thickness: float
     is_emitter: Literal[True] = True
 
@@ -54,22 +54,30 @@ def compute_core_desc(
     )
 
 
-def define_photovoltaic_boundary(
+def define_photovoltaic_boundary_large(
     core_desc: CoreDesc,
     assembly_core_distance: float,
-    double_assembly: bool,
+    rotary_assembly_radius: float,
+) -> openmc.Intersection:
+    boundary_shape = create_cylinder(
+        rotary_assembly_radius,
+        core_desc.core_height,
+        distance_from_origin=assembly_core_distance,
+    ) & +openmc.ZCylinder(
+        r=core_desc.outer_core_radius,
+    )
+    return boundary_shape
+
+
+def define_photovoltaic_boundary_small(
+    core_desc: CoreDesc,
+    rotary_assembly_desc: RotaryAssemblyDesc,
 ) -> openmc.Intersection:
     boundary_shape = create_cylinder(
         core_desc.core_radius,
         core_desc.core_height,
-        distance_from_origin=assembly_core_distance * 2,
+        distance_from_origin=rotary_assembly_desc.assembly_core_distance * 2,
     )
-    if double_assembly:
-        boundary_shape = boundary_shape | create_cylinder(
-            core_desc.core_radius,
-            core_desc.core_height,
-            distance_from_origin=-assembly_core_distance * 2,
-        )
     return boundary_shape
 
 
@@ -82,7 +90,15 @@ def make_emitter_only_assembly(
         if assembly_part.is_emitter:
             if current_part_thickness > 0:
                 parts.append(Assembly(material=None, thickness=current_part_thickness))
-            parts.extend(emitter_assembly.parts)
+            new_parts = []
+            for part in emitter_assembly.parts:
+                if part.is_emitter:
+                    part_dict = part.model_dump()
+                    part_dict.pop("is_emitter", None)
+                    new_parts.append(Assembly(**part_dict, is_emitter=False))
+                else:
+                    new_parts.append(part)
+            parts.extend(new_parts)
             current_part_thickness = 0
         else:
             current_part_thickness += assembly_part.thickness
@@ -96,6 +112,7 @@ def make_outer_core_layers(
     core_desc: CoreDesc,
     emitter_boundary: openmc.Cell,
     materials_dict: Dict[str, openmc.Material],
+    outer_empty_zone_boundary: openmc.Region,
 ) -> List[openmc.Cell]:
 
     cells = []
@@ -114,7 +131,7 @@ def make_outer_core_layers(
             & ~core_cylinder
         )
         cell = openmc.Cell(name=f"outer_core_layer_{layer.material}_{i}")
-        cell.region = cylinder & ~emitter_boundary
+        cell.region = cylinder & ~emitter_boundary & outer_empty_zone_boundary
         cell.fill = materials_dict[layer.material]
         cells.append(cell)
         previous_layer_radius = current_layer_radius
