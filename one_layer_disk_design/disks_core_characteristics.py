@@ -8,6 +8,7 @@ from common_lib.rotary_assembly import RotaryAssemblyDesc
 from one_layer_disk_design.disks_assemblies import (
     calculate_disks_emitter_volume,
     calculate_disks_fuel_volume,
+    calculate_photovoltaic_volume_large,
     calculate_photovoltaic_volume_small,
 )
 from one_layer_disk_design.disks import (
@@ -45,7 +46,7 @@ def calculate_disk_core_characteristics(
     photovoltaic_efficiency: float,
     fuel_burnup: float,
 ):
-    photovoltaic_volume = calculate_photovoltaic_volume_small(
+    photovoltaic_volume = calculate_photovoltaic_volume_large(
         drum_desc=rotary_assembly_desc,
         core_desc=core_desc,
         assembly_section=geometry_settings.photovoltaic_assembly,

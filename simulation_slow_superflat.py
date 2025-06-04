@@ -57,14 +57,15 @@ fuel_burnup = 75  # MWd/kgHM
 run_mode = "keff"
 # values are 'generate', 'use' or 'no'
 weight_windows = "no"
+particle_type = "neutron"
 
-batches = 1250  # 5000
+batches = 2500  # 1250
 
 sanity_check_triso_fuel_volume(fuel_thickness, fuel_cladding_thickness * 2)
 
 material_choice = MaterialChoice(
     moderator="Light Water",
-    neutron_shield="Borotron",
+    neutron_shield="Borated Graphite",
     reflector="Graphite",
     fuel="Uranium Oxy-Carbide",
     moderator_cladding="Zirconium",
@@ -73,7 +74,7 @@ material_choice = MaterialChoice(
     void="Void",
     photovoltaic="Silicon",
     coolant="Light Water",
-    neutron_shield_2="Boron Carbide",
+    neutron_shield_2="Borated Graphite",
     gamma_shield="Tungsten",
 )
 
@@ -341,6 +342,7 @@ settings = make_sim_settings(
     window_height=core_desc.core_height,
     window_origin=(outer_empty_zone_parameters.x0, 0, 0),
     geometry=geometry,
+    particle_type=particle_type,
 )
 
 if run_mode == "keff":
@@ -355,7 +357,7 @@ if run_mode == "keff":
         photovolatic_volume,
         emitter_core_volume,
         batches,
-        particle_type="photon",
+        particle_type=particle_type,
     )
 
 if run_mode == "depletion":

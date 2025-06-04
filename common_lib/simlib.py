@@ -102,6 +102,7 @@ def make_sim_settings(
     window_height: float = 0,
     window_origin: tuple = (0, 0, 0),
     geometry: openmc.Geometry = None,
+    particle_type: Literal["neutron", "photon"] = "neutron",
 ):
     # Define neutron source
     source = openmc.IndependentSource(space=openmc.stats.Point((0, 0, 0)))
@@ -110,7 +111,7 @@ def make_sim_settings(
     settings.inactive = 10
     UPDATE_INTERVAL = 2
     WEIGHT_WINDOWS_BATCHES = 50 * UPDATE_INTERVAL + settings.inactive
-    settings.photon_transport = True
+    settings.photon_transport = particle_type == "photon"
     settings.source = source
     if weight_windows == "generate":
         settings.batches = WEIGHT_WINDOWS_BATCHES

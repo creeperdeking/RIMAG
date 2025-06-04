@@ -294,6 +294,12 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
             color="yellow",
             scattering="c_Graphite",
         ),
+        "Graphite NO Scattering": Material(
+            composition=[AtomProportion(atom=atoms["C"])],
+            density=2.26,
+            color="yellow",
+            scattering=None,
+        ),
         "Lead": Material(
             composition=[AtomProportion(atom=atoms["Pb"])], density=11.34, color="gray"
         ),
@@ -324,6 +330,10 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
             materials=["Boron", "Polyethylene"],
             proportions=[0.05, 0.95],
         ),
+        "Borated Graphite": MixedMaterial(
+            materials=["Graphite NO Scattering", "Boron Carbide"],
+            proportions=[0.9, 0.1],
+        ),
     }
 
     materials_dict = {}
@@ -332,7 +342,6 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
     for name, material in material_mixed_def.items():
         if name in used_materials:
             used_materials.update(material.materials)
-    print(used_materials)
 
     for name, material in materials_def.items():
         if name not in used_materials:
@@ -364,12 +373,13 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
         materials_dict[name].set_density("g/cm3", material.density)
 
     for name, mixed_material in material_mixed_def.items():
-        mat_list = [
-            materials_dict[material_name] for material_name in mixed_material.materials
-        ]
-        materials_dict[name] = openmc.Material.mix_materials(
-            mat_list, mixed_material.proportions, "wo"
-        )
+        if name in used_materials:
+            mat_list = [
+                materials_dict[material_name] for material_name in mixed_material.materials
+            ]
+            materials_dict[name] = openmc.Material.mix_materials(
+                mat_list, mixed_material.proportions, "wo"
+            )
 
     colors = {}
     for name, material in materials_def.items():

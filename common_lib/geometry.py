@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from common_lib.geometry_utils import SPACING_CONSTANT
 
 from common_lib.assemblies import (
+    define_photovoltaic_boundary_large,
     define_photovoltaic_boundary_small,
     make_outer_core_layers,
     calculate_assembly_thickness,
@@ -41,9 +42,10 @@ def get_base_geometry(
         geometry_settings.core_desc.core_radius,
         geometry_settings.core_desc.core_height,
     )
-    photovoltaic_boundary = define_photovoltaic_boundary_small(
+    photovoltaic_boundary = define_photovoltaic_boundary_large(
         geometry_settings.core_desc,
-        geometry_settings.rotary_assembly_desc,
+        geometry_settings.rotary_assembly_desc.assembly_core_distance,
+        geometry_settings.rotary_assembly_desc.rotary_assembly_radius,
     )
     return assembly_thickness, core_boundary, photovoltaic_boundary
 
