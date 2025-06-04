@@ -46,7 +46,9 @@ cold_temp = 1150 + 273
 photovoltaic_efficiency = 0.34
 
 reflector_thickness = 40
-neutron_shield_thickness = 90
+neutron_shield_moderator_thickness = 70
+neutron_shield_absorber_thickness = 15
+gamma_shield_thickness = 10
 
 u235_enrichment = 19.5
 fuel_burnup = 75  # MWd/kgHM
@@ -79,11 +81,14 @@ outer_core_layers_inside_shaft = AssemblySections(
     parts=[
         Assembly(material=material_choice.reflector, thickness=reflector_thickness),
         Assembly(
-            material=material_choice.neutron_shield, thickness=neutron_shield_thickness
+            material=material_choice.reflector, thickness=neutron_shield_moderator_thickness
+        ),
+        Assembly(
+            material=material_choice.neutron_shield, thickness=neutron_shield_absorber_thickness
         ),
         Assembly(
             material=material_choice.gamma_shield,
-            thickness=10,
+            thickness=gamma_shield_thickness,
         ),
     ],
 )
@@ -92,12 +97,15 @@ outer_core_layers_between_disks = AssemblySections(
     parts=[
         Assembly(material=material_choice.reflector, thickness=reflector_thickness),
         Assembly(
+            material=material_choice.reflector, thickness=neutron_shield_moderator_thickness
+        ),
+        Assembly(
             material=material_choice.neutron_shield_2,
-            thickness=neutron_shield_thickness,
+            thickness=neutron_shield_absorber_thickness,
         ),
         Assembly(
             material=material_choice.gamma_shield,
-            thickness=10,
+            thickness=gamma_shield_thickness,
         ),
     ],
 )
