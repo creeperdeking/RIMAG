@@ -56,7 +56,7 @@ run_mode = "keff"
 # values are 'generate', 'use' or 'no'
 weight_windows = "no"
 
-batches = 250000  # 500000
+batches = 1250  # 5000
 
 sanity_check_triso_fuel_volume(fuel_thickness, fuel_cladding_thickness * 2)
 
@@ -72,7 +72,7 @@ material_choice = MaterialChoice(
     photovoltaic="Silicon",
     coolant="Light Water",
     neutron_shield_2="Boron Carbide",
-    gamma_shield="Lead",
+    gamma_shield="Tungsten",
 )
 
 outer_core_layers_inside_shaft = AssemblySections(
@@ -82,7 +82,7 @@ outer_core_layers_inside_shaft = AssemblySections(
             material=material_choice.neutron_shield, thickness=neutron_shield_thickness
         ),
         Assembly(
-            material="Void",
+            material=material_choice.gamma_shield,
             thickness=10,
         ),
     ],
@@ -96,7 +96,7 @@ outer_core_layers_between_disks = AssemblySections(
             thickness=neutron_shield_thickness,
         ),
         Assembly(
-            material="Lead",
+            material=material_choice.gamma_shield,
             thickness=10,
         ),
     ],

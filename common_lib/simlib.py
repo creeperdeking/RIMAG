@@ -46,7 +46,7 @@ def generate_XML(geometry, settings, tallies, materials_dict):
 
 def run_sim(geometry, settings, materials_dict, tallies=None):
     generate_XML(geometry, settings, tallies, materials_dict)
-    openmc.run(threads=16, geometry_debug=True)
+    openmc.run(threads=20, geometry_debug=True)
     # clean_directory()
 
 
@@ -107,7 +107,7 @@ def make_sim_settings(
     source = openmc.IndependentSource(space=openmc.stats.Point((0, 0, 0)))
     # Define simulation settings
     settings = openmc.Settings()
-    settings.inactive = 100
+    settings.inactive = 10
     UPDATE_INTERVAL = 2
     WEIGHT_WINDOWS_BATCHES = 50 * UPDATE_INTERVAL + settings.inactive
     settings.photon_transport = True
@@ -118,7 +118,8 @@ def make_sim_settings(
         settings.batches = batches
     print("batches", settings.batches)
 
-    settings.particles = 1000
+    settings.particles = 10000
+    settings.generations_per_batch = 10
     settings.seed = 42
 
     settings.rel_max_lost_particles = 0.01
