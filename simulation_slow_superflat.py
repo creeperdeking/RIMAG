@@ -15,7 +15,7 @@ from common_lib.rotary_assembly import RotaryAssemblyDesc
 from common_lib.geometry_utils import SPACING_CONSTANT
 from common_lib.simlib import (
     run_keff_sim,
-    run_sim_with_photovoltaic_tally,
+    run_sim_with_tallies,
     make_sim_settings,
     render_geometry,
     run_depletion_sim,
@@ -65,7 +65,7 @@ sanity_check_triso_fuel_volume(fuel_thickness, fuel_cladding_thickness * 2)
 
 material_choice = MaterialChoice(
     moderator="Light Water",
-    neutron_shield="Borated Graphite",
+    neutron_shield="Boron Carbide",
     reflector="Graphite",
     fuel="Uranium Oxy-Carbide",
     moderator_cladding="Zirconium",
@@ -74,7 +74,7 @@ material_choice = MaterialChoice(
     void="Void",
     photovoltaic="Silicon",
     coolant="Light Water",
-    neutron_shield_2="Borated Graphite",
+    neutron_shield_2="Boron Carbide",
     gamma_shield="Tungsten",
 )
 
@@ -82,7 +82,7 @@ outer_core_layers_inside_shaft = AssemblySections(
     parts=[
         Assembly(material=material_choice.reflector, thickness=reflector_thickness),
         Assembly(
-            material=material_choice.reflector, thickness=neutron_shield_moderator_thickness
+            material="Light Water", thickness=neutron_shield_moderator_thickness
         ),
         Assembly(
             material=material_choice.neutron_shield, thickness=neutron_shield_absorber_thickness
@@ -347,11 +347,12 @@ settings = make_sim_settings(
 
 if run_mode == "keff":
     # run_keff_sim(geometry, settings, materials_dict)
-    run_sim_with_photovoltaic_tally(
+    run_sim_with_tallies(
         geometry,
         settings,
         materials_dict,
         cells[material_choice.photovoltaic],
+        materials_dict[material_choice.photovoltaic].density,
         cells[material_choice.emitter],
         core_power,
         photovolatic_volume,
