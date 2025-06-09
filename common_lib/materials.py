@@ -72,6 +72,11 @@ atoms: Dict[str, Atom] = {
     "Al": Atom(name="Al", atomic_weight=26.9815385),
     "Gd": Atom(name="Gd", atomic_weight=157.25),
     "He": Atom(name="He", atomic_weight=4.002602),
+    "Na": Atom(name="Na", atomic_weight=22.98976928),
+    "Mg": Atom(name="Mg", atomic_weight=24.305),
+    "Fe": Atom(name="Fe", atomic_weight=55.845),
+    "Ca": Atom(name="Ca", atomic_weight=40.078),
+    "K": Atom(name="K", atomic_weight=39.0983),
 }
 
 
@@ -267,6 +272,22 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
             + [AtomProportion(atom=atoms["O"], proportion=2)],
             density=10.97,
             color="green",
+        ),
+        "Concrete": Material(
+            composition=[
+                AtomProportion(atom=atoms["H"], proportion=0.168759),
+                AtomProportion(atom=atoms["C"], proportion=0.001416),
+                AtomProportion(atom=atoms["O"], proportion=0.562524),
+                AtomProportion(atom=atoms["Na"], proportion=0.011838),
+                AtomProportion(atom=atoms["Mg"], proportion=0.0014),
+                AtomProportion(atom=atoms["Al"], proportion=0.021354),
+                AtomProportion(atom=atoms["Si"], proportion=0.204115),
+                AtomProportion(atom=atoms["K"], proportion=0.005656),
+                AtomProportion(atom=atoms["Ca"], proportion=0.018674),
+                AtomProportion(atom=atoms["Fe"], proportion=0.00426),
+            ],
+            density=2.3,
+            color="gray",
         ),
         "Uranium Carbide": Material(
             composition=enriched_uranium.composition
