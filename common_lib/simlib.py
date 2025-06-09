@@ -440,17 +440,13 @@ def create_photovoltaic_energy_tally(
 def create_emitter_tally(
     emitter_cell, materials_dict, particle_type: Literal["neutron", "photon"]
 ):
-    E_eV, D_norm = get_srniel_table()
     tally = openmc.Tally(name="emitter")
     tally.filters = [
         openmc.CellFilter(emitter_cell),
         openmc.ParticleFilter(particle_type),
-        openmc.EnergyFunctionFilter(E_eV, D_norm)
     ]
     tally.scores = [
-        "flux",
         "absorption",
-        "events",
     ]  # careful, changing the order can mess up output
     return tally
 
@@ -481,12 +477,12 @@ def print_neutron_fluence_cm2s(
 
     # Get normalized flux (particle-cm per source particle)
     normalized_flux_photovoltaic = flux_photovoltaic.mean[0][0][0]
-    normalized_flux_emitter = fluence_emitter.mean[0][0][0]
 
     # Get absorption in photovoltaic
-    absorption_photovoltaic = photovolatic.mean[0][0][0]
+    normalized_absorption_photovoltaic = photovolatic.mean[0][0][0]
     # Get absorption in emitter
-    absorption_emitter = fluence_emitter.mean[0][0][1]
+    normalized_absorption_emitter = fluence_emitter.mean[0][0][0]
+
 
     # Get heating in photovoltaic
     heating_photovoltaic = photovolatic.mean[0][0][1] / cst.value("joule-electron volt relationship") # J/particle
@@ -512,9 +508,9 @@ def print_neutron_fluence_cm2s(
     absolute_flux_photovoltaic = (
         normalized_flux_photovoltaic * source_strength / photovoltaic_slice_volume
     )
-    absolute_flux_emitter = (
-        normalized_flux_emitter * source_strength / emitter_slice_volume
-    )
+
+    absorption_photovoltaic = normalized_absorption_photovoltaic * source_strength / photovoltaic_slice_volume
+    absorption_emitter = normalized_absorption_emitter * source_strength / emitter_slice_volume
 
     print("--------------------------------")
     print("photovoltaic")
@@ -530,7 +526,6 @@ def print_neutron_fluence_cm2s(
 
     print("emitter")
     print(f"Source strength: {source_strength:.4e} neutrons/second")
-    print(f"Fluence: {absolute_flux_emitter * 365 * 24 * 60 * 60:.4e} neutrons/cm²/year")
     print(f"Absorption: {absorption_emitter * 365 * 24 * 60 * 60:.4e} neutrons/cm3/year")
     print("--------------------------------")
 

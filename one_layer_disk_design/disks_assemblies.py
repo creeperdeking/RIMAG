@@ -105,7 +105,7 @@ def calculate_photovoltaic_volume_small(
 def calculate_disks_emitter_volume(
     assembly_section: AssemblySections,
     emitter_assembly: AssemblySections,
-    drums: List[DiskAssemblyLayer],
+    layers: List[DiskAssemblyLayer],
     drum_desc: RotaryAssemblyDesc,
     core_desc: CoreDesc,
 ) -> float:
@@ -121,11 +121,11 @@ def calculate_disks_emitter_volume(
     total_emitter_thickness = emitter_thickness * emitters_per_layer
     emitter_volume = (
         (
-            drums[0].radius ** 2 * math.pi
-            - ((drums[0].radius - core_desc.core_radius * 2) ** 2 * math.pi)
+            layers[0].radius ** 2 * math.pi
+            - ((layers[0].radius - core_desc.core_radius * 2) ** 2 * math.pi)
         )
         * total_emitter_thickness
-        * len(drums)
+        * len(layers)
     )
 
     return emitter_volume

@@ -64,7 +64,7 @@ def calculate_disk_core_characteristics(
     emitter_volume = calculate_disks_emitter_volume(
         assembly_section=geometry_settings.assembly_section_core,
         emitter_assembly=geometry_settings.emitter_assembly,
-        drums=disks,
+        layers=disks,
         drum_desc=rotary_assembly_desc,
         core_desc=core_desc,
     )

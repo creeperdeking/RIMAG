@@ -59,7 +59,7 @@ run_mode = "keff"
 weight_windows = "no"
 particle_type = "neutron"
 
-batches = 2500  # 1250
+batches = 150 # 2500  # 1250
 
 sanity_check_triso_fuel_volume(fuel_thickness, fuel_cladding_thickness * 2)
 
@@ -274,7 +274,7 @@ geometry, universe, cells, drums = define_disks_geometry(
     core_power,
     core_power_electric,
     fuel_volume,
-    emitter_core_volume,
+    emitter_volume,
     photovolatic_volume,
     radiative_flux,
     fuel_lifetime,
@@ -356,7 +356,7 @@ if run_mode == "keff":
         cells[material_choice.emitter],
         core_power,
         photovolatic_volume,
-        emitter_core_volume,
+        emitter_volume,
         batches,
         particle_type=particle_type,
     )
