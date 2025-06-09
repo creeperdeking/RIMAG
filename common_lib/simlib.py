@@ -446,8 +446,9 @@ def create_emitter_tally(
         openmc.ParticleFilter(particle_type),
     ]
     tally.scores = [
-        "absorption",
+        "(n,gamma)",
     ]  # careful, changing the order can mess up output
+    tally.nuclides = ["C13"]
     return tally
 
 
