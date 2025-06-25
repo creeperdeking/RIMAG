@@ -153,6 +153,50 @@ def make_sim_settings(
     return settings
 
 
+def run_keff_sim_photon_from_cells(
+    geometry: openmc.Geometry,
+    materials_dict: Dict[str, openmc.Material],
+    source_cells: List[openmc.Cell],
+    gamma_E_MeV: float = 1.27,  # MeV
+    rate_per_cm3: float = 1e10,  # photons s-1 m-3
+    deterministic: bool = True,
+    batches: int = 1500,
+):
+    settings = make_sim_settings(
+        deterministic, batches, "no", 0, 0, (0, 0, 0), None, "photon"
+    )
+    sources = []
+    for c in source_cells:
+        V_cm3 = c.volume  # already in cm³
+        strength = rate_per_cm3 * V_cm3  # photons s-1  from this cell
+
+        # Bounding box gives something to sample in; rejection via constraints keeps it inside
+        ll, ur = c.bounding_box
+        space_dist = openmc.stats.Box(ll, ur)  # uniform in the box
+        energy_dist = openmc.stats.delta_function(gamma_E_MeV * 1e6)  # eV input
+        angle_dist = openmc.stats.Isotropic()
+
+        src = openmc.IndependentSource(
+            particle="photon",
+            space=space_dist,
+            energy=energy_dist,
+            angle=angle_dist,
+            strength=strength,
+            constraints={"domains": [c]},  # << keeps points inside cell
+        )
+        sources.append(src)
+    settings.run_mode = "fixed source"
+    settings.source = openmc.IndependentSource(
+        particle="photon",
+        space=space_dist,
+        energy=energy_dist,
+        angle=angle_dist,
+        strength=strength,
+        constraints={"domains": [c]},
+    )
+    run_sim(geometry, settings, materials_dict)
+
+
 def run_keff_sim(
     geometry: openmc.Geometry,
     settings: openmc.Settings,
@@ -196,6 +240,22 @@ def render_geometry(
     # Save the image to a local file
     with open("plot.png", "wb") as f:
         f.write(image.data)
+
+
+def stochastic_volume_calculation(
+    cells: List[openmc.Cell],
+    geometry: openmc.Geometry,
+    materials: List[openmc.Material],
+):
+    model = openmc.Model(geometry, materials)
+    if any(c.volume is None for c in cells):
+        # 1e5 samples per cell is usually enough for <1 % error
+        volcalc = openmc.VolumeCalculation(domains=cells, samples=1_00_000)
+        settings = openmc.Settings()
+        settings.volume_calculations = [volcalc]
+        model.settings = settings
+        openmc.calculate_volumes(model=model)  # writes volumes to volume.h5
+        geometry.add_volume_information(volcalc)  # attaches .volume to each cell
 
 
 def compute_burnup(
@@ -361,20 +421,24 @@ def run_depletion_sim(
         op, sim_steps, thermal_power, timestep_units=steps_units
     ).integrate()
 
+
 def get_srniel_table():
     # --- 1.  Load the SR-NIEL table -----------------------------
     # Assume the first two columns are Energy [MeV] and NIEL [MeV cm2 g-1]
-    E_MeV, D_mcg = np.loadtxt('scripts/srniel_Si_E722-19_compact.txt', usecols=(0, 1), unpack=True)
+    E_MeV, D_mcg = np.loadtxt(
+        "scripts/srniel_Si_E722-19_compact.txt", usecols=(0, 1), unpack=True
+    )
 
     # --- 2.  Normalise to 1 at 1 MeV ----------------------------
-    E_ref  = 2.0                       # reference energy in MeV
-    D_ref  = np.interp(E_ref, E_MeV, D_mcg)   # damage-function value in MeV
-    D_norm = D_mcg / D_ref   # dimensionless
+    E_ref = 2.0  # reference energy in MeV
+    D_ref = np.interp(E_ref, E_MeV, D_mcg)  # damage-function value in MeV
+    D_norm = D_mcg / D_ref  # dimensionless
 
     # --- 3.  Convert energies to eV for OpenMC ------------------
     E_eV = E_MeV * 1.0e6
 
     return E_eV, D_norm
+
 
 def create_photovoltaic_tally(
     photovoltaic_cell, materials_dict, particle_type: Literal["neutron", "photon"]
@@ -390,6 +454,7 @@ def create_photovoltaic_tally(
     ]  # careful, changing the order can mess up output
     return tally
 
+
 def create_photovoltaic_flux_tally(
     photovoltaic_cell, materials_dict, particle_type: Literal["neutron", "photon"]
 ):
@@ -398,7 +463,7 @@ def create_photovoltaic_flux_tally(
     tally.filters = [
         openmc.CellFilter(photovoltaic_cell),
         openmc.ParticleFilter(particle_type),
-        openmc.EnergyFunctionFilter(E_eV, D_norm)
+        openmc.EnergyFunctionFilter(E_eV, D_norm),
     ]
     tally.scores = [
         "flux",
@@ -484,9 +549,10 @@ def print_neutron_fluence_cm2s(
     # Get absorption in emitter
     normalized_absorption_emitter = fluence_emitter.mean[0][0][0]
 
-
     # Get heating in photovoltaic
-    heating_photovoltaic = photovolatic.mean[0][0][1] / cst.value("joule-electron volt relationship") # J/particle
+    heating_photovoltaic = photovolatic.mean[0][0][1] / cst.value(
+        "joule-electron volt relationship"
+    )  # J/particle
 
     # Calculate neutrons per second based on power output
     # Average energy released per fission: ~200 MeV = 3.2e-11 Joules
@@ -499,19 +565,27 @@ def print_neutron_fluence_cm2s(
     # Calculate source strength (neutrons/second)
     source_strength = fissions_per_second * neutrons_per_fission
 
-    mass_photovoltaic = photovoltaic_slice_volume * photovoltaic_density # g
+    mass_photovoltaic = photovoltaic_slice_volume * photovoltaic_density  # g
 
     # Calculate heating rate in photovoltaic
-    heating_rate_photovoltaic = heating_photovoltaic * source_strength / mass_photovoltaic  # kGy/s
-    yearly_heating_rate_photovoltaic = heating_rate_photovoltaic * 365 * 24 * 60 * 60 # kGy/year
+    heating_rate_photovoltaic = (
+        heating_photovoltaic * source_strength / mass_photovoltaic
+    )  # kGy/s
+    yearly_heating_rate_photovoltaic = (
+        heating_rate_photovoltaic * 365 * 24 * 60 * 60
+    )  # kGy/year
 
     # Calculate absolute flux (neutrons/cm²-s)
     absolute_flux_photovoltaic = (
         normalized_flux_photovoltaic * source_strength / photovoltaic_slice_volume
     )
 
-    absorption_photovoltaic = normalized_absorption_photovoltaic * source_strength / photovoltaic_slice_volume
-    absorption_emitter = normalized_absorption_emitter * source_strength / emitter_slice_volume
+    absorption_photovoltaic = (
+        normalized_absorption_photovoltaic * source_strength / photovoltaic_slice_volume
+    )
+    absorption_emitter = (
+        normalized_absorption_emitter * source_strength / emitter_slice_volume
+    )
 
     print("--------------------------------")
     print("photovoltaic")
@@ -527,7 +601,9 @@ def print_neutron_fluence_cm2s(
 
     print("emitter")
     print(f"Source strength: {source_strength:.4e} neutrons/second")
-    print(f"Absorption: {absorption_emitter * 365 * 24 * 60 * 60:.4e} neutrons/cm3/year")
+    print(
+        f"Absorption: {absorption_emitter * 365 * 24 * 60 * 60:.4e} neutrons/cm3/year"
+    )
     print("--------------------------------")
 
 

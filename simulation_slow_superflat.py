@@ -23,6 +23,7 @@ from common_lib.simlib import (
     print_depletion_result,
     make_ww_mesh,
     check_ww_mesh_is_inside_geometry,
+    run_keff_sim_photon_from_cells,
 )
 from one_layer_disk_design.disks_geometry import define_disks_geometry
 from one_layer_disk_design.disks_core_characteristics import (
@@ -59,7 +60,7 @@ run_mode = "keff"
 weight_windows = "no"
 particle_type = "neutron"
 
-batches = 150 # 2500  # 1250
+batches = 150  # 2500  # 1250
 
 sanity_check_triso_fuel_volume(fuel_thickness, fuel_cladding_thickness * 2)
 
@@ -81,11 +82,10 @@ material_choice = MaterialChoice(
 outer_core_layers_inside_shaft = AssemblySections(
     parts=[
         Assembly(material=material_choice.reflector, thickness=reflector_thickness),
+        Assembly(material="Light Water", thickness=neutron_shield_moderator_thickness),
         Assembly(
-            material="Light Water", thickness=neutron_shield_moderator_thickness
-        ),
-        Assembly(
-            material=material_choice.neutron_shield, thickness=neutron_shield_absorber_thickness
+            material=material_choice.neutron_shield,
+            thickness=neutron_shield_absorber_thickness,
         ),
         Assembly(
             material=material_choice.gamma_shield,
@@ -98,7 +98,8 @@ outer_core_layers_between_disks = AssemblySections(
     parts=[
         Assembly(material=material_choice.reflector, thickness=reflector_thickness),
         Assembly(
-            material=material_choice.reflector, thickness=neutron_shield_moderator_thickness
+            material=material_choice.reflector,
+            thickness=neutron_shield_moderator_thickness,
         ),
         Assembly(
             material=material_choice.neutron_shield_2,
@@ -359,6 +360,17 @@ if run_mode == "keff":
         emitter_volume,
         batches,
         particle_type=particle_type,
+    )
+
+if run_mode == "keff_photon":
+    run_keff_sim_photon_from_cells(
+        geometry,
+        materials_dict,
+        [cells[material_choice.emitter]],
+        gamma_E_MeV=1.27,
+        rate_per_cm3=1e10,
+        deterministic=False,
+        batches=batches,
     )
 
 if run_mode == "depletion":
