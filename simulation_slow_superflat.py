@@ -1,37 +1,34 @@
 from common_lib.assemblies import (
-    calculate_assembly_thickness,
-    compute_core_desc,
     Assembly,
     AssemblySections,
     EmitterPlaceholder,
+    calculate_assembly_thickness,
+    compute_core_desc,
 )
 from common_lib.geometry import (
     GeometrySettings,
-    get_outer_empty_zone_parameters,
     check_assembly_thickness_equal,
+    get_outer_empty_zone_parameters,
 )
+from common_lib.geometry_utils import SPACING_CONSTANT
 from common_lib.materials import MaterialChoice, make_materials
 from common_lib.rotary_assembly import RotaryAssemblyDesc
-from common_lib.geometry_utils import SPACING_CONSTANT
 from common_lib.simlib import (
-    run_keff_sim,
-    run_sim_with_tallies,
+    make_sim_photon_from_cells,
     make_sim_settings,
-    render_geometry,
-    run_depletion_sim,
     print_core_characteristics,
     print_depletion_result,
-    make_ww_mesh,
-    check_ww_mesh_is_inside_geometry,
-    run_keff_sim_photon_from_cells,
+    render_geometry,
+    run_depletion_sim,
+    run_sim_with_tallies,
     stochastic_volume_calculation,
 )
-from one_layer_disk_design.disks_geometry import define_disks_geometry
+from one_layer_disk_design.disks import get_disks_radius
 from one_layer_disk_design.disks_core_characteristics import (
     calculate_disk_core_characteristics,
     sanity_check_triso_fuel_volume,
 )
-from one_layer_disk_design.disks import get_disks_radius
+from one_layer_disk_design.disks_geometry import define_disks_geometry
 
 core_diameter = 80
 moderator_cladding_thickness = 0.05
@@ -55,8 +52,8 @@ gamma_shield_thickness = 10
 u235_enrichment = 19.5
 fuel_burnup = 75  # MWd/kgHM
 
-# values are 'keff', 'render', 'depletion' or 'none' (to just show the calculated core characteristics)
-run_mode = "keff"
+# values are 'keff', 'render', 'depletion', 'keff_emitter_gamma_source' or 'none' (to just show the calculated core characteristics)
+run_mode = "keff_emitter_gamma_source"
 # values are 'generate', 'use' or 'no'
 weight_windows = "no"
 particle_type = "neutron"
@@ -360,15 +357,24 @@ if run_mode == "keff":
         particle_type=particle_type,
     )
 
-if run_mode == "keff_photon":
-    run_keff_sim_photon_from_cells(
-        geometry,
-        materials_dict,
+if run_mode == "keff_emitter_gamma_source":
+    settings = make_sim_photon_from_cells(
         [cells[material_choice.emitter]],
         gamma_E_MeV=1.27,
         rate_per_cm3=1e10,
         deterministic=False,
         batches=batches,
+    )
+    run_sim_with_tallies(
+        geometry,
+        settings,
+        materials_dict,
+        cells[material_choice.photovoltaic],
+        materials_dict[material_choice.photovoltaic].density,
+        cells[material_choice.emitter],
+        core_power,
+        batches,
+        particle_type="photon",
     )
 
 if run_mode == "depletion":

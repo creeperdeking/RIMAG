@@ -170,9 +170,7 @@ def make_sim_settings(
     return settings
 
 
-def run_keff_sim_photon_from_cells(
-    geometry: openmc.Geometry,
-    materials_dict: Dict[str, openmc.Material],
+def make_sim_photon_from_cells(
     source_cells: List[openmc.Cell],
     gamma_E_MeV: float = 1.27,  # MeV
     rate_per_cm3: float = 1e10,  # photons s-1 m-3
@@ -211,7 +209,8 @@ def run_keff_sim_photon_from_cells(
         strength=strength,
         constraints={"domains": [c]},
     )
-    run_sim(geometry, settings, materials_dict)
+
+    return settings
 
 
 def run_keff_sim(
@@ -576,8 +575,25 @@ def print_neutron_energy_photovoltaics(
     print(f"Average neutron energy in cell = {avg_E_keV:.3f} keV")
 
 
-def print_neutron_fluence_cm2s(
+def calculate_source_strength(
     power_output_watts,
+):
+    # Calculate neutrons per second based on power output
+    # Average energy released per fission: ~200 MeV = 3.2e-11 Joules
+    energy_per_fission = 200 * 1.6e-13  # Joules
+    neutrons_per_fission = 2.4  # Average number of neutrons per fission
+
+    # Calculate fissions per second based on power
+    fissions_per_second = power_output_watts / energy_per_fission
+
+    # Calculate source strength (neutrons/second)
+    source_strength = fissions_per_second * neutrons_per_fission
+
+    return source_strength
+
+
+def print_neutron_fluence_cm2s(
+    source_strength,
     photovoltaic_slice_volume,
     photovoltaic_density,
     emitter_slice_volume,
@@ -600,17 +616,6 @@ def print_neutron_fluence_cm2s(
     heating_photovoltaic = photovolatic.mean[0][0][1] / cst.value(
         "joule-electron volt relationship"
     )  # J/particle
-
-    # Calculate neutrons per second based on power output
-    # Average energy released per fission: ~200 MeV = 3.2e-11 Joules
-    energy_per_fission = 200 * 1.6e-13  # Joules
-    neutrons_per_fission = 2.4  # Average number of neutrons per fission
-
-    # Calculate fissions per second based on power
-    fissions_per_second = power_output_watts / energy_per_fission
-
-    # Calculate source strength (neutrons/second)
-    source_strength = fissions_per_second * neutrons_per_fission
 
     mass_photovoltaic = photovoltaic_slice_volume * photovoltaic_density  # g
 
@@ -677,7 +682,7 @@ def run_sim_with_tallies(
     )
     run_sim(geometry, settings, materials_dict, tallies)
     print_neutron_fluence_cm2s(
-        power_output_watts,
+        calculate_source_strength(power_output_watts),
         photovoltaic_cell.volume,
         photovoltaic_density,
         emitter_cell.volume,
