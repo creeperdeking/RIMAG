@@ -1,5 +1,6 @@
 from typing import Dict, List
 
+import openmc
 from common_lib.assemblies import CoreDesc
 from common_lib.geometry import GeometrySettings
 from common_lib.light import radiative_heat_flux_between_plates
@@ -37,7 +38,7 @@ def sanity_check_triso_fuel_volume(hm_volume: float, graphite_volume: float):
 def calculate_disk_core_characteristics(
     rotary_assembly_desc: RotaryAssemblyDesc,
     core_desc: CoreDesc,
-    geometry_settings: GeometrySettings,
+    fuel_cell: openmc.Cell,
     disks: List[DiskAssemblyLayer],
     material_choice: MaterialChoice,
     materials_def: Dict[str, Material],
@@ -46,29 +47,6 @@ def calculate_disk_core_characteristics(
     photovoltaic_efficiency: float,
     fuel_burnup: float,
 ):
-    photovoltaic_volume = calculate_photovoltaic_volume_large(
-        drum_desc=rotary_assembly_desc,
-        core_desc=core_desc,
-        assembly_section=geometry_settings.photovoltaic_assembly,
-        drums=disks,
-    )
-    print(f"Photovoltaic volume: {photovoltaic_volume}")
-
-    fuel_volume = calculate_disks_fuel_volume(
-        drum_desc=rotary_assembly_desc,
-        core_desc=core_desc,
-        assembly_section=geometry_settings.assembly_section_core,
-        drums=disks,
-    )
-
-    emitter_volume = calculate_disks_emitter_volume(
-        assembly_section=geometry_settings.assembly_section_core,
-        emitter_assembly=geometry_settings.emitter_assembly,
-        layers=disks,
-        drum_desc=rotary_assembly_desc,
-        core_desc=core_desc,
-    )
-
     # multiply by 2 because each drum section has two faces exposed to the fuel
     emissive_surface = (
         calculate_disks_surface_in_core(disks, rotary_assembly_desc, core_desc) / 10000
@@ -80,7 +58,9 @@ def calculate_disk_core_characteristics(
     core_power_electric = core_power * photovoltaic_efficiency
 
     heavy_metal_mass = (
-        fuel_volume * heavy_metals_density(materials_def[material_choice.fuel]) / 1000
+        fuel_cell.volume
+        * heavy_metals_density(materials_def[material_choice.fuel])
+        / 1000
     )
 
     energy_in_fuel = heavy_metal_mass * fuel_burnup * 24  # MWd
@@ -92,9 +72,6 @@ def calculate_disk_core_characteristics(
         emissive_surface,
         core_power,
         core_power_electric,
-        fuel_volume,
-        emitter_volume,
-        photovoltaic_volume,
         radiative_flux,
         fuel_lifetime,
     )

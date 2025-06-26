@@ -10,6 +10,8 @@ from common_lib.materials import MaterialChoice
 from common_lib.assemblies import calculate_assembly_thickness
 import numpy as np
 from common_lib.geometry import GeometrySettings
+import h5py
+import sys
 
 
 def clean_directory():
@@ -44,9 +46,24 @@ def generate_XML(geometry, settings, tallies, materials_dict):
         tallies.export_to_xml()
 
 
-def run_sim(geometry, settings, materials_dict, tallies=None):
+def run_sim(geometry, settings, materials_dict, tallies=None, quiet=False):
     generate_XML(geometry, settings, tallies, materials_dict)
-    openmc.run(threads=20, geometry_debug=True)
+    if settings.run_mode == "volume":
+        print("[OpenMC] Running stochastic volume calculations...")
+    if quiet:
+        # Redirect stdout and stderr to suppress OpenMC output
+        with open(os.devnull, "w") as devnull:
+            old_stdout = sys.stdout
+            old_stderr = sys.stderr
+            sys.stdout = devnull
+            sys.stderr = devnull
+            try:
+                openmc.run(threads=20, geometry_debug=True)
+            finally:
+                sys.stdout = old_stdout
+                sys.stderr = old_stderr
+    else:
+        openmc.run(threads=20, geometry_debug=True)
     # clean_directory()
 
 
@@ -201,12 +218,13 @@ def run_keff_sim(
     geometry: openmc.Geometry,
     settings: openmc.Settings,
     materials_dict: Dict[str, openmc.Material],
+    quiet: bool = False,
 ):
     print()
     print("-------- Criticality simulation --------")
     print()
     print("Seed :", settings.seed, "\n")
-    run_sim(geometry, settings, materials_dict)
+    run_sim(geometry, settings, materials_dict, quiet=quiet)
 
 
 def render_geometry(
@@ -245,17 +263,46 @@ def render_geometry(
 def stochastic_volume_calculation(
     cells: List[openmc.Cell],
     geometry: openmc.Geometry,
-    materials: List[openmc.Material],
+    materials_dict: Dict[str, openmc.Material],
+    samples: int = 10000000,
 ):
-    model = openmc.Model(geometry, materials)
+    """
+    Stochastic volume calculation, adds volume information to the cells
+    """
     if any(c.volume is None for c in cells):
         # 1e5 samples per cell is usually enough for <1 % error
-        volcalc = openmc.VolumeCalculation(domains=cells, samples=1_00_000)
+        volcalc = openmc.VolumeCalculation(domains=cells, samples=samples)
         settings = openmc.Settings()
         settings.volume_calculations = [volcalc]
-        model.settings = settings
-        openmc.calculate_volumes(model=model)  # writes volumes to volume.h5
-        geometry.add_volume_information(volcalc)  # attaches .volume to each cell
+        settings.run_mode = "volume"
+        settings.export_to_xml()
+        run_sim(geometry, settings, materials_dict, quiet=True)
+
+        # Read uncertainty directly from HDF5 file
+        all_ok = True
+        with h5py.File("volume_1.h5", "r") as f:
+            for cell in cells:
+                cell_id = cell.id
+                vol_data = f[f"domain_{cell_id}/volume"][:]
+                volume = vol_data[0]
+                std_dev = vol_data[1]
+                rel_uncertainty = std_dev / volume * 100 if volume > 0 else float("inf")
+                if rel_uncertainty == float("inf"):
+                    # Ignore this cell, set its volume to zero
+                    cell.volume = 0.0
+                    continue
+                if rel_uncertainty > 1.0:
+                    all_ok = False
+                    raise ValueError(
+                        f"❌ Volume calculation uncertainty too high ({rel_uncertainty:.1f}%) for cell '{cell.name}' (ID {cell_id}).\n"
+                        f"    Increase number of samples or check geometry."
+                    )
+        if all_ok:
+            print("✅ All volume calculation uncertainties are below 1%.")
+
+        vol_calc = openmc.VolumeCalculation.from_hdf5("volume_1.h5")
+        geometry.add_volume_information(vol_calc)  # attaches .volume to each cell
+    return geometry
 
 
 def compute_burnup(
@@ -615,8 +662,6 @@ def run_sim_with_tallies(
     photovoltaic_density,
     emitter_cell,
     power_output_watts,
-    photovoltaic_slice_volume,
-    emitter_slice_volume,
     batches,
     particle_type: Literal["neutron", "photon"] = "neutron",
 ):
@@ -633,9 +678,9 @@ def run_sim_with_tallies(
     run_sim(geometry, settings, materials_dict, tallies)
     print_neutron_fluence_cm2s(
         power_output_watts,
-        photovoltaic_slice_volume,
+        photovoltaic_cell.volume,
         photovoltaic_density,
-        emitter_slice_volume,
+        emitter_cell.volume,
         batches,
     )
 
@@ -649,7 +694,7 @@ def print_core_characteristics(
     core_power_electric,
     assembly_section_core,
     radiative_flux,
-    fuel_volume,
+    fuel_cell,
     fuel_lifetime,
     disks: List = None,
 ):
@@ -670,7 +715,7 @@ def print_core_characteristics(
     print("core power", round(core_power / 1e6, 2), "MW")
     print("core power electric", round(core_power_electric / 1e6, 2), "MW")
 
-    print("fuel volume", fuel_volume, "cm3")
+    print("fuel volume", fuel_cell.volume, "cm3")
 
     print(
         "heavy metal mass",

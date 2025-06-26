@@ -24,6 +24,7 @@ from common_lib.simlib import (
     make_ww_mesh,
     check_ww_mesh_is_inside_geometry,
     run_keff_sim_photon_from_cells,
+    stochastic_volume_calculation,
 )
 from one_layer_disk_design.disks_geometry import define_disks_geometry
 from one_layer_disk_design.disks_core_characteristics import (
@@ -268,21 +269,23 @@ materials_dict, materials_def, colors = make_materials(u235_enrichment, material
 geometry, universe, cells, drums = define_disks_geometry(
     geometry_settings, materials_dict
 )
+geometry = stochastic_volume_calculation(
+    [cell for _, cell in geometry.get_all_cells().items()],
+    geometry,
+    materials_dict,
+)
 
 (
     heavy_metal_mass,
     emissive_surface,
     core_power,
     core_power_electric,
-    fuel_volume,
-    emitter_volume,
-    photovolatic_volume,
     radiative_flux,
     fuel_lifetime,
 ) = calculate_disk_core_characteristics(
     rotary_assembly_desc,
     core_desc,
-    geometry_settings,
+    cells[material_choice.fuel],
     drums,
     material_choice,
     materials_def,
@@ -293,9 +296,6 @@ geometry, universe, cells, drums = define_disks_geometry(
 )
 
 
-materials_dict[material_choice.fuel].volume = fuel_volume
-
-
 print_core_characteristics(
     heavy_metal_mass,
     emissive_surface,
@@ -303,7 +303,7 @@ print_core_characteristics(
     core_power_electric,
     geometry_settings.assembly_section_core,
     radiative_flux,
-    fuel_volume,
+    cells[material_choice.fuel],
     fuel_lifetime,
     drums,
 )
@@ -356,8 +356,6 @@ if run_mode == "keff":
         materials_dict[material_choice.photovoltaic].density,
         cells[material_choice.emitter],
         core_power,
-        photovolatic_volume,
-        emitter_volume,
         batches,
         particle_type=particle_type,
     )
