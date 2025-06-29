@@ -14,6 +14,7 @@ from common_lib.geometry_utils import SPACING_CONSTANT
 from common_lib.materials import MaterialChoice, make_materials
 from common_lib.rotary_assembly import RotaryAssemblyDesc
 from common_lib.simlib import (
+    calculate_source_strength,
     make_sim_photon_from_cells,
     make_sim_settings,
     print_core_characteristics,
@@ -58,7 +59,10 @@ run_mode = "keff_emitter_gamma_source"
 weight_windows = "no"
 particle_type = "neutron"
 
-batches = 150  # 2500  # 1250
+batches = 200  # 2500  # 1250
+
+emitter_gamma_energy_MeV = 0.5  # MeV
+emitter_gamma_rate_per_cm3 = 3.29e9 * 2  # photons/cm3/s
 
 sanity_check_triso_fuel_volume(fuel_thickness, fuel_cladding_thickness * 2)
 
@@ -352,7 +356,7 @@ if run_mode == "keff":
         cells[material_choice.photovoltaic],
         materials_dict[material_choice.photovoltaic].density,
         cells[material_choice.emitter],
-        core_power,
+        calculate_source_strength(core_power),
         batches,
         particle_type=particle_type,
     )
@@ -360,8 +364,7 @@ if run_mode == "keff":
 if run_mode == "keff_emitter_gamma_source":
     settings = make_sim_photon_from_cells(
         [cells[material_choice.emitter]],
-        gamma_E_MeV=1.27,
-        rate_per_cm3=1e10,
+        gamma_E_MeV=emitter_gamma_energy_MeV,
         deterministic=False,
         batches=batches,
     )
@@ -372,7 +375,7 @@ if run_mode == "keff_emitter_gamma_source":
         cells[material_choice.photovoltaic],
         materials_dict[material_choice.photovoltaic].density,
         cells[material_choice.emitter],
-        core_power,
+        emitter_gamma_rate_per_cm3 * cells[material_choice.emitter].volume,
         batches,
         particle_type="photon",
     )

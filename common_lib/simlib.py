@@ -173,7 +173,6 @@ def make_sim_settings(
 def make_sim_photon_from_cells(
     source_cells: List[openmc.Cell],
     gamma_E_MeV: float = 1.27,  # MeV
-    rate_per_cm3: float = 1e10,  # photons s-1 m-3
     deterministic: bool = True,
     batches: int = 1500,
 ):
@@ -182,9 +181,6 @@ def make_sim_photon_from_cells(
     )
     sources = []
     for c in source_cells:
-        V_cm3 = c.volume  # already in cm³
-        strength = rate_per_cm3 * V_cm3  # photons s-1  from this cell
-
         # Bounding box gives something to sample in; rejection via constraints keeps it inside
         ll, ur = c.bounding_box
         space_dist = openmc.stats.Box(ll, ur)  # uniform in the box
@@ -196,19 +192,11 @@ def make_sim_photon_from_cells(
             space=space_dist,
             energy=energy_dist,
             angle=angle_dist,
-            strength=strength,
             constraints={"domains": [c]},  # << keeps points inside cell
         )
         sources.append(src)
     settings.run_mode = "fixed source"
-    settings.source = openmc.IndependentSource(
-        particle="photon",
-        space=space_dist,
-        energy=energy_dist,
-        angle=angle_dist,
-        strength=strength,
-        constraints={"domains": [c]},
-    )
+    settings.source = sources
 
     return settings
 
@@ -495,7 +483,7 @@ def create_photovoltaic_tally(
         openmc.ParticleFilter(particle_type),
     ]
     tally.scores = [
-        "absorption",
+        "(n,gamma)",
         "heating",
     ]  # careful, changing the order can mess up output
     return tally
@@ -640,8 +628,9 @@ def print_neutron_fluence_cm2s(
     )
 
     print("--------------------------------")
-    print("photovoltaic")
     print(f"Source strength: {source_strength:.4e} neutrons/second")
+    print("--------------------------------")
+    print("photovoltaic")
     print(
         f"Fluence: {absolute_flux_photovoltaic * 365 * 24 * 60 * 60:.4e} neutrons/cm²/year"
     )
@@ -652,7 +641,6 @@ def print_neutron_fluence_cm2s(
     print("--------------------------------")
 
     print("emitter")
-    print(f"Source strength: {source_strength:.4e} neutrons/second")
     print(
         f"Absorption: {absorption_emitter * 365 * 24 * 60 * 60:.4e} neutrons/cm3/year"
     )
@@ -666,7 +654,7 @@ def run_sim_with_tallies(
     photovoltaic_cell,
     photovoltaic_density,
     emitter_cell,
-    power_output_watts,
+    source_strength,
     batches,
     particle_type: Literal["neutron", "photon"] = "neutron",
 ):
@@ -682,7 +670,7 @@ def run_sim_with_tallies(
     )
     run_sim(geometry, settings, materials_dict, tallies)
     print_neutron_fluence_cm2s(
-        calculate_source_strength(power_output_watts),
+        source_strength,
         photovoltaic_cell.volume,
         photovoltaic_density,
         emitter_cell.volume,
