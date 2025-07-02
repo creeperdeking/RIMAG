@@ -14,13 +14,13 @@ from common_lib.geometry_utils import SPACING_CONSTANT
 from common_lib.materials import MaterialChoice, MonitoredNuclide, make_materials
 from common_lib.rotary_assembly import RotaryAssemblyDesc
 from common_lib.simlib import (
-    calculate_source_strength,
     make_sim_photon_from_cells,
     make_sim_settings,
     print_core_characteristics,
     print_depletion_result,
     render_geometry,
     run_depletion_sim,
+    run_keff_sim,
     run_sim_with_tallies,
     stochastic_volume_calculation,
 )
@@ -56,7 +56,7 @@ fuel_burnup = 75  # MWd/kgHM
 # values are 'keff', 'render', 'depletion', 'keff_emitter_gamma_source' or 'none' (to just show the calculated core characteristics)
 run_mode = "keff"
 # values are 'generate', 'use' or 'no'
-weight_windows = "use"
+weight_windows = "no"
 particle_type = "neutron"
 # This will measure absoption only for this particular nuclide
 monitored_nuclide = None  # MonitoredNuclide(nuclide="Si30")
@@ -149,17 +149,13 @@ emitter_assembly_placeholder = EmitterPlaceholder(
     thickness=calculate_assembly_thickness(emitter_assembly),
 )
 
+
 assembly_section_core = AssemblySections(
     parts=[
-        ### Cladding
-        Assembly(
-            material=material_choice.moderator_cladding,
-            thickness=moderator_cladding_thickness,
-        ),
         ### Moderator
         Assembly(
             material=material_choice.moderator,
-            thickness=moderator_thickness,
+            thickness=moderator_thickness / 2,
         ),
         ### Cladding
         Assembly(
@@ -186,6 +182,16 @@ assembly_section_core = AssemblySections(
         ),
         ### Emitter Assembly
         emitter_assembly_placeholder,
+        ### Cladding
+        Assembly(
+            material=material_choice.moderator_cladding,
+            thickness=moderator_cladding_thickness,
+        ),
+        ### Moderator
+        Assembly(
+            material=material_choice.moderator,
+            thickness=moderator_thickness / 2,
+        ),
     ],
 )
 
@@ -210,18 +216,15 @@ rotary_assembly_desc = RotaryAssemblyDesc(
 
 assembly_section_photovoltaic = AssemblySections(
     parts=[
-        ### Photovoltaic
-        Assembly(
-            material=material_choice.photovoltaic,
-            thickness=thickness_photovoltaic,
-            is_photovoltaic=True,
-        ),  # is_fuel is set to True to make the volume calculation work
         ### Water
         Assembly(
             material=material_choice.coolant,
-            thickness=moderator_thickness
-            - thickness_photovoltaic * 2
-            + moderator_cladding_thickness * 2,
+            thickness=(
+                moderator_thickness
+                - thickness_photovoltaic * 2
+                + moderator_cladding_thickness * 2
+            )
+            / 2,
         ),
         ### Photovoltaic
         Assembly(
@@ -252,6 +255,22 @@ assembly_section_photovoltaic = AssemblySections(
         ),  # is_fuel is set to True to make the volume calculation work
         ### Emitter Assembly
         emitter_assembly_placeholder,
+        ### Photovoltaic
+        Assembly(
+            material=material_choice.photovoltaic,
+            thickness=thickness_photovoltaic,
+            is_photovoltaic=True,
+        ),  # is_fuel is set to True to make the volume calculation work
+        ### Water
+        Assembly(
+            material=material_choice.coolant,
+            thickness=(
+                moderator_thickness
+                - thickness_photovoltaic * 2
+                + moderator_cladding_thickness * 2
+            )
+            / 2,
+        ),
     ]
 )
 
@@ -273,44 +292,44 @@ materials_dict, materials_def, colors = make_materials(u235_enrichment, material
 geometry, universe, tracked_cells, drums = define_disks_geometry(
     geometry_settings, materials_dict
 )
-geometry = stochastic_volume_calculation(
-    [cell for _, cell in geometry.get_all_cells().items()],
-    geometry,
-    materials_dict,
-)
+# geometry = stochastic_volume_calculation(
+#    [cell for _, cell in geometry.get_all_cells().items()],
+#    geometry,
+#    materials_dict,
+# )
 
-(
-    heavy_metal_mass,
-    emissive_surface,
-    core_power,
-    core_power_electric,
-    radiative_flux,
-    fuel_lifetime,
-) = calculate_disk_core_characteristics(
-    rotary_assembly_desc,
-    core_desc,
-    tracked_cells[material_choice.fuel],
-    drums,
-    material_choice,
-    materials_def,
-    hot_temp,
-    cold_temp,
-    photovoltaic_efficiency,
-    fuel_burnup,
-)
+# (
+#    heavy_metal_mass,
+#    emissive_surface,
+#    core_power,
+#    core_power_electric,
+#    radiative_flux,
+#    fuel_lifetime,
+# ) = calculate_disk_core_characteristics(
+#    rotary_assembly_desc,
+#    core_desc,
+#    tracked_cells[material_choice.fuel],
+#    drums,
+#    material_choice,
+#    materials_def,
+#    hot_temp,
+#    cold_temp,
+#    photovoltaic_efficiency,
+#    fuel_burnup,
+# )
 
 
-print_core_characteristics(
-    heavy_metal_mass,
-    emissive_surface,
-    core_power,
-    core_power_electric,
-    geometry_settings.assembly_section_core,
-    radiative_flux,
-    tracked_cells[material_choice.fuel],
-    fuel_lifetime,
-    drums,
-)
+# print_core_characteristics(
+#    heavy_metal_mass,
+#    emissive_surface,
+#    core_power,
+#    core_power_electric,
+#    geometry_settings.assembly_section_core,
+#    radiative_flux,
+#    tracked_cells[material_choice.fuel],
+#    fuel_lifetime,
+#    drums,
+# )
 
 print(
     "reactor diameter",
@@ -354,19 +373,19 @@ settings.track = [(1, 1, 8624)]
 
 
 if run_mode == "keff":
-    # run_keff_sim(geometry, settings, materials_dict)
-    run_sim_with_tallies(
-        geometry,
-        settings,
-        materials_dict,
-        tracked_cells[material_choice.photovoltaic],
-        materials_dict[material_choice.photovoltaic].density,
-        tracked_cells[material_choice.emitter],
-        calculate_source_strength(core_power),
-        batches,
-        particle_type=particle_type,
-        monitored_nuclide=monitored_nuclide,
-    )
+    run_keff_sim(geometry, settings, materials_dict)
+    # run_sim_with_tallies(
+    #    geometry,
+    #    settings,
+    #    materials_dict,
+    #    tracked_cells[material_choice.photovoltaic],
+    #    materials_dict[material_choice.photovoltaic].density,
+    #    tracked_cells[material_choice.emitter],
+    #    calculate_source_strength(core_power),
+    #    batches,
+    #    particle_type=particle_type,
+    #    monitored_nuclide=monitored_nuclide,
+    # )
 
 
 if run_mode == "keff_emitter_gamma_source":

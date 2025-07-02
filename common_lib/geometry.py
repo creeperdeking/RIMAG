@@ -125,12 +125,12 @@ def define_geometry(
         & -make_surface_plane(
             geometry_settings.rotary_assembly_desc,
             z0=geometry_settings.core_desc.outer_core_height / 2 + SPACING_CONSTANT,
-            boundary_type="periodic",
+            boundary_type="reflective",
         )
         & +make_surface_plane(
             geometry_settings.rotary_assembly_desc,
             z0=-geometry_settings.core_desc.outer_core_height / 2 - SPACING_CONSTANT,
-            boundary_type="periodic",
+            boundary_type="reflective",
         )
     )
 
