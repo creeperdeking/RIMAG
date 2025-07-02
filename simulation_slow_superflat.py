@@ -11,7 +11,7 @@ from common_lib.geometry import (
     get_outer_empty_zone_parameters,
 )
 from common_lib.geometry_utils import SPACING_CONSTANT
-from common_lib.materials import MaterialChoice, make_materials
+from common_lib.materials import MaterialChoice, MonitoredNuclide, make_materials
 from common_lib.rotary_assembly import RotaryAssemblyDesc
 from common_lib.simlib import (
     calculate_source_strength,
@@ -54,15 +54,18 @@ u235_enrichment = 19.5
 fuel_burnup = 75  # MWd/kgHM
 
 # values are 'keff', 'render', 'depletion', 'keff_emitter_gamma_source' or 'none' (to just show the calculated core characteristics)
-run_mode = "keff_emitter_gamma_source"
+run_mode = "keff"
 # values are 'generate', 'use' or 'no'
-weight_windows = "no"
+weight_windows = "use"
 particle_type = "neutron"
+# This will measure absoption only for this particular nuclide
+monitored_nuclide = None  # MonitoredNuclide(nuclide="Si30")
 
-batches = 200  # 2500  # 1250
+batches = 2000  # 2500  # 1250
 
-emitter_gamma_energy_MeV = 0.5  # MeV
-emitter_gamma_rate_per_cm3 = 3.29e9 * 2  # photons/cm3/s
+# Parameter used for keff_emitter_gamma_source simulations
+emitter_gamma_energy_MeV = 0.01  # MeV
+emitter_gamma_rate_per_cm3 = 3.35e6  # photons/cm3/s
 
 sanity_check_triso_fuel_volume(fuel_thickness, fuel_cladding_thickness * 2)
 
@@ -72,7 +75,7 @@ material_choice = MaterialChoice(
     reflector="Graphite",
     fuel="Uranium Oxy-Carbide",
     moderator_cladding="Zirconium",
-    emitter="Graphite 2",
+    emitter="Graphite",
     fuel_cladding="Graphite",
     void="Void",
     photovoltaic="Silicon",
@@ -267,7 +270,7 @@ geometry_settings = GeometrySettings(
 
 materials_dict, materials_def, colors = make_materials(u235_enrichment, material_choice)
 
-geometry, universe, cells, drums = define_disks_geometry(
+geometry, universe, tracked_cells, drums = define_disks_geometry(
     geometry_settings, materials_dict
 )
 geometry = stochastic_volume_calculation(
@@ -286,7 +289,7 @@ geometry = stochastic_volume_calculation(
 ) = calculate_disk_core_characteristics(
     rotary_assembly_desc,
     core_desc,
-    cells[material_choice.fuel],
+    tracked_cells[material_choice.fuel],
     drums,
     material_choice,
     materials_def,
@@ -304,7 +307,7 @@ print_core_characteristics(
     core_power_electric,
     geometry_settings.assembly_section_core,
     radiative_flux,
-    cells[material_choice.fuel],
+    tracked_cells[material_choice.fuel],
     fuel_lifetime,
     drums,
 )
@@ -337,7 +340,7 @@ if run_mode == "render":
 outer_empty_zone_parameters = get_outer_empty_zone_parameters(geometry_settings)
 
 settings = make_sim_settings(
-    deterministic=False,
+    deterministic=True,
     batches=batches,
     weight_windows=weight_windows,
     window_radius=outer_empty_zone_parameters.radius,
@@ -347,23 +350,28 @@ settings = make_sim_settings(
     particle_type=particle_type,
 )
 
+settings.track = [(1, 1, 8624)]
+
+
 if run_mode == "keff":
     # run_keff_sim(geometry, settings, materials_dict)
     run_sim_with_tallies(
         geometry,
         settings,
         materials_dict,
-        cells[material_choice.photovoltaic],
+        tracked_cells[material_choice.photovoltaic],
         materials_dict[material_choice.photovoltaic].density,
-        cells[material_choice.emitter],
+        tracked_cells[material_choice.emitter],
         calculate_source_strength(core_power),
         batches,
         particle_type=particle_type,
+        monitored_nuclide=monitored_nuclide,
     )
+
 
 if run_mode == "keff_emitter_gamma_source":
     settings = make_sim_photon_from_cells(
-        [cells[material_choice.emitter]],
+        [tracked_cells[material_choice.emitter]],
         gamma_E_MeV=emitter_gamma_energy_MeV,
         deterministic=False,
         batches=batches,
@@ -372,10 +380,10 @@ if run_mode == "keff_emitter_gamma_source":
         geometry,
         settings,
         materials_dict,
-        cells[material_choice.photovoltaic],
+        tracked_cells[material_choice.photovoltaic],
         materials_dict[material_choice.photovoltaic].density,
-        cells[material_choice.emitter],
-        emitter_gamma_rate_per_cm3 * cells[material_choice.emitter].volume,
+        tracked_cells[material_choice.emitter],
+        emitter_gamma_rate_per_cm3 * tracked_cells[material_choice.emitter].volume,
         batches,
         particle_type="photon",
     )

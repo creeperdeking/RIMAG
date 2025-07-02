@@ -6,7 +6,7 @@ import time
 from typing import List, Dict, Literal
 from tabulate import tabulate
 import scipy.constants as cst
-from common_lib.materials import MaterialChoice
+from common_lib.materials import MaterialChoice, MonitoredNuclide
 from common_lib.assemblies import calculate_assembly_thickness
 import numpy as np
 from common_lib.geometry import GeometrySettings
@@ -63,7 +63,7 @@ def run_sim(geometry, settings, materials_dict, tallies=None, quiet=False):
                 sys.stdout = old_stdout
                 sys.stderr = old_stderr
     else:
-        openmc.run(threads=20, geometry_debug=True)
+        openmc.run(threads=20, geometry_debug=False)
     # clean_directory()
 
 
@@ -126,8 +126,9 @@ def make_sim_settings(
     # Define simulation settings
     settings = openmc.Settings()
     settings.inactive = 10
-    UPDATE_INTERVAL = 2
-    WEIGHT_WINDOWS_BATCHES = 50 * UPDATE_INTERVAL + settings.inactive
+    settings.max_history_splits = 5000  # cap long histories
+    UPDATE_INTERVAL = 8
+    WEIGHT_WINDOWS_BATCHES = 30 * UPDATE_INTERVAL + settings.inactive
     settings.photon_transport = particle_type == "photon"
     settings.source = source
     if weight_windows == "generate":
@@ -156,6 +157,7 @@ def make_sim_settings(
             max_realizations=WEIGHT_WINDOWS_BATCHES,  # usually = # of batches
             update_interval=UPDATE_INTERVAL,
         )
+
         settings.weight_window_generators = wwg
     elif weight_windows == "use":
         settings.weight_window_checkpoints = {
@@ -475,13 +477,18 @@ def get_srniel_table():
 
 
 def create_photovoltaic_tally(
-    photovoltaic_cell, materials_dict, particle_type: Literal["neutron", "photon"]
+    photovoltaic_cell,
+    materials_dict,
+    particle_type: Literal["neutron", "photon"],
+    monitored_nuclide: MonitoredNuclide = None,
 ):
     tally = openmc.Tally(name="photovoltaic")
     tally.filters = [
         openmc.CellFilter(photovoltaic_cell),
         openmc.ParticleFilter(particle_type),
     ]
+    if monitored_nuclide is not None:
+        tally.nuclides = [monitored_nuclide.nuclide]
     tally.scores = [
         "(n,gamma)",
         "heating",
@@ -537,7 +544,10 @@ def create_photovoltaic_energy_tally(
 
 
 def create_emitter_tally(
-    emitter_cell, materials_dict, particle_type: Literal["neutron", "photon"]
+    emitter_cell,
+    materials_dict,
+    particle_type: Literal["neutron", "photon"],
+    monitored_nuclide: MonitoredNuclide = None,
 ):
     tally = openmc.Tally(name="emitter")
     tally.filters = [
@@ -547,7 +557,8 @@ def create_emitter_tally(
     tally.scores = [
         "(n,gamma)",
     ]  # careful, changing the order can mess up output
-    tally.nuclides = ["C13"]
+    if monitored_nuclide is not None:
+        tally.nuclides = [monitored_nuclide.nuclide]
     return tally
 
 
@@ -657,14 +668,17 @@ def run_sim_with_tallies(
     source_strength,
     batches,
     particle_type: Literal["neutron", "photon"] = "neutron",
+    monitored_nuclide: MonitoredNuclide = None,
 ):
     tally_photovoltaic = create_photovoltaic_tally(
-        photovoltaic_cell, materials_dict, particle_type
+        photovoltaic_cell, materials_dict, particle_type, monitored_nuclide
     )
     photovoltaic_flux_tally = create_photovoltaic_flux_tally(
         photovoltaic_cell, materials_dict, particle_type
     )
-    tally_emitter = create_emitter_tally(emitter_cell, materials_dict, particle_type)
+    tally_emitter = create_emitter_tally(
+        emitter_cell, materials_dict, particle_type, monitored_nuclide
+    )
     tallies = openmc.Tallies(
         [tally_photovoltaic, photovoltaic_flux_tally, tally_emitter]
     )
