@@ -2,10 +2,30 @@ import math
 
 import openmc
 
+from common_lib.rotary_assembly import RotaryAssemblyDesc
+
 SPACING_CONSTANT = 0.001
 
 
+def make_surface_plane(
+    rotary_assembly_desc: RotaryAssemblyDesc,
+    z0: float,
+    angle: float = math.pi / 2,
+    boundary_type: str = "transmission",
+):
+    if angle == 0.0:
+        return openmc.ZPlane(z0=z0, boundary_type=boundary_type)
+    r2 = 1 / math.tan(angle)
+    return openmc.model.ZConeOneSided(
+        z0=z0,
+        x0=rotary_assembly_desc.assembly_core_distance,
+        r2=r2,
+        boundary_type=boundary_type,
+    )
+
+
 def create_cylinder(
+    rotary_assembly_desc: RotaryAssemblyDesc,
     radius: float,
     thickness: float,
     distance_from_origin: float = 0,
@@ -16,12 +36,21 @@ def create_cylinder(
         -openmc.ZCylinder(
             r=radius, x0=distance_from_origin, y0=0, boundary_type=boundary_type
         )
-        & -openmc.ZPlane(z0=thickness / 2 + height, boundary_type=boundary_type)
-        & +openmc.ZPlane(z0=-thickness / 2 + height, boundary_type=boundary_type)
+        & -make_surface_plane(
+            rotary_assembly_desc,
+            z0=thickness / 2 + height,
+            boundary_type=boundary_type,
+        )
+        & +make_surface_plane(
+            rotary_assembly_desc,
+            z0=-thickness / 2 + height,
+            boundary_type=boundary_type,
+        )
     )
 
 
 def create_hollow_cylinder(
+    rotary_assembly_desc: RotaryAssemblyDesc,
     outer_radius: float,
     inner_radius,
     thickness: float,
@@ -31,8 +60,14 @@ def create_hollow_cylinder(
     return (
         -openmc.ZCylinder(r=outer_radius, x0=distance_from_origin, y0=0)
         & +openmc.ZCylinder(r=inner_radius, x0=distance_from_origin, y0=0)
-        & -openmc.ZPlane(z0=thickness / 2 + height)
-        & +openmc.ZPlane(z0=-thickness / 2 + height)
+        & -make_surface_plane(
+            rotary_assembly_desc,
+            z0=thickness / 2 + height,
+        )
+        & +make_surface_plane(
+            rotary_assembly_desc,
+            z0=-thickness / 2 + height,
+        )
     )
 
 

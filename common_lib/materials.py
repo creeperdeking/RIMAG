@@ -16,6 +16,10 @@ class AtomProportion(BaseModel):
     enrichment_target: Optional[str] = None
 
 
+class MonitoredNuclide(BaseModel):
+    nuclide: str
+
+
 class Material(BaseModel):
     composition: List[AtomProportion]
     density: float  # g/cm3
@@ -77,6 +81,7 @@ atoms: Dict[str, Atom] = {
     "Fe": Atom(name="Fe", atomic_weight=55.845),
     "Ca": Atom(name="Ca", atomic_weight=40.078),
     "K": Atom(name="K", atomic_weight=39.0983),
+    "Nb": Atom(name="Nb", atomic_weight=92.90638),
 }
 
 
@@ -213,6 +218,21 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
             density=6.52,
             color="gray",
         ),
+        "Zirconium 2": Material(
+            composition=[AtomProportion(atom=atoms["Zr"])],
+            density=6.52,
+            color="gray",
+        ),
+        "Tungsten 2": Material(
+            composition=[AtomProportion(atom=atoms["W"])],
+            density=19.25,
+            color="yellow",
+        ),
+        "Silicon 2": Material(
+            composition=[AtomProportion(atom=atoms["Si"])],
+            density=2.33,
+            color="lightblue",
+        ),
         "Aluminum": Material(
             composition=[AtomProportion(atom=atoms["Al"])],
             density=2.7,
@@ -287,6 +307,16 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
                 AtomProportion(atom=atoms["Fe"], proportion=0.00426),
             ],
             density=2.3,
+            color="gray",
+        ),
+        "Sodium": Material(
+            composition=[AtomProportion(atom=atoms["Na"])],
+            density=0.97,
+            color="lightblue",
+        ),
+        "Niobium": Material(
+            composition=[AtomProportion(atom=atoms["Nb"])],
+            density=8.57,
             color="gray",
         ),
         "Uranium Carbide": Material(
@@ -396,7 +426,8 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
     for name, mixed_material in material_mixed_def.items():
         if name in used_materials:
             mat_list = [
-                materials_dict[material_name] for material_name in mixed_material.materials
+                materials_dict[material_name]
+                for material_name in mixed_material.materials
             ]
             materials_dict[name] = openmc.Material.mix_materials(
                 mat_list, mixed_material.proportions, "wo"

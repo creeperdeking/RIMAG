@@ -56,13 +56,13 @@ def compute_core_desc(
 
 def define_photovoltaic_boundary_large(
     core_desc: CoreDesc,
-    assembly_core_distance: float,
-    rotary_assembly_radius: float,
+    rotary_assembly_desc: RotaryAssemblyDesc,
 ) -> openmc.Intersection:
     boundary_shape = create_cylinder(
-        rotary_assembly_radius,
+        rotary_assembly_desc,
+        rotary_assembly_desc.rotary_assembly_radius,
         core_desc.core_height,
-        distance_from_origin=assembly_core_distance,
+        distance_from_origin=rotary_assembly_desc.assembly_core_distance,
     ) & +openmc.ZCylinder(
         r=core_desc.outer_core_radius,
     )
@@ -74,6 +74,7 @@ def define_photovoltaic_boundary_small(
     rotary_assembly_desc: RotaryAssemblyDesc,
 ) -> openmc.Intersection:
     boundary_shape = create_cylinder(
+        rotary_assembly_desc,
         core_desc.core_radius,
         core_desc.core_height,
         distance_from_origin=rotary_assembly_desc.assembly_core_distance * 2,
@@ -108,13 +109,13 @@ def make_emitter_only_assembly(
 
 
 def make_outer_core_layers(
+    rotary_assembly_desc: RotaryAssemblyDesc,
     outer_core_layers: AssemblySections,
     core_desc: CoreDesc,
     emitter_boundary: openmc.Cell,
     materials_dict: Dict[str, openmc.Material],
     outer_empty_zone_boundary: openmc.Region,
 ) -> List[openmc.Cell]:
-
     cells = []
     current_layer_radius = core_desc.core_radius
     previous_layer_radius = current_layer_radius
@@ -125,6 +126,7 @@ def make_outer_core_layers(
         )
         cylinder = (
             create_cylinder(
+                rotary_assembly_desc,
                 current_layer_radius,
                 core_desc.core_height,
             )
