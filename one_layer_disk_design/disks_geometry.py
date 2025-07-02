@@ -74,7 +74,7 @@ def define_disks_geometry(
         boundary_shape=assemblies_boundary,
     )
 
-    geometry, universe, cells = define_geometry(
+    geometry, universe, tracked_cells = define_geometry(
         geometry_settings,
         materials_dict,
         photovoltaic_assembly_cells,
@@ -89,6 +89,6 @@ def define_disks_geometry(
     return (
         geometry,
         universe,
-        cells,
+        tracked_cells,
         disks,
     )

@@ -6,12 +6,6 @@ from common_lib.geometry import GeometrySettings
 from common_lib.light import radiative_heat_flux_between_plates
 from common_lib.materials import Material, MaterialChoice, heavy_metals_density
 from common_lib.rotary_assembly import RotaryAssemblyDesc
-from one_layer_disk_design.disks_assemblies import (
-    calculate_disks_emitter_volume,
-    calculate_disks_fuel_volume,
-    calculate_photovoltaic_volume_large,
-    calculate_photovoltaic_volume_small,
-)
 from one_layer_disk_design.disks import (
     DiskAssemblyLayer,
     calculate_disks_surface_in_core,
