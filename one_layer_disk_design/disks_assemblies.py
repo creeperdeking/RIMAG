@@ -40,97 +40,6 @@ def get_disks_boundaries(
     return assemblies_boundary
 
 
-def calculate_disks_fuel_volume(
-    drum_desc: RotaryAssemblyDesc,
-    core_desc: CoreDesc,
-    assembly_section: AssemblySections,
-    drums: List[DiskAssemblyLayer],
-) -> float:
-    fuel_thickness = 0
-    for assembly_part in assembly_section.parts:
-        if not assembly_part.is_emitter and assembly_part.is_fuel:
-            fuel_thickness += assembly_part.thickness
-            break
-
-    fuel_volume = (
-        calculate_disks_surface_in_core(drums, drum_desc, core_desc) * fuel_thickness
-    )
-
-    return fuel_volume
-
-
-def calculate_photovoltaic_volume_large(
-    drum_desc: RotaryAssemblyDesc,
-    core_desc: CoreDesc,
-    assembly_section: AssemblySections,
-    drums: List[DiskAssemblyLayer],
-) -> float:
-    # First, calculate the area of one photovoltaic layer
-    photovoltaic_area = (
-        drum_desc.rotary_assembly_radius**2 * math.pi
-        - circle_intersection_area(
-            core_desc.outer_core_radius,
-            drum_desc.rotary_assembly_radius,
-            drum_desc.assembly_core_distance,
-        )
-    )
-    photovoltaic_thickness = 0
-    for assembly_part in assembly_section.parts:
-        if assembly_part.is_photovoltaic:
-            photovoltaic_thickness += assembly_part.thickness
-
-    photovoltaic_volume = photovoltaic_area * photovoltaic_thickness * len(drums)
-
-    return photovoltaic_volume
-
-
-def calculate_photovoltaic_volume_small(
-    drum_desc: RotaryAssemblyDesc,
-    core_desc: CoreDesc,
-    assembly_section: AssemblySections,
-    drums: List[DiskAssemblyLayer],
-) -> float:
-    # First, calculate the area of one photovoltaic layer
-    photovoltaic_area = core_desc.core_radius**2 * math.pi
-    photovoltaic_thickness = 0
-    for assembly_part in assembly_section.parts:
-        if assembly_part.is_photovoltaic:
-            photovoltaic_thickness += assembly_part.thickness
-
-    photovoltaic_volume = photovoltaic_area * photovoltaic_thickness * len(drums)
-
-    return photovoltaic_volume
-
-
-def calculate_disks_emitter_volume(
-    assembly_section: AssemblySections,
-    emitter_assembly: AssemblySections,
-    layers: List[DiskAssemblyLayer],
-    drum_desc: RotaryAssemblyDesc,
-    core_desc: CoreDesc,
-) -> float:
-    emitter_thickness = 0
-    for assembly_part in emitter_assembly.parts:
-        if assembly_part.is_emitter:
-            emitter_thickness += assembly_part.thickness
-    emitters_per_layer = 0
-    for assembly_part in assembly_section.parts:
-        if assembly_part.is_emitter:
-            emitters_per_layer += 1
-
-    total_emitter_thickness = emitter_thickness * emitters_per_layer
-    emitter_volume = (
-        (
-            layers[0].radius ** 2 * math.pi
-            - ((layers[0].radius - core_desc.core_radius * 2) ** 2 * math.pi)
-        )
-        * total_emitter_thickness
-        * len(layers)
-    )
-
-    return emitter_volume
-
-
 def make_disks_cells(
     assembly_section: AssemblySections,
     core_desc: CoreDesc,
@@ -145,6 +54,7 @@ def make_disks_cells(
         for assembly_part in assembly_section.parts:
             if not assembly_part.is_emitter and assembly_part.material is not None:
                 shape = create_cylinder(
+                    rotary_assembly_desc,
                     disk.radius,
                     assembly_part.thickness,
                     distance_from_origin=rotary_assembly_desc.assembly_core_distance,
