@@ -292,44 +292,44 @@ materials_dict, materials_def, colors = make_materials(u235_enrichment, material
 geometry, universe, tracked_cells, drums = define_disks_geometry(
     geometry_settings, materials_dict
 )
-# geometry = stochastic_volume_calculation(
-#    [cell for _, cell in geometry.get_all_cells().items()],
-#    geometry,
-#    materials_dict,
-# )
+geometry = stochastic_volume_calculation(
+    [cell for _, cell in geometry.get_all_cells().items()],
+    geometry,
+    materials_dict,
+)
 
-# (
-#    heavy_metal_mass,
-#    emissive_surface,
-#    core_power,
-#    core_power_electric,
-#    radiative_flux,
-#    fuel_lifetime,
-# ) = calculate_disk_core_characteristics(
-#    rotary_assembly_desc,
-#    core_desc,
-#    tracked_cells[material_choice.fuel],
-#    drums,
-#    material_choice,
-#    materials_def,
-#    hot_temp,
-#    cold_temp,
-#    photovoltaic_efficiency,
-#    fuel_burnup,
-# )
+(
+    heavy_metal_mass,
+    emissive_surface,
+    core_power,
+    core_power_electric,
+    radiative_flux,
+    fuel_lifetime,
+) = calculate_disk_core_characteristics(
+    rotary_assembly_desc,
+    core_desc,
+    tracked_cells[material_choice.fuel],
+    drums,
+    material_choice,
+    materials_def,
+    hot_temp,
+    cold_temp,
+    photovoltaic_efficiency,
+    fuel_burnup,
+)
 
 
-# print_core_characteristics(
-#    heavy_metal_mass,
-#    emissive_surface,
-#    core_power,
-#    core_power_electric,
-#    geometry_settings.assembly_section_core,
-#    radiative_flux,
-#    tracked_cells[material_choice.fuel],
-#    fuel_lifetime,
-#    drums,
-# )
+print_core_characteristics(
+    heavy_metal_mass,
+    emissive_surface,
+    core_power,
+    core_power_electric,
+    geometry_settings.assembly_section_core,
+    radiative_flux,
+    tracked_cells[material_choice.fuel],
+    fuel_lifetime,
+    drums,
+)
 
 print(
     "reactor diameter",
@@ -349,7 +349,7 @@ if run_mode == "render":
         origin=(
             rotary_assembly_desc.assembly_core_distance,
             0,
-            -0.65,
+            (drums[0].radius * 2 + 10) / 2,
         ),
         geometry=geometry,
         colors=colors,
