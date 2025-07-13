@@ -10,14 +10,20 @@ SPACING_CONSTANT = 0.001
 def make_surface_plane(
     rotary_assembly_desc: RotaryAssemblyDesc,
     z0: float,
-    angle: float = 45,
+    angle: float = 0,
     boundary_type: str = "transmission",
 ):
+    complementary_angle = 90 - angle
+    z_scaling = 1 / math.sin(complementary_angle * math.pi / 180)
+    z_offset = rotary_assembly_desc.assembly_core_distance / math.tan(
+        complementary_angle * math.pi / 180
+    )
+    print("z_scaling", z_scaling)
     if angle == 0.0:
         return openmc.ZPlane(z0=z0, boundary_type=boundary_type)
-    r2 = 1 / math.tan(angle * math.pi / 360) ** 2
+    r2 = 1 / math.tan(angle * math.pi / 180) ** 2
     return openmc.model.ZConeOneSided(
-        z0=z0,
+        z0=z0 * z_scaling + z_offset,
         x0=rotary_assembly_desc.assembly_core_distance,
         r2=r2,
         boundary_type=boundary_type,
