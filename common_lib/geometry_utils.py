@@ -3,7 +3,7 @@ import math
 import openmc
 from pydantic import BaseModel
 
-from common_lib.assemblies import AssemblySections, calculate_assembly_thickness
+from common_lib.assemblies_types import AssemblySections
 from common_lib.geometry import GeometrySettings
 from common_lib.rotary_assembly import RotaryAssemblyDesc
 
@@ -37,11 +37,12 @@ def get_z_offset(angle: float, assembly_core_distance: float):
 
 
 def get_geometry_bounding_box(
-    geometry_settings: GeometrySettings, assembly_section: AssemblySections
+    geometry_settings: GeometrySettings,
+    assembly_section: AssemblySections,
+    assembly_thickness: float,
 ):
     # I need: assembly section thickness, assembly core distance, and angle
     outer_empty_zone_parameters = get_outer_empty_zone_parameters(geometry_settings)
-    assembly_section_thickness = calculate_assembly_thickness(assembly_section)
     z_scaling = get_z_scaling(geometry_settings.rotary_assembly_desc.angle)
     z_offset = get_z_offset(
         geometry_settings.rotary_assembly_desc.angle,
@@ -51,7 +52,7 @@ def get_geometry_bounding_box(
     lower_left_corner = (
         -outer_empty_zone_parameters.radius + outer_empty_zone_parameters.x0,
         -outer_empty_zone_parameters.radius,
-        -assembly_section_thickness - 1 + z_offset,
+        -assembly_thickness - 1 + z_offset,
     )
     upper_right_corner = (
         outer_empty_zone_parameters.radius,

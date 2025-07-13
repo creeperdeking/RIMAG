@@ -1,16 +1,15 @@
 from disk_design.disks_assemblies import calculate_disks_emitter_volume
-from disk_design.disks_assemblies import (
+
+from common_lib.assemblies_types import (
+    Assembly,
     AssemblySections,
     CoreDesc,
-    DiskAssemblyLayer,
-    RotaryAssemblyDesc,
+    EmitterPlaceholder,
 )
-
-from common_lib.assemblies import Assembly, EmitterPlaceholder
+from common_lib.rotary_assembly import RotaryAssemblyDesc
 
 
 def test_calculate_disks_emitter_volume():
-
     assert (
         calculate_disks_emitter_volume(
             assembly_section=AssemblySections(

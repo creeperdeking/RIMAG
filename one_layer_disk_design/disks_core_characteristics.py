@@ -1,8 +1,7 @@
 from typing import Dict, List
 
 import openmc
-from common_lib.assemblies import CoreDesc
-from common_lib.geometry import GeometrySettings
+from common_lib.assemblies_types import CoreDesc
 from common_lib.light import radiative_heat_flux_between_plates
 from common_lib.materials import Material, MaterialChoice, heavy_metals_density
 from common_lib.rotary_assembly import RotaryAssemblyDesc

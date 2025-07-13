@@ -1,13 +1,14 @@
-import math
 from typing import Dict, List, Optional
 
 import openmc
 from common_lib.assemblies import (
     create_outer_core_assembly_section,
+)
+from common_lib.assemblies_types import (
     AssemblySections,
     CoreDesc,
-    BoundariesGeometrySettings,
 )
+from common_lib.geometry import BoundariesGeometrySettings
 from common_lib.geometry_utils import (
     create_cylinder,
     create_hollow_cylinder,

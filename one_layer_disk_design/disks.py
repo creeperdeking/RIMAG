@@ -1,6 +1,6 @@
 from typing import List
 
-from common_lib.assemblies import CoreDesc
+from common_lib.assemblies_types import CoreDesc
 from common_lib.rotary_assembly import RotaryAssemblyDesc
 from pydantic import BaseModel
 from common_lib.geometry_utils import circle_intersection_area

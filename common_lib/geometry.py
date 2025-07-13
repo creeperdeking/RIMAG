@@ -5,12 +5,14 @@ import openmc.model
 from pydantic import BaseModel
 
 
+from common_lib.assemblies_types import (
+    AssemblySections,
+    CoreDesc,
+)
 from common_lib.assemblies import (
     define_photovoltaic_boundary_small,
     make_outer_core_layers,
     calculate_assembly_thickness,
-    AssemblySections,
-    CoreDesc,
 )
 from common_lib.geometry_utils import (
     create_cylinder,
