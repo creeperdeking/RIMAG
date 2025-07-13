@@ -16,6 +16,7 @@ from common_lib.geometry_utils import (
     create_cylinder,
     make_surface_plane,
     SPACING_CONSTANT,
+    get_outer_empty_zone_parameters,
 )
 from common_lib.materials import MaterialChoice
 from common_lib.rotary_assembly import RotaryAssemblyDesc
@@ -49,22 +50,6 @@ def get_base_geometry(
         geometry_settings.rotary_assembly_desc,
     )
     return assembly_thickness, core_boundary, photovoltaic_boundary
-
-
-class OuterEmptyZoneParameters(BaseModel):
-    radius: float
-    x0: float
-
-
-def get_outer_empty_zone_parameters(
-    geometry_settings: GeometrySettings,
-) -> OuterEmptyZoneParameters:
-    return OuterEmptyZoneParameters(
-        radius=geometry_settings.rotary_assembly_desc.rotary_assembly_radius
-        + geometry_settings.outer_core_layers_inside_shaft.parts[0].thickness / 2,
-        x0=geometry_settings.rotary_assembly_desc.assembly_core_distance
-        - geometry_settings.outer_core_layers_inside_shaft.parts[0].thickness / 2,
-    )
 
 
 def check_assembly_thickness_equal(

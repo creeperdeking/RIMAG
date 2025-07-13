@@ -8,12 +8,15 @@ from common_lib.assemblies import (
 from common_lib.geometry import (
     GeometrySettings,
     check_assembly_thickness_equal,
+)
+from common_lib.geometry_utils import (
+    SPACING_CONSTANT,
     get_outer_empty_zone_parameters,
 )
-from common_lib.geometry_utils import SPACING_CONSTANT
 from common_lib.materials import MaterialChoice, MonitoredNuclide, make_materials
 from common_lib.rotary_assembly import RotaryAssemblyDesc
 from common_lib.simlib import (
+    calculate_source_strength,
     make_sim_photon_from_cells,
     make_sim_settings,
     print_core_characteristics,
@@ -371,19 +374,19 @@ settings = make_sim_settings(
 
 
 if run_mode == "keff":
-    run_keff_sim(geometry, settings, materials_dict)
-    # run_sim_with_tallies(
-    #    geometry,
-    #    settings,
-    #    materials_dict,
-    #    tracked_cells[material_choice.photovoltaic],
-    #    materials_dict[material_choice.photovoltaic].density,
-    #    tracked_cells[material_choice.emitter],
-    #    calculate_source_strength(core_power),
-    #    batches,
-    #    particle_type=particle_type,
-    #    monitored_nuclide=monitored_nuclide,
-    # )
+    # run_keff_sim(geometry, settings, materials_dict)
+    run_sim_with_tallies(
+        geometry,
+        settings,
+        materials_dict,
+        tracked_cells[material_choice.photovoltaic],
+        materials_dict[material_choice.photovoltaic].density,
+        tracked_cells[material_choice.emitter],
+        calculate_source_strength(core_power),
+        batches,
+        particle_type=particle_type,
+        monitored_nuclide=monitored_nuclide,
+    )
 
 
 if run_mode == "keff_emitter_gamma_source":

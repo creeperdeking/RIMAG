@@ -1,27 +1,79 @@
 import math
 
 import openmc
+from pydantic import BaseModel
 
+from common_lib.assemblies import AssemblySections, calculate_assembly_thickness
+from common_lib.geometry import GeometrySettings
 from common_lib.rotary_assembly import RotaryAssemblyDesc
 
 SPACING_CONSTANT = 0.001
 
 
+class OuterEmptyZoneParameters(BaseModel):
+    radius: float
+    x0: float
+
+
+def get_outer_empty_zone_parameters(
+    geometry_settings: GeometrySettings,
+) -> OuterEmptyZoneParameters:
+    return OuterEmptyZoneParameters(
+        radius=geometry_settings.rotary_assembly_desc.rotary_assembly_radius
+        + geometry_settings.outer_core_layers_inside_shaft.parts[0].thickness / 2,
+        x0=geometry_settings.rotary_assembly_desc.assembly_core_distance
+        - geometry_settings.outer_core_layers_inside_shaft.parts[0].thickness / 2,
+    )
+
+
+def get_z_scaling(angle: float):
+    complementary_angle = 90 - angle
+    return 1 / math.sin(complementary_angle * math.pi / 180)
+
+
+def get_z_offset(angle: float, assembly_core_distance: float):
+    complementary_angle = 90 - angle
+    return assembly_core_distance / math.tan(complementary_angle * math.pi / 180)
+
+
+def get_geometry_bounding_box(
+    geometry_settings: GeometrySettings, assembly_section: AssemblySections
+):
+    # I need: assembly section thickness, assembly core distance, and angle
+    outer_empty_zone_parameters = get_outer_empty_zone_parameters(geometry_settings)
+    assembly_section_thickness = calculate_assembly_thickness(assembly_section)
+    z_scaling = get_z_scaling(geometry_settings.rotary_assembly_desc.angle)
+    z_offset = get_z_offset(
+        geometry_settings.rotary_assembly_desc.angle,
+        geometry_settings.rotary_assembly_desc.assembly_core_distance,
+    )
+
+    lower_left_corner = (
+        -outer_empty_zone_parameters.radius + outer_empty_zone_parameters.x0,
+        -outer_empty_zone_parameters.radius,
+        -assembly_section_thickness - 1 + z_offset,
+    )
+    upper_right_corner = (
+        outer_empty_zone_parameters.radius,
+        outer_empty_zone_parameters.x0,
+        outer_empty_zone_parameters.radius,
+    )
+
+    return lower_left_corner, upper_right_corner
+
+
 def make_surface_plane(
     rotary_assembly_desc: RotaryAssemblyDesc,
     z0: float,
-    angle: float = 0,
     boundary_type: str = "transmission",
 ):
-    complementary_angle = 90 - angle
-    z_scaling = 1 / math.sin(complementary_angle * math.pi / 180)
-    z_offset = rotary_assembly_desc.assembly_core_distance / math.tan(
-        complementary_angle * math.pi / 180
+    z_scaling = get_z_scaling(rotary_assembly_desc.angle)
+    z_offset = get_z_offset(
+        rotary_assembly_desc.angle, rotary_assembly_desc.assembly_core_distance
     )
-    print("z_scaling", z_scaling)
-    if angle == 0.0:
+    if rotary_assembly_desc.angle == 0.0:
         return openmc.ZPlane(z0=z0, boundary_type=boundary_type)
-    r2 = 1 / math.tan(angle * math.pi / 180) ** 2
+    r2 = 1 / math.tan(rotary_assembly_desc.angle * math.pi / 180) ** 2
     return openmc.model.ZConeOneSided(
         z0=z0 * z_scaling + z_offset,
         x0=rotary_assembly_desc.assembly_core_distance,
