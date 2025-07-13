@@ -15,12 +15,13 @@ def make_surface_plane(
 ):
     if angle == 0.0:
         return openmc.ZPlane(z0=z0, boundary_type=boundary_type)
-    r2 = 1 / math.tan(angle * math.pi / 180) ** 2
+    r2 = 1 / math.tan(angle * math.pi / 360) ** 2
     return openmc.model.ZConeOneSided(
         z0=z0,
         x0=rotary_assembly_desc.assembly_core_distance,
         r2=r2,
         boundary_type=boundary_type,
+        up=False,
     )
 
 

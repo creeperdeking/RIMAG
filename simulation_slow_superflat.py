@@ -54,7 +54,7 @@ u235_enrichment = 19.5
 fuel_burnup = 75  # MWd/kgHM
 
 # values are 'keff', 'render', 'depletion', 'keff_emitter_gamma_source' or 'none' (to just show the calculated core characteristics)
-run_mode = "keff"
+run_mode = "render"
 # values are 'generate', 'use' or 'no'
 weight_windows = "no"
 particle_type = "neutron"
@@ -341,11 +341,11 @@ print("core_height", core_desc.core_height)
 if run_mode == "render":
     render_geometry(
         universe,
-        universe_radius=(drums[0].radius * 2),
+        universe_radius=(drums[0].radius * 2) + 10,
         universe_height=drums[0].radius * 2
         + 10,  # core_desc.core_height * 1.5, # drums[0].radius * 2 + 10,
-        pixels=(2500, 2500),
-        basis="xy",
+        pixels=(5000, 5000),
+        basis="xz",
         origin=(
             rotary_assembly_desc.assembly_core_distance,
             0,
@@ -368,8 +368,6 @@ settings = make_sim_settings(
     geometry=geometry,
     particle_type=particle_type,
 )
-
-settings.track = [(1, 1, 8624)]
 
 
 if run_mode == "keff":
