@@ -6,12 +6,13 @@ import time
 from typing import List, Dict, Literal
 from tabulate import tabulate
 import scipy.constants as cst
-from common_lib.materials import MaterialChoice, MonitoredNuclide
+from common_lib.materials import MonitoredNuclide
 from common_lib.assemblies import calculate_assembly_thickness
 import numpy as np
-from common_lib.geometry import GeometrySettings
 import h5py
 import sys
+from common_lib.geometry_utils import get_geometry_bounding_box
+from common_lib.geometry_types import GeometrySettings
 
 
 def clean_directory():
@@ -253,14 +254,24 @@ def stochastic_volume_calculation(
     cells: List[openmc.Cell],
     geometry: openmc.Geometry,
     materials_dict: Dict[str, openmc.Material],
-    samples: int = 10000000,
+    geometry_settings: GeometrySettings,
+    assembly_thickness: float,
+    samples: int = 100000000,
 ):
     """
     Stochastic volume calculation, adds volume information to the cells
     """
     if any(c.volume is None for c in cells):
+        lower_left_corner, upper_right_corner = get_geometry_bounding_box(
+            geometry_settings, assembly_thickness
+        )
         # 1e5 samples per cell is usually enough for <1 % error
-        volcalc = openmc.VolumeCalculation(domains=cells, samples=samples)
+        volcalc = openmc.VolumeCalculation(
+            domains=cells,
+            samples=samples,
+            lower_left=lower_left_corner,
+            upper_right=upper_right_corner,
+        )
         settings = openmc.Settings()
         settings.volume_calculations = [volcalc]
         settings.run_mode = "volume"

@@ -7,21 +7,17 @@ from common_lib.assemblies_types import (
     AssemblySections,
     EmitterPlaceholder,
 )
-from common_lib.geometry import (
-    GeometrySettings,
-    check_assembly_thickness_equal,
-)
+from common_lib.geometry import check_assembly_thickness_equal
+from common_lib.geometry_types import GeometrySettings
 from common_lib.geometry_utils import (
     SPACING_CONSTANT,
     get_outer_empty_zone_parameters,
 )
-from common_lib.materials import MaterialChoice, MonitoredNuclide, make_materials
+from common_lib.materials import MaterialChoice, make_materials
 from common_lib.rotary_assembly import RotaryAssemblyDesc
 from common_lib.simlib import (
-    calculate_source_strength,
     make_sim_photon_from_cells,
     make_sim_settings,
-    print_core_characteristics,
     print_depletion_result,
     render_geometry,
     run_depletion_sim,
@@ -216,6 +212,7 @@ rotary_assembly_desc = RotaryAssemblyDesc(
     rotary_assembly_radius=get_disks_radius(
         assembly_core_distance, core_desc.core_radius
     ),
+    angle=5,
 )
 
 
@@ -297,11 +294,13 @@ materials_dict, materials_def, colors = make_materials(u235_enrichment, material
 geometry, universe, tracked_cells, drums = define_disks_geometry(
     geometry_settings, materials_dict
 )
-# geometry = stochastic_volume_calculation(
-#     [cell for _, cell in geometry.get_all_cells().items()],
-#     geometry,
-#     materials_dict,
-# )
+geometry = stochastic_volume_calculation(
+    [cell for _, cell in geometry.get_all_cells().items()],
+    geometry,
+    materials_dict,
+    geometry_settings,
+    assembly_thickness,
+)
 
 # (
 #     heavy_metal_mass,

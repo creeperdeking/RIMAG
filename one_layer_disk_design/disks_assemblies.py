@@ -8,7 +8,7 @@ from common_lib.assemblies_types import (
     AssemblySections,
     CoreDesc,
 )
-from common_lib.geometry import BoundariesGeometrySettings
+from common_lib.assemblies_types import BoundariesGeometrySettings
 from common_lib.geometry_utils import (
     create_cylinder,
     create_hollow_cylinder,

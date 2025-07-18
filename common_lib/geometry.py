@@ -20,20 +20,8 @@ from common_lib.geometry_utils import (
     SPACING_CONSTANT,
     get_outer_empty_zone_parameters,
 )
-from common_lib.materials import MaterialChoice
-from common_lib.rotary_assembly import RotaryAssemblyDesc
 
-
-class GeometrySettings(BaseModel):
-    core_desc: CoreDesc
-    rotary_assembly_desc: RotaryAssemblyDesc
-    material_choice: MaterialChoice
-    assembly_section_core: AssemblySections
-    outer_core_layers_inside_shaft: AssemblySections
-    outer_core_layers_between_disks: AssemblySections
-    double_assembly: bool = False
-    emitter_assembly: AssemblySections
-    photovoltaic_assembly: AssemblySections
+from common_lib.geometry_types import GeometrySettings
 
 
 def get_base_geometry(

@@ -4,7 +4,7 @@ import openmc
 from pydantic import BaseModel
 
 from common_lib.assemblies_types import AssemblySections
-from common_lib.geometry import GeometrySettings
+from common_lib.geometry_types import GeometrySettings
 from common_lib.rotary_assembly import RotaryAssemblyDesc
 
 SPACING_CONSTANT = 0.001
@@ -36,28 +36,40 @@ def get_z_offset(angle: float, assembly_core_distance: float):
     return assembly_core_distance / math.tan(complementary_angle * math.pi / 180)
 
 
+def get_geometry_base_height(
+    angle: float, outer_empty_zone_parameters: OuterEmptyZoneParameters
+):
+    complementary_angle = 90 - angle
+    return outer_empty_zone_parameters.radius / math.tan(
+        complementary_angle * math.pi / 180
+    )
+
+
 def get_geometry_bounding_box(
     geometry_settings: GeometrySettings,
-    assembly_section: AssemblySections,
     assembly_thickness: float,
 ):
     # I need: assembly section thickness, assembly core distance, and angle
     outer_empty_zone_parameters = get_outer_empty_zone_parameters(geometry_settings)
     z_scaling = get_z_scaling(geometry_settings.rotary_assembly_desc.angle)
+    base_height = get_geometry_base_height(
+        geometry_settings.rotary_assembly_desc.angle,
+        outer_empty_zone_parameters,
+    )
     z_offset = get_z_offset(
         geometry_settings.rotary_assembly_desc.angle,
         geometry_settings.rotary_assembly_desc.assembly_core_distance,
     )
 
     lower_left_corner = (
-        -outer_empty_zone_parameters.radius + outer_empty_zone_parameters.x0,
-        -outer_empty_zone_parameters.radius,
-        -assembly_thickness - 1 + z_offset,
+        -outer_empty_zone_parameters.radius + outer_empty_zone_parameters.x0 - 1,
+        -outer_empty_zone_parameters.radius - 1,
+        -assembly_thickness / 2 * z_scaling + z_offset - base_height - 1,
     )
     upper_right_corner = (
-        outer_empty_zone_parameters.radius,
-        outer_empty_zone_parameters.x0,
-        outer_empty_zone_parameters.radius,
+        outer_empty_zone_parameters.radius + outer_empty_zone_parameters.x0 + 1,
+        outer_empty_zone_parameters.radius + 1,
+        assembly_thickness / 2 * z_scaling + z_offset + base_height + 1,
     )
 
     return lower_left_corner, upper_right_corner
