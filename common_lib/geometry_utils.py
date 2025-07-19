@@ -3,7 +3,6 @@ import math
 import openmc
 from pydantic import BaseModel
 
-from common_lib.assemblies_types import AssemblySections
 from common_lib.geometry_types import GeometrySettings
 from common_lib.rotary_assembly import RotaryAssemblyDesc
 

@@ -72,27 +72,21 @@ WeightWindows = Literal["generate", "use", "no"]
 
 
 def make_ww_mesh(
-    window_radius: float,
-    window_height: float,
-    window_origin: tuple,
+    lower_left_corner: tuple,
+    upper_right_corner: tuple,
     cell_dimension: float = 20,
 ):
-    window_height = window_height * 1.1
     ww_mesh = openmc.RegularMesh()
-    dimension_x = int(window_radius * 2 / cell_dimension)
+    dimension_x = max(
+        int((upper_right_corner[0] - lower_left_corner[0]) / cell_dimension), 1
+    )
     dimension_y = dimension_x
-    dimension_z = max(int(window_height / cell_dimension), 1)
+    dimension_z = max(
+        int((upper_right_corner[2] - lower_left_corner[2]) / cell_dimension), 1
+    )
     ww_mesh.dimension = (dimension_x, dimension_y, dimension_z)
-    ww_mesh.lower_left = (
-        window_origin[0] - window_radius,
-        window_origin[1] - window_radius,
-        window_origin[2] - window_height / 2,
-    )
-    ww_mesh.upper_right = (
-        window_origin[0] + window_radius,
-        window_origin[1] + window_radius,
-        window_origin[2] + window_height / 2,
-    )
+    ww_mesh.lower_left = lower_left_corner
+    ww_mesh.upper_right = upper_right_corner
     return ww_mesh
 
 
@@ -116,9 +110,8 @@ def make_sim_settings(
     deterministic: bool = True,
     batches: int = 1500,
     weight_windows: WeightWindows = "no",
-    window_radius: float = 0,
-    window_height: float = 0,
-    window_origin: tuple = (0, 0, 0),
+    lower_left_corner: tuple = (0, 0, 0),
+    upper_right_corner: tuple = (0, 0, 0),
     geometry: openmc.Geometry = None,
     particle_type: Literal["neutron", "photon"] = "neutron",
 ):
@@ -149,7 +142,7 @@ def make_sim_settings(
         settings.seed = int(time.time())
 
     if weight_windows == "generate":
-        ww_mesh = make_ww_mesh(window_radius, window_height, window_origin)
+        ww_mesh = make_ww_mesh(lower_left_corner, upper_right_corner)
         check_ww_mesh_is_inside_geometry(ww_mesh, geometry)
 
         wwg = openmc.WeightWindowGenerator(
@@ -163,7 +156,7 @@ def make_sim_settings(
     elif weight_windows == "use":
         settings.weight_window_checkpoints = {
             "collision": True,
-            "surface": True,
+            "surface": False,
         }  # apply at both
         settings.weight_windows_on = True
         settings.weight_windows = openmc.hdf5_to_wws("weight_windows.h5")
@@ -180,7 +173,7 @@ def make_sim_photon_from_cells(
     batches: int = 1500,
 ):
     settings = make_sim_settings(
-        deterministic, batches, "no", 0, 0, (0, 0, 0), None, "photon"
+        deterministic, batches, "no", (0, 0, 0), (0, 0, 0), None, "photon"
     )
     sources = []
     for c in source_cells:

@@ -10,12 +10,13 @@ from common_lib.assemblies_types import (
 from common_lib.geometry import check_assembly_thickness_equal
 from common_lib.geometry_types import GeometrySettings
 from common_lib.geometry_utils import (
-    SPACING_CONSTANT,
+    get_geometry_bounding_box,
     get_outer_empty_zone_parameters,
 )
 from common_lib.materials import MaterialChoice, make_materials
 from common_lib.rotary_assembly import RotaryAssemblyDesc
 from common_lib.simlib import (
+    calculate_source_strength,
     make_sim_photon_from_cells,
     make_sim_settings,
     print_core_characteristics,
@@ -56,9 +57,9 @@ u235_enrichment = 19.5
 fuel_burnup = 75  # MWd/kgHM
 
 # values are 'keff', 'render', 'depletion', 'keff_emitter_gamma_source' or 'none' (to just show the calculated core characteristics)
-run_mode = ""
+run_mode = "keff"
 # values are 'generate', 'use' or 'no'
-weight_windows = "no"
+weight_windows = "use"
 particle_type = "neutron"
 # This will measure absoption only for this particular nuclide
 monitored_nuclide = None  # MonitoredNuclide(nuclide="Si30")
@@ -201,7 +202,7 @@ assembly_thickness = calculate_assembly_thickness(assembly_section_core)
 
 core_desc = compute_core_desc(
     core_radius=core_diameter / 2,
-    core_height=assembly_thickness + SPACING_CONSTANT * 2,
+    core_height=assembly_thickness,
     outer_core_assembly=outer_core_layers_inside_shaft,
 )
 assembly_core_distance = (
@@ -363,32 +364,35 @@ if run_mode == "render":
 
 outer_empty_zone_parameters = get_outer_empty_zone_parameters(geometry_settings)
 
+lower_left_corner, upper_right_corner = get_geometry_bounding_box(
+    geometry_settings, assembly_thickness
+)
+
 settings = make_sim_settings(
     deterministic=True,
     batches=batches,
     weight_windows=weight_windows,
-    window_radius=outer_empty_zone_parameters.radius,
-    window_height=core_desc.core_height,
-    window_origin=(outer_empty_zone_parameters.x0, 0, 0),
+    lower_left_corner=lower_left_corner,
+    upper_right_corner=upper_right_corner,
     geometry=geometry,
     particle_type=particle_type,
 )
 
 
 if run_mode == "keff":
-    run_keff_sim(geometry, settings, materials_dict)
-    # run_sim_with_tallies(
-    #     geometry,
-    #     settings,
-    #     materials_dict,
-    #     tracked_cells[material_choice.photovoltaic],
-    #     materials_dict[material_choice.photovoltaic].density,
-    #     tracked_cells[material_choice.emitter],
-    #     calculate_source_strength(core_power),
-    #     batches,
-    #     particle_type=particle_type,
-    #     monitored_nuclide=monitored_nuclide,
-    # )
+    # run_keff_sim(geometry, settings, materials_dict)
+    run_sim_with_tallies(
+        geometry,
+        settings,
+        materials_dict,
+        tracked_cells[material_choice.photovoltaic],
+        materials_dict[material_choice.photovoltaic].density,
+        tracked_cells[material_choice.emitter],
+        calculate_source_strength(core_power),
+        batches,
+        particle_type=particle_type,
+        monitored_nuclide=monitored_nuclide,
+    )
 
 
 if run_mode == "keff_emitter_gamma_source":
