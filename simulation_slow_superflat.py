@@ -18,6 +18,7 @@ from common_lib.rotary_assembly import RotaryAssemblyDesc
 from common_lib.simlib import (
     make_sim_photon_from_cells,
     make_sim_settings,
+    print_core_characteristics,
     print_depletion_result,
     render_geometry,
     run_depletion_sim,
@@ -55,7 +56,7 @@ u235_enrichment = 19.5
 fuel_burnup = 75  # MWd/kgHM
 
 # values are 'keff', 'render', 'depletion', 'keff_emitter_gamma_source' or 'none' (to just show the calculated core characteristics)
-run_mode = "keff"
+run_mode = ""
 # values are 'generate', 'use' or 'no'
 weight_windows = "no"
 particle_type = "neutron"
@@ -302,38 +303,38 @@ geometry = stochastic_volume_calculation(
     assembly_thickness,
 )
 
-# (
-#     heavy_metal_mass,
-#     emissive_surface,
-#     core_power,
-#     core_power_electric,
-#     radiative_flux,
-#     fuel_lifetime,
-# ) = calculate_disk_core_characteristics(
-#     rotary_assembly_desc,
-#     core_desc,
-#     tracked_cells[material_choice.fuel],
-#     drums,
-#     material_choice,
-#     materials_def,
-#     hot_temp,
-#     cold_temp,
-#     photovoltaic_efficiency,
-#     fuel_burnup,
-# )
+(
+    heavy_metal_mass,
+    emissive_surface,
+    core_power,
+    core_power_electric,
+    radiative_flux,
+    fuel_lifetime,
+) = calculate_disk_core_characteristics(
+    rotary_assembly_desc,
+    core_desc,
+    tracked_cells[material_choice.fuel],
+    drums,
+    material_choice,
+    materials_def,
+    hot_temp,
+    cold_temp,
+    photovoltaic_efficiency,
+    fuel_burnup,
+)
 
 
-# print_core_characteristics(
-#     heavy_metal_mass,
-#     emissive_surface,
-#     core_power,
-#     core_power_electric,
-#     geometry_settings.assembly_section_core,
-#     radiative_flux,
-#     tracked_cells[material_choice.fuel],
-#     fuel_lifetime,
-#     drums,
-# )
+print_core_characteristics(
+    heavy_metal_mass,
+    emissive_surface,
+    core_power,
+    core_power_electric,
+    geometry_settings.assembly_section_core,
+    radiative_flux,
+    tracked_cells[material_choice.fuel],
+    fuel_lifetime,
+    drums,
+)
 
 print(
     "reactor diameter",
