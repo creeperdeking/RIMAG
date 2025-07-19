@@ -38,8 +38,9 @@ class MixedMaterial(BaseModel):
 
 class MaterialChoice(BaseModel):
     moderator: str
-    neutron_shield: str
-    reflector: str
+    neutron_absorber: str
+    neutron_reflector: str
+    neutron_shield_moderator: str
     fuel: str
     moderator_cladding: str
     emitter: str
@@ -47,7 +48,6 @@ class MaterialChoice(BaseModel):
     void: str
     photovoltaic: str
     coolant: str
-    neutron_shield_2: str
     gamma_shield: str
 
 

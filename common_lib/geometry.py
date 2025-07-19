@@ -2,15 +2,13 @@ from typing import Dict
 
 import openmc
 import openmc.model
-from pydantic import BaseModel
 
 
 from common_lib.assemblies_types import (
     AssemblySections,
-    CoreDesc,
 )
 from common_lib.assemblies import (
-    define_photovoltaic_boundary_small,
+    define_photovoltaic_boundary_large,
     make_outer_core_layers,
     calculate_assembly_thickness,
 )
@@ -35,7 +33,7 @@ def get_base_geometry(
         geometry_settings.core_desc.core_radius,
         geometry_settings.core_desc.core_height,
     )
-    photovoltaic_boundary = define_photovoltaic_boundary_small(
+    photovoltaic_boundary = define_photovoltaic_boundary_large(
         geometry_settings.core_desc,
         geometry_settings.rotary_assembly_desc,
     )

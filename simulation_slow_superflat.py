@@ -23,7 +23,6 @@ from common_lib.simlib import (
     print_depletion_result,
     render_geometry,
     run_depletion_sim,
-    run_keff_sim,
     run_sim_with_tallies,
     stochastic_volume_calculation,
 )
@@ -43,8 +42,8 @@ fuel_emitter_gap = 0.1
 emitter_thickness = 0.5
 thickness_photovoltaic = 0.02
 
-hot_temp = 1250 + 273
-cold_temp = 1150 + 273
+hot_temp = 1250 + 273  # K
+cold_temp = 1150 + 273  # K
 
 photovoltaic_efficiency = 0.34
 
@@ -74,8 +73,8 @@ sanity_check_triso_fuel_volume(fuel_thickness, fuel_cladding_thickness * 2)
 
 material_choice = MaterialChoice(
     moderator="Light Water",
-    neutron_shield="Boron Carbide",
-    reflector="Graphite",
+    neutron_absorber="Boron Carbide",
+    neutron_reflector="Graphite",
     fuel="Uranium Oxy-Carbide",
     moderator_cladding="Zirconium",
     emitter="Graphite",
@@ -83,16 +82,21 @@ material_choice = MaterialChoice(
     void="Void",
     photovoltaic="Silicon",
     coolant="Light Water",
-    neutron_shield_2="Boron Carbide",
+    neutron_shield_moderator="Light Water",
     gamma_shield="Tungsten",
 )
 
 outer_core_layers_inside_shaft = AssemblySections(
     parts=[
-        Assembly(material=material_choice.reflector, thickness=reflector_thickness),
-        Assembly(material="Light Water", thickness=neutron_shield_moderator_thickness),
         Assembly(
-            material=material_choice.neutron_shield,
+            material=material_choice.neutron_reflector, thickness=reflector_thickness
+        ),
+        Assembly(
+            material=material_choice.neutron_shield_moderator,
+            thickness=neutron_shield_moderator_thickness,
+        ),
+        Assembly(
+            material=material_choice.neutron_absorber,
             thickness=neutron_shield_absorber_thickness,
         ),
         Assembly(
@@ -104,13 +108,15 @@ outer_core_layers_inside_shaft = AssemblySections(
 
 outer_core_layers_between_disks = AssemblySections(
     parts=[
-        Assembly(material=material_choice.reflector, thickness=reflector_thickness),
         Assembly(
-            material=material_choice.reflector,
+            material=material_choice.neutron_reflector, thickness=reflector_thickness
+        ),
+        Assembly(
+            material=material_choice.neutron_shield_moderator,
             thickness=neutron_shield_moderator_thickness,
         ),
         Assembly(
-            material=material_choice.neutron_shield_2,
+            material=material_choice.neutron_absorber,
             thickness=neutron_shield_absorber_thickness,
         ),
         Assembly(
