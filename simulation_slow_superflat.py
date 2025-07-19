@@ -212,7 +212,7 @@ rotary_assembly_desc = RotaryAssemblyDesc(
     rotary_assembly_radius=get_disks_radius(
         assembly_core_distance, core_desc.core_radius
     ),
-    angle=5,
+    angle=45,
 )
 
 

@@ -109,17 +109,7 @@ def define_geometry(
         )
     )
 
-    core_fill_region = core_boundary & ~assemblies_boundary
-    photovoltaic_fill_region = photovoltaic_boundary & ~assemblies_boundary
-
     ### Making Cells
-    core_fill_cell = openmc.Cell(name="core_fill")
-    core_fill_cell.region = core_fill_region
-    core_fill_cell.fill = materials_dict[geometry_settings.material_choice.reflector]
-
-    photovoltaic_fill_cell = openmc.Cell(name="photovoltaic_fill")
-    photovoltaic_fill_cell.region = photovoltaic_fill_region
-    photovoltaic_fill_cell.fill = materials_dict[geometry_settings.material_choice.void]
 
     outer_core_layers_inside_shaft_cells = make_outer_core_layers(
         geometry_settings.rotary_assembly_desc,
@@ -155,9 +145,7 @@ def define_geometry(
         *outer_core_layers_between_disks_cells,
         *photovoltaic_assembly_cells.values(),
         *emitter_assembly_cells.values(),
-        core_fill_cell,
         outer_empty_zone_cell,
-        photovoltaic_fill_cell,
     ]
 
     rotated_cells = []

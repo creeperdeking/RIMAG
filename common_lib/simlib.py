@@ -256,7 +256,7 @@ def stochastic_volume_calculation(
     materials_dict: Dict[str, openmc.Material],
     geometry_settings: GeometrySettings,
     assembly_thickness: float,
-    samples: int = 100000000,
+    samples: int = 700000000,
 ):
     """
     Stochastic volume calculation, adds volume information to the cells
