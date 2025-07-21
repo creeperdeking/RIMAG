@@ -47,9 +47,9 @@ cold_temp = 1150 + 273  # K
 
 photovoltaic_efficiency = 0.34
 
-reflector_thickness = 40
+reflector_thickness = 30
 neutron_shield_moderator_thickness = 70
-neutron_shield_absorber_thickness = 15
+neutron_shield_absorber_thickness = 25
 gamma_shield_thickness = 10
 
 u235_enrichment = 19.5
@@ -399,7 +399,6 @@ if run_mode == "keff":
         particle_type=particle_type,
         monitored_nuclide=monitored_nuclide,
     )
-
 
 if run_mode == "keff_emitter_gamma_source":
     settings = make_sim_photon_from_cells(
