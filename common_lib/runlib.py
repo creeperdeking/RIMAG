@@ -62,6 +62,9 @@ def start_program(
     emitter_gamma_energy_MeV: float,
     print_characteristics=True,
 ):
+    ### Calculate core characteristics
+
+    core_characteristics = None
     if run_mode != "keff_notallies" and run_mode != "render" or print_characteristics:
         geometry = stochastic_volume_calculation(
             [cell for _, cell in geometry.get_all_cells().items()],
@@ -71,9 +74,9 @@ def start_program(
             assembly_thickness,
         )
 
-    ### Calculate core characteristics
-    if print_characteristics:
         core_characteristics = calculate_core_characteristics()
+
+    if print_characteristics:
         print_core_characteristics(core_characteristics)
 
     lower_left_corner, upper_right_corner = get_geometry_bounding_box(
