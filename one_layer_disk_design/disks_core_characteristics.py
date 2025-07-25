@@ -1,6 +1,7 @@
 from typing import Dict
 
 import openmc
+from pydantic import BaseModel
 
 from common_lib.light import radiative_heat_flux_between_plates
 from common_lib.materials import Material, MaterialChoice, heavy_metals_density
@@ -23,19 +24,33 @@ def sanity_check_triso_fuel_volume(hm_volume: float, graphite_volume: float):
         )
 
 
+class CoreCharacteristics(BaseModel):
+    heavy_metal_mass: float
+    fuel_emissive_area: float
+    core_power: float
+    core_power_electric: float
+    radiative_flux: float
+    fuel_lifetime: float
+    photovoltaic_power: float
+    photovoltaic_area: float
+    photovoltaic_power_density: float
+
+
 def calculate_disk_core_characteristics(
-    fuel_cell: openmc.Cell,
+    tracked_cells: Dict[str, openmc.Cell],
     material_choice: MaterialChoice,
     materials_def: Dict[str, Material],
     hot_temp: float,
     cold_temp: float,
     photovoltaic_efficiency: float,
     photovoltaic_power_density: float,
-    photovoltaic_cell: openmc.Cell,
     photovoltaic_thickness: float,
     fuel_burnup: float,
     fuel_thickness: float,
-):
+) -> CoreCharacteristics:
+    fuel_cell = tracked_cells[material_choice.fuel]
+    photovoltaic_cell = tracked_cells[material_choice.photovoltaic]
+
     # multiply by 2 because each section has two faces exposed to the fuel
     fuel_emissive_area = (fuel_cell.volume / fuel_thickness) * 2
 
@@ -50,7 +65,9 @@ def calculate_disk_core_characteristics(
 
     if core_power_electric < photovoltaic_power:
         print(
-            f"❌ The temperature differential between the emitter surface and the fuel is insufficient, thus the calculated core power of {core_power_electric} Watts is inferior to the calculated photovoltaic power of {photovoltaic_power} W"
+            f"❌ The temperature differential between the emitter surface and the fuel is \
+                insufficient, thus the calculated core power of {round(core_power_electric)} \
+                Watts is inferior to the calculated photovoltaic power of {round(photovoltaic_power)} W"
         )
 
     heavy_metal_mass = (
@@ -63,13 +80,14 @@ def calculate_disk_core_characteristics(
 
     fuel_lifetime = energy_in_fuel / (core_power / 1e6 * 3600 * 24)
 
-    return (
-        heavy_metal_mass,
-        fuel_emissive_area,
-        core_power,
-        core_power_electric,
-        radiative_flux,
-        fuel_lifetime,
-        photovoltaic_power,
-        photovoltaic_area,
+    return CoreCharacteristics(
+        heavy_metal_mass=heavy_metal_mass,
+        fuel_emissive_area=fuel_emissive_area,
+        core_power=core_power,
+        core_power_electric=core_power_electric,
+        radiative_flux=radiative_flux,
+        fuel_lifetime=fuel_lifetime,
+        photovoltaic_power=photovoltaic_power,
+        photovoltaic_area=photovoltaic_area,
+        photovoltaic_power_density=photovoltaic_power_density,
     )

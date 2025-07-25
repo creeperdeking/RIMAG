@@ -13,6 +13,7 @@ import h5py
 import sys
 from common_lib.geometry_utils import get_geometry_bounding_box
 from common_lib.geometry_types import GeometrySettings
+from one_layer_disk_design.disks_core_characteristics import CoreCharacteristics
 
 
 def clean_directory():
@@ -699,48 +700,47 @@ def run_sim_with_tallies(
 
 
 def print_core_characteristics(
-    heavy_metal_mass,
-    emissive_surface,
-    core_power,
-    core_power_electric,
-    photovoltaic_power,
-    photovoltaic_area,
-    photovoltaic_power_density,
-    assembly_section_core,
-    radiative_flux,
-    fuel_cell,
-    fuel_lifetime,
-    disks: List = None,
+    core_characteristics: CoreCharacteristics,
 ):
     print(
-        "thicc: ",
-        calculate_assembly_thickness(assembly_section_core),
+        "emissive_surface",
+        round(core_characteristics.fuel_emissive_area / 1e4, 2),
+        "m2",
     )
-    if disks is not None:
-        print("disks radius", disks[0].radius, "m")
-    print("emissive_surface", round(emissive_surface / 1e4, 2), "m2")
     print(
         "Radiative flux",
         round(
-            radiative_flux,
+            core_characteristics.radiative_flux,
         ),
         "W/m2",
     )
-    print("core power", round(core_power / 1e6, 2), "MW")
-    print("core power electric", round(core_power_electric / 1e6, 2), "MW")
-    print("photovoltaic power", round(photovoltaic_power / 1e6, 2), "MW")
-
+    print("core power", round(core_characteristics.core_power / 1e6, 2), "MW")
     print(
-        "photovoltaic power density", round(photovoltaic_power_density * 1e4, 2), "W/m2"
+        "core power electric",
+        round(core_characteristics.core_power_electric / 1e6, 2),
+        "MW",
+    )
+    print(
+        "photovoltaic power",
+        round(core_characteristics.photovoltaic_power / 1e6, 2),
+        "MW",
     )
 
-    print("photovoltaic area", round(photovoltaic_area / 1e4, 2), "m2")
+    print(
+        "photovoltaic power density",
+        round(core_characteristics.photovoltaic_power_density * 1e4, 2),
+        "W/m2",
+    )
 
-    print("fuel volume", fuel_cell.volume, "cm3")
+    print(
+        "photovoltaic area",
+        round(core_characteristics.photovoltaic_area / 1e4, 2),
+        "m2",
+    )
 
     print(
         "heavy metal mass",
-        heavy_metal_mass,
+        core_characteristics.heavy_metal_mass,
         "kg",
     )
-    print("fuel lifetime", fuel_lifetime, "years")
+    print("fuel lifetime", core_characteristics.fuel_lifetime, "years")

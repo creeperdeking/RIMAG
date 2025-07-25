@@ -133,3 +133,9 @@ def create_outer_core_assembly_section(
 
 def calculate_assembly_thickness(assembly_section: AssemblySections) -> float:
     return sum(part.thickness for part in assembly_section.parts)
+
+
+# The assembly parts will be repeated but flipped
+def mirror_assembly(assembly: AssemblySections) -> AssemblySections:
+    flipped_parts = assembly.parts.reverse()
+    return AssemblySections(parts=assembly.parts.extend(flipped_parts))

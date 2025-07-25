@@ -387,7 +387,7 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
         ),
     }
 
-    materials_dict = {}
+    materials_dict: Dict[str, openmc.Material] = {}
 
     used_materials = set(material_choice.model_dump().values())
     for name, material in material_mixed_def.items():

@@ -1,6 +1,7 @@
 from typing import Dict
 
 import openmc
+from pydantic import BaseModel
 
 from common_lib.assemblies import make_emitter_only_assembly
 from common_lib.geometry import GeometrySettings, define_geometry, get_base_geometry
@@ -10,6 +11,35 @@ from one_layer_disk_design.disks_assemblies import (
     get_disks_boundaries,
 )
 from one_layer_disk_design.disks import make_disks
+from one_layer_disk_design.disks_core_characteristics import (
+    sanity_check_triso_fuel_volume,
+)
+
+
+class DiskGeometryParams(BaseModel):
+    core_diameter: float
+    moderator_cladding_thickness: float
+    fuel_thickness: float
+    fuel_cladding_thickness: float
+    moderator_thickness: float
+    fuel_emitter_gap: float
+    emitter_thickness: float
+    thickness_photovoltaic: float
+
+    reflector_thickness: float
+    neutron_shield_moderator_thickness: float
+    neutron_shield_absorber_thickness: float
+    gamma_shield_thickness: float
+
+    frustum_pitch: float  # degrees
+
+
+def make_disk_geometry_params(disk_geometry_params: DiskGeometryParams):
+    sanity_check_triso_fuel_volume(
+        disk_geometry_params.fuel_thickness,
+        disk_geometry_params.fuel_cladding_thickness * 2,
+    )
+    return disk_geometry_params
 
 
 def define_disks_geometry(
