@@ -1,3 +1,4 @@
+from copy import copy
 from typing import List, Dict
 import openmc
 
@@ -137,5 +138,9 @@ def calculate_assembly_thickness(assembly_section: AssemblySections) -> float:
 
 # The assembly parts will be repeated but flipped
 def mirror_assembly(assembly: AssemblySections) -> AssemblySections:
-    flipped_parts = assembly.parts.reverse()
-    return AssemblySections(parts=assembly.parts.extend(flipped_parts))
+    flipped_parts = copy(assembly.parts)
+    flipped_parts.reverse()
+    new_assembly = []
+    new_assembly.extend(assembly.parts)
+    new_assembly.extend(flipped_parts)
+    return AssemblySections(parts=new_assembly)

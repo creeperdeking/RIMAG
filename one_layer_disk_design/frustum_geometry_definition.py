@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from common_lib.assemblies import (
     calculate_assembly_thickness,
     compute_core_desc,
+    mirror_assembly,
 )
 import openmc
 from common_lib.assemblies_types import (
@@ -112,49 +113,34 @@ def make_simulation_geometry(
         thickness=calculate_assembly_thickness(emitter_assembly),
     )
 
-    assembly_section_core = AssemblySections(
-        parts=[
-            ### Moderator
-            Assembly(
-                material=material_choice.moderator,
-                thickness=disk_geometry_params.moderator_thickness / 2,
-            ),
-            ### Cladding
-            Assembly(
-                material=material_choice.moderator_cladding,
-                thickness=disk_geometry_params.moderator_cladding_thickness,
-            ),
-            ### Emitter Assembly
-            emitter_assembly_placeholder,
-            ### Fuel Cladding
-            Assembly(
-                material=material_choice.fuel_cladding,
-                thickness=disk_geometry_params.fuel_cladding_thickness,
-            ),
-            ### Fuel
-            Assembly(
-                material=material_choice.fuel,
-                thickness=disk_geometry_params.fuel_thickness,
-                is_fuel=True,
-            ),
-            ### Fuel Cladding
-            Assembly(
-                material=material_choice.fuel_cladding,
-                thickness=disk_geometry_params.fuel_cladding_thickness,
-            ),
-            ### Emitter Assembly
-            emitter_assembly_placeholder,
-            ### Cladding
-            Assembly(
-                material=material_choice.moderator_cladding,
-                thickness=disk_geometry_params.moderator_cladding_thickness,
-            ),
-            ### Moderator
-            Assembly(
-                material=material_choice.moderator,
-                thickness=disk_geometry_params.moderator_thickness / 2,
-            ),
-        ],
+    assembly_section_core = mirror_assembly(
+        AssemblySections(
+            parts=[
+                ### Moderator
+                Assembly(
+                    material=material_choice.moderator,
+                    thickness=disk_geometry_params.moderator_thickness / 2,
+                ),
+                ### Cladding
+                Assembly(
+                    material=material_choice.moderator_cladding,
+                    thickness=disk_geometry_params.moderator_cladding_thickness,
+                ),
+                ### Emitter Assembly
+                emitter_assembly_placeholder,
+                ### Fuel Cladding
+                Assembly(
+                    material=material_choice.fuel_cladding,
+                    thickness=disk_geometry_params.fuel_cladding_thickness,
+                ),
+                ### Fuel
+                Assembly(
+                    material=material_choice.fuel,
+                    thickness=disk_geometry_params.fuel_thickness / 2,
+                    is_fuel=True,
+                ),
+            ],
+        )
     )
 
     assembly_thickness = calculate_assembly_thickness(assembly_section_core)
@@ -177,64 +163,45 @@ def make_simulation_geometry(
         frustum_pitch=disk_geometry_params.frustum_pitch,
     )
 
-    assembly_section_photovoltaic = AssemblySections(
-        parts=[
-            ### Water
-            Assembly(
-                material=material_choice.coolant,
-                thickness=(
-                    disk_geometry_params.moderator_thickness
-                    - disk_geometry_params.thickness_photovoltaic * 2
-                    + disk_geometry_params.moderator_cladding_thickness * 2
-                )
-                / 2,
-            ),
-            ### Photovoltaic
-            Assembly(
-                material=material_choice.photovoltaic,
-                thickness=disk_geometry_params.thickness_photovoltaic,
-                is_photovoltaic=True,
-            ),
-            ### Emitter Assembly
-            emitter_assembly_placeholder,
-            ### Photovoltaic
-            Assembly(
-                material=material_choice.photovoltaic,
-                thickness=disk_geometry_params.thickness_photovoltaic,
-                is_photovoltaic=True,
-            ),
-            ### Water
-            Assembly(
-                material=material_choice.coolant,
-                thickness=disk_geometry_params.fuel_thickness
-                - disk_geometry_params.thickness_photovoltaic * 2
-                + disk_geometry_params.fuel_cladding_thickness * 2,
-            ),
-            ### Photovoltaic
-            Assembly(
-                material=material_choice.photovoltaic,
-                thickness=disk_geometry_params.thickness_photovoltaic,
-                is_photovoltaic=True,
-            ),  # is_fuel is set to True to make the volume calculation work
-            ### Emitter Assembly
-            emitter_assembly_placeholder,
-            ### Photovoltaic
-            Assembly(
-                material=material_choice.photovoltaic,
-                thickness=disk_geometry_params.thickness_photovoltaic,
-                is_photovoltaic=True,
-            ),  # is_fuel is set to True to make the volume calculation work
-            ### Water
-            Assembly(
-                material=material_choice.coolant,
-                thickness=(
-                    disk_geometry_params.moderator_thickness
-                    - disk_geometry_params.thickness_photovoltaic * 2
-                    + disk_geometry_params.moderator_cladding_thickness * 2
-                )
-                / 2,
-            ),
-        ]
+    assembly_section_photovoltaic = mirror_assembly(
+        AssemblySections(
+            parts=[
+                ### Water
+                Assembly(
+                    material=material_choice.coolant,
+                    thickness=(
+                        disk_geometry_params.moderator_thickness
+                        - disk_geometry_params.thickness_photovoltaic * 2
+                        + disk_geometry_params.moderator_cladding_thickness * 2
+                    )
+                    / 2,
+                ),
+                ### Photovoltaic
+                Assembly(
+                    material=material_choice.photovoltaic,
+                    thickness=disk_geometry_params.thickness_photovoltaic,
+                    is_photovoltaic=True,
+                ),
+                ### Emitter Assembly
+                emitter_assembly_placeholder,
+                ### Photovoltaic
+                Assembly(
+                    material=material_choice.photovoltaic,
+                    thickness=disk_geometry_params.thickness_photovoltaic,
+                    is_photovoltaic=True,
+                ),
+                ### Water
+                Assembly(
+                    material=material_choice.coolant,
+                    thickness=(
+                        disk_geometry_params.fuel_thickness
+                        - disk_geometry_params.thickness_photovoltaic * 2
+                        + disk_geometry_params.fuel_cladding_thickness * 2
+                    )
+                    / 2,
+                ),
+            ]
+        )
     )
 
     geometry_settings = GeometrySettings(
