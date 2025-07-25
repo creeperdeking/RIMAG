@@ -703,6 +703,9 @@ def print_core_characteristics(
     emissive_surface,
     core_power,
     core_power_electric,
+    photovoltaic_power,
+    photovoltaic_area,
+    photovoltaic_power_density,
     assembly_section_core,
     radiative_flux,
     fuel_cell,
@@ -715,7 +718,7 @@ def print_core_characteristics(
     )
     if disks is not None:
         print("disks radius", disks[0].radius, "m")
-    print("emissive_surface", round(emissive_surface, 2), "m2")
+    print("emissive_surface", round(emissive_surface / 1e4, 2), "m2")
     print(
         "Radiative flux",
         round(
@@ -725,6 +728,13 @@ def print_core_characteristics(
     )
     print("core power", round(core_power / 1e6, 2), "MW")
     print("core power electric", round(core_power_electric / 1e6, 2), "MW")
+    print("photovoltaic power", round(photovoltaic_power / 1e6, 2), "MW")
+
+    print(
+        "photovoltaic power density", round(photovoltaic_power_density * 1e4, 2), "W/m2"
+    )
+
+    print("photovoltaic area", round(photovoltaic_area / 1e4, 2), "m2")
 
     print("fuel volume", fuel_cell.volume, "cm3")
 

@@ -155,12 +155,14 @@ def define_geometry(
 
     universe = openmc.Universe(cells=rotated_cells)
 
+    tracked_cells = {
+        **core_assembly_cells,
+        **photovoltaic_assembly_cells,
+        **emitter_assembly_cells,
+    }
+
     return (
         openmc.Geometry(universe, merge_surfaces=True, surface_precision=2),
         universe,
-        {
-            **core_assembly_cells,
-            **photovoltaic_assembly_cells,
-            **emitter_assembly_cells,
-        },
+        tracked_cells,
     )

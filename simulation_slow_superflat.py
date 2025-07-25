@@ -33,7 +33,7 @@ from one_layer_disk_design.disks_core_characteristics import (
 )
 from one_layer_disk_design.disks_geometry import define_disks_geometry
 
-core_diameter = 80
+core_diameter = 115
 moderator_cladding_thickness = 0.05
 fuel_thickness = 0.12
 fuel_cladding_thickness = (1 - fuel_thickness) / 2
@@ -45,7 +45,8 @@ thickness_photovoltaic = 0.02
 hot_temp = 1250 + 273  # K
 cold_temp = 1150 + 273  # K
 
-photovoltaic_efficiency = 0.34
+photovoltaic_efficiency = 0.40
+photovoltaic_power_density = 0.61  # W/cm2
 
 reflector_thickness = 30
 neutron_shield_moderator_thickness = 70
@@ -56,7 +57,7 @@ u235_enrichment = 19.5
 fuel_burnup = 75  # MWd/kgHM
 
 # values are 'keff', 'render', 'depletion', 'keff_emitter_gamma_source' or 'none' (to just show the calculated core characteristics)
-run_mode = "keff"
+run_mode = ""
 # values are 'generate', 'use' or 'no'
 weight_windows = "use"
 particle_type = "neutron"
@@ -220,7 +221,7 @@ rotary_assembly_desc = RotaryAssemblyDesc(
     rotary_assembly_radius=get_disks_radius(
         assembly_core_distance, core_desc.core_radius
     ),
-    angle=45,
+    frustum_pitch=45,
 )
 
 
@@ -241,7 +242,7 @@ assembly_section_photovoltaic = AssemblySections(
             material=material_choice.photovoltaic,
             thickness=thickness_photovoltaic,
             is_photovoltaic=True,
-        ),  # is_fuel is set to True to make the volume calculation work
+        ),
         ### Emitter Assembly
         emitter_assembly_placeholder,
         ### Photovoltaic
@@ -249,7 +250,7 @@ assembly_section_photovoltaic = AssemblySections(
             material=material_choice.photovoltaic,
             thickness=thickness_photovoltaic,
             is_photovoltaic=True,
-        ),  # is_fuel is set to True to make the volume calculation work
+        ),
         ### Water
         Assembly(
             material=material_choice.coolant,
@@ -302,6 +303,7 @@ materials_dict, materials_def, colors = make_materials(u235_enrichment, material
 geometry, universe, tracked_cells, drums = define_disks_geometry(
     geometry_settings, materials_dict
 )
+
 geometry = stochastic_volume_calculation(
     [cell for _, cell in geometry.get_all_cells().items()],
     geometry,
@@ -317,25 +319,30 @@ geometry = stochastic_volume_calculation(
     core_power_electric,
     radiative_flux,
     fuel_lifetime,
+    photovoltaic_power,
+    photovoltaic_area,
 ) = calculate_disk_core_characteristics(
-    rotary_assembly_desc,
-    core_desc,
     tracked_cells[material_choice.fuel],
-    drums,
     material_choice,
     materials_def,
     hot_temp,
     cold_temp,
     photovoltaic_efficiency,
+    photovoltaic_power_density,
+    tracked_cells[material_choice.photovoltaic],
+    thickness_photovoltaic,
     fuel_burnup,
+    fuel_thickness,
 )
-
 
 print_core_characteristics(
     heavy_metal_mass,
     emissive_surface,
     core_power,
     core_power_electric,
+    photovoltaic_power,
+    photovoltaic_area,
+    photovoltaic_power_density,
     geometry_settings.assembly_section_core,
     radiative_flux,
     tracked_cells[material_choice.fuel],

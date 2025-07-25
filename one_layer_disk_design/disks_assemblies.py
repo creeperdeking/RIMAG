@@ -12,11 +12,9 @@ from common_lib.assemblies_types import BoundariesGeometrySettings
 from common_lib.geometry_utils import (
     create_cylinder,
     create_hollow_cylinder,
-    circle_intersection_area,
 )
 from common_lib.rotary_assembly import RotaryAssemblyDesc
 from one_layer_disk_design.disks import (
-    calculate_disks_surface_in_core,
     DiskAssemblyLayer,
 )
 

@@ -1,14 +1,9 @@
-from typing import Dict, List
+from typing import Dict
 
 import openmc
-from common_lib.assemblies_types import CoreDesc
+
 from common_lib.light import radiative_heat_flux_between_plates
 from common_lib.materials import Material, MaterialChoice, heavy_metals_density
-from common_lib.rotary_assembly import RotaryAssemblyDesc
-from one_layer_disk_design.disks import (
-    DiskAssemblyLayer,
-    calculate_disks_surface_in_core,
-)
 
 
 def sanity_check_triso_fuel_volume(hm_volume: float, graphite_volume: float):
@@ -29,26 +24,34 @@ def sanity_check_triso_fuel_volume(hm_volume: float, graphite_volume: float):
 
 
 def calculate_disk_core_characteristics(
-    rotary_assembly_desc: RotaryAssemblyDesc,
-    core_desc: CoreDesc,
     fuel_cell: openmc.Cell,
-    disks: List[DiskAssemblyLayer],
     material_choice: MaterialChoice,
     materials_def: Dict[str, Material],
     hot_temp: float,
     cold_temp: float,
     photovoltaic_efficiency: float,
+    photovoltaic_power_density: float,
+    photovoltaic_cell: openmc.Cell,
+    photovoltaic_thickness: float,
     fuel_burnup: float,
+    fuel_thickness: float,
 ):
-    # multiply by 2 because each drum section has two faces exposed to the fuel
-    emissive_surface = (
-        calculate_disks_surface_in_core(disks, rotary_assembly_desc, core_desc) / 10000
-    ) * 2
+    # multiply by 2 because each section has two faces exposed to the fuel
+    fuel_emissive_area = (fuel_cell.volume / fuel_thickness) * 2
+
+    photovoltaic_area = photovoltaic_cell.volume / photovoltaic_thickness
+
+    photovoltaic_power = photovoltaic_area * photovoltaic_power_density
 
     radiative_flux = radiative_heat_flux_between_plates(hot_temp, cold_temp, 0.9, 0.9)
 
-    core_power = radiative_flux * emissive_surface
+    core_power = radiative_flux * fuel_emissive_area / 10000
     core_power_electric = core_power * photovoltaic_efficiency
+
+    if core_power_electric < photovoltaic_power:
+        print(
+            f"❌ The temperature differential between the emitter surface and the fuel is insufficient, thus the calculated core power of {core_power_electric} Watts is inferior to the calculated photovoltaic power of {photovoltaic_power} W"
+        )
 
     heavy_metal_mass = (
         fuel_cell.volume
@@ -62,9 +65,11 @@ def calculate_disk_core_characteristics(
 
     return (
         heavy_metal_mass,
-        emissive_surface,
+        fuel_emissive_area,
         core_power,
         core_power_electric,
         radiative_flux,
         fuel_lifetime,
+        photovoltaic_power,
+        photovoltaic_area,
     )

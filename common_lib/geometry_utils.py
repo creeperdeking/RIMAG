@@ -50,13 +50,13 @@ def get_geometry_bounding_box(
 ):
     # I need: assembly section thickness, assembly core distance, and angle
     outer_empty_zone_parameters = get_outer_empty_zone_parameters(geometry_settings)
-    z_scaling = get_z_scaling(geometry_settings.rotary_assembly_desc.angle)
+    z_scaling = get_z_scaling(geometry_settings.rotary_assembly_desc.frustum_pitch)
     base_height = get_geometry_base_height(
-        geometry_settings.rotary_assembly_desc.angle,
+        geometry_settings.rotary_assembly_desc.frustum_pitch,
         outer_empty_zone_parameters,
     )
     z_offset = get_z_offset(
-        geometry_settings.rotary_assembly_desc.angle,
+        geometry_settings.rotary_assembly_desc.frustum_pitch,
         geometry_settings.rotary_assembly_desc.assembly_core_distance,
     )
 
@@ -79,13 +79,13 @@ def make_surface_plane(
     z0: float,
     boundary_type: str = "transmission",
 ):
-    z_scaling = get_z_scaling(rotary_assembly_desc.angle)
+    z_scaling = get_z_scaling(rotary_assembly_desc.frustum_pitch)
     z_offset = get_z_offset(
-        rotary_assembly_desc.angle, rotary_assembly_desc.assembly_core_distance
+        rotary_assembly_desc.frustum_pitch, rotary_assembly_desc.assembly_core_distance
     )
-    if rotary_assembly_desc.angle == 0.0:
+    if rotary_assembly_desc.frustum_pitch == 0.0:
         return openmc.ZPlane(z0=z0, boundary_type=boundary_type)
-    r2 = 1 / math.tan(rotary_assembly_desc.angle * math.pi / 180) ** 2
+    r2 = 1 / math.tan(rotary_assembly_desc.frustum_pitch * math.pi / 180) ** 2
     return openmc.model.ZConeOneSided(
         z0=z0 * z_scaling + z_offset,
         x0=rotary_assembly_desc.assembly_core_distance,
