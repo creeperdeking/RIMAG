@@ -11,7 +11,7 @@ from one_layer_disk_design.frustum_geometry_definition import make_simulation_ge
 
 ### Simulation parameters
 
-run_mode: RunMode = "keff_"
+run_mode: RunMode = "keff"
 print_core_characteristics = False
 batches = 2000  # 2500  # 1250
 weight_windows: UseWeightWindows = "use"
