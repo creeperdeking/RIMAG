@@ -37,7 +37,14 @@ def get_base_geometry(
         geometry_settings.core_desc,
         geometry_settings.rotary_assembly_desc,
     )
-    return assembly_thickness, core_boundary, photovoltaic_boundary
+    outer_core_layers_thickness = calculate_assembly_thickness(
+        geometry_settings.outer_core_layers_inside_shaft
+    )
+
+    shaft_boundary = get_shaft_boundary(
+        geometry_settings, outer_core_layers_thickness, assembly_thickness
+    )
+    return assembly_thickness, core_boundary, photovoltaic_boundary, shaft_boundary
 
 
 def check_assembly_thickness_equal(
@@ -83,6 +90,20 @@ def check_assemblies_compatibility(assemblies: List[AssemblySections]):
         check_assembly_compatibility(assemblies[i - 1], assemblies[i], i - 1)
 
 
+def get_shaft_boundary(
+    geometry_settings: GeometrySettings,
+    outer_core_layers_thickness: float,
+    assembly_thickness: float,
+):
+    return create_cylinder(
+        geometry_settings.rotary_assembly_desc,
+        outer_core_layers_thickness / 2,
+        assembly_thickness,
+        distance_from_origin=geometry_settings.core_desc.core_radius
+        + outer_core_layers_thickness / 2,
+    )
+
+
 def define_geometry(
     geometry_settings: GeometrySettings,
     materials_dict: Dict[str, openmc.Material],
@@ -95,24 +116,12 @@ def define_geometry(
     core_boundary: openmc.Region,
     photovoltaic_boundary: openmc.Region,
 ):
-    assembly_thickness, core_boundary, photovoltaic_boundary = get_base_geometry(
-        geometry_settings
+    assembly_thickness, core_boundary, photovoltaic_boundary, shaft_boundary = (
+        get_base_geometry(geometry_settings)
     )
     check_assembly_thickness_equal(
         geometry_settings.assembly_section_core,
         geometry_settings.photovoltaic_assembly,
-    )
-
-    outer_core_layers_thickness = calculate_assembly_thickness(
-        geometry_settings.outer_core_layers_inside_shaft
-    )
-
-    shaft_boundary = create_cylinder(
-        geometry_settings.rotary_assembly_desc,
-        outer_core_layers_thickness / 2,
-        assembly_thickness,
-        distance_from_origin=geometry_settings.core_desc.core_radius
-        + outer_core_layers_thickness / 2,
     )
 
     outer_core_boundary = create_cylinder(

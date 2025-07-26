@@ -47,8 +47,10 @@ def define_disks_geometry(
     geometry_settings: GeometrySettings,
     materials_dict: Dict[str, openmc.Material],
 ):
-    assembly_thickness, core_boundary, photovoltaic_boundary = get_base_geometry(
-        geometry_settings,
+    assembly_thickness, core_boundary, photovoltaic_boundary, shaft_boundary = (
+        get_base_geometry(
+            geometry_settings,
+        )
     )
 
     disks = make_disks(
@@ -101,7 +103,7 @@ def define_disks_geometry(
             r=previous_radius + outer_core_layer.layer_thickness, x0=0, y0=0
         )
 
-        layer_boundary = +inner_boundary & -outer_boundary
+        layer_boundary = +inner_boundary & -outer_boundary & ~shaft_boundary
 
         between_disks_shielding_cells.append(
             make_disks_cells(
