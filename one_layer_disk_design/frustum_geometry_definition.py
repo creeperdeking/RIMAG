@@ -238,7 +238,8 @@ def make_simulation_geometry(
                     ],
                 ),
             ).parts,
-            layer_thickness=disk_geometry_params.neutron_shield_moderator_thickness,
+            layer_thickness=disk_geometry_params.neutron_shield_moderator_thickness
+            + disk_geometry_params.gamma_shield_thickness,
         ),
         AssemblySectionsLayer(
             parts=mirror_assembly(
@@ -264,6 +265,21 @@ def make_simulation_geometry(
             layer_thickness=disk_geometry_params.neutron_shield_absorber_thickness,
         ),
     ]
+
+    total_thickness_outer_core_layers_between_disks_2 = 0
+    for assembly in outer_core_layers_between_disks_2:
+        total_thickness_outer_core_layers_between_disks_2 += assembly.layer_thickness
+    outer_core_layers_inside_shaft_thickness = calculate_assembly_thickness(
+        outer_core_layers_inside_shaft
+    )
+
+    if (
+        outer_core_layers_inside_shaft_thickness
+        != total_thickness_outer_core_layers_between_disks_2
+    ):
+        raise ValueError(
+            f"outer_core_layers_inside_shaft has a thickness of {outer_core_layers_inside_shaft_thickness} which is not the same as total_thickness_outer_core_layers_between_disks which has a thickness of {total_thickness_outer_core_layers_between_disks_2}"
+        )
 
     check_assemblies_compatibility(
         [
@@ -302,6 +318,7 @@ def make_simulation_geometry(
         material_choice=material_choice,
         outer_core_layers_inside_shaft=outer_core_layers_inside_shaft,
         outer_core_layers_between_disks=outer_core_layers_between_disks,
+        outer_core_layers_between_disks_2=outer_core_layers_between_disks_2,
     )
 
     geometry, universe, tracked_cells, drums = define_disks_geometry(
@@ -316,6 +333,7 @@ def make_simulation_geometry(
         material_choice=material_choice,
         outer_core_layers_inside_shaft=outer_core_layers_inside_shaft,
         outer_core_layers_between_disks=outer_core_layers_between_disks,
+        outer_core_layers_between_disks_2=outer_core_layers_between_disks_2,
     )
     return MakeSimulationGeometryResult(
         geometry=geometry,

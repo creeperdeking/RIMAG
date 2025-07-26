@@ -88,6 +88,7 @@ def define_geometry(
     materials_dict: Dict[str, openmc.Material],
     photovoltaic_assembly_cells: Dict[str, openmc.Cell],
     core_assembly_cells: Dict[str, openmc.Cell],
+    between_disks_shielding_cells: List[Dict[str, openmc.Cell]],
     emitter_assembly_cells: Dict[str, openmc.Cell],
     emitter_boundary: openmc.Region,
     assemblies_boundary: openmc.Region,
@@ -168,10 +169,14 @@ def define_geometry(
     outer_empty_zone_cell.region = outer_empty_zone
     outer_empty_zone_cell.fill = materials_dict[geometry_settings.material_choice.void]
 
+    flattenned_between_disks_shielding_cells = []
+    for shielding_layer in between_disks_shielding_cells:
+        flattenned_between_disks_shielding_cells.extend(shielding_layer.values())
+
     cells = [
         *core_assembly_cells.values(),
+        *flattenned_between_disks_shielding_cells,
         *outer_core_layers_inside_shaft_cells,
-        *outer_core_layers_between_disks_cells,
         *photovoltaic_assembly_cells.values(),
         *emitter_assembly_cells.values(),
         outer_empty_zone_cell,

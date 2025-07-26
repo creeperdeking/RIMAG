@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from common_lib.assemblies import make_emitter_only_assembly
 from common_lib.geometry import GeometrySettings, define_geometry, get_base_geometry
+from common_lib.geometry_utils import create_cylinder
 from one_layer_disk_design.disks_assemblies import (
     define_discs_emitter_boundary,
     make_disks_cells,
@@ -92,6 +93,29 @@ def define_disks_geometry(
         boundary_shape=photovoltaic_boundary,
     )
 
+    between_disks_shielding_cells = []
+    previous_radius = geometry_settings.core_desc.core_radius
+    for outer_core_layer in geometry_settings.outer_core_layers_between_disks_2:
+        inner_boundary = openmc.ZCylinder(r=previous_radius, x0=0, y0=0)
+        outer_boundary = openmc.ZCylinder(
+            r=previous_radius + outer_core_layer.layer_thickness, x0=0, y0=0
+        )
+
+        layer_boundary = +inner_boundary & -outer_boundary
+
+        between_disks_shielding_cells.append(
+            make_disks_cells(
+                assembly_section=outer_core_layer,
+                core_desc=geometry_settings.core_desc,
+                disks=disks,
+                rotary_assembly_desc=geometry_settings.rotary_assembly_desc,
+                materials_dict=materials_dict,
+                boundary_shape=layer_boundary,
+            )
+        )
+
+        previous_radius += outer_core_layer.layer_thickness
+
     emitter_assembly_cells = make_disks_cells(
         assembly_section=make_emitter_only_assembly(
             assembly_section=geometry_settings.assembly_section_core,
@@ -105,13 +129,14 @@ def define_disks_geometry(
     )
 
     geometry, universe, tracked_cells = define_geometry(
-        geometry_settings,
-        materials_dict,
-        photovoltaic_assembly_cells,
-        core_assembly_cells,
-        emitter_assembly_cells,
-        emitter_boundary,
-        assemblies_boundary,
+        geometry_settings=geometry_settings,
+        materials_dict=materials_dict,
+        photovoltaic_assembly_cells=photovoltaic_assembly_cells,
+        core_assembly_cells=core_assembly_cells,
+        between_disks_shielding_cells=between_disks_shielding_cells,
+        emitter_assembly_cells=emitter_assembly_cells,
+        emitter_boundary=emitter_boundary,
+        assemblies_boundary=assemblies_boundary,
         core_boundary=core_boundary,
         photovoltaic_boundary=photovoltaic_boundary,
     )
