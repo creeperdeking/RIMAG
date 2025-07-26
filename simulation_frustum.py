@@ -11,10 +11,10 @@ from one_layer_disk_design.frustum_geometry_definition import make_simulation_ge
 
 ### Simulation parameters
 
-run_mode: RunMode = "keff_notallies"
+run_mode: RunMode = "render"
 print_core_characteristics = False
 batches = 2000  # 2500  # 1250
-weight_windows: UseWeightWindows = "use"
+weight_windows: UseWeightWindows = "no"
 particle_type: ParticleType = "neutron"
 # Tally absoption only for this particular nuclide:
 monitored_nuclide = None  # MonitoredNuclide(nuclide="Si30")
@@ -36,7 +36,7 @@ disk_geometry_params = DiskGeometryParams(
     fuel_emitter_gap=0.1,
     emitter_thickness=0.5,
     thickness_photovoltaic=thickness_photovoltaic,
-    reflector_thickness=30,
+    reflector_thickness=20,
     neutron_shield_moderator_thickness=70,
     neutron_shield_absorber_thickness=25,
     gamma_shield_thickness=10,

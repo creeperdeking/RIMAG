@@ -137,9 +137,10 @@ def start_program(
         render_geometry(
             universe,
             universe_radius=disk_radius + 10,
-            universe_height=disk_radius * 2 + 10,  # core_desc.core_height * 1.5,
+            universe_height=geometry_settings.core_desc.core_height
+            * 1.5,  # disk_radius * 2 + 10,
             pixels=(5000, 5000),
-            basis="xz",
+            basis="xy",
             origin=(
                 geometry_settings.rotary_assembly_desc.assembly_core_distance,
                 0,

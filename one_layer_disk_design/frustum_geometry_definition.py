@@ -10,6 +10,7 @@ import openmc
 from common_lib.assemblies_types import (
     Assembly,
     AssemblySections,
+    AssemblySectionsLayer,
     EmitterPlaceholder,
 )
 from common_lib.geometry import check_assembly_thickness_equal
@@ -80,12 +81,6 @@ def make_simulation_geometry(
             ),
         ],
     )
-
-    check_assembly_thickness_equal(
-        outer_core_layers_inside_shaft,
-        outer_core_layers_between_disks,
-    )
-
     emitter_assembly = AssemblySections(
         parts=[
             ### Void
@@ -111,6 +106,83 @@ def make_simulation_geometry(
 
     emitter_assembly_placeholder = EmitterPlaceholder(
         thickness=calculate_assembly_thickness(emitter_assembly),
+    )
+
+    outer_core_layers_between_disks_2 = [
+        AssemblySectionsLayer(
+            parts=mirror_assembly(
+                AssemblySections(
+                    parts=[
+                        ### Reflector
+                        Assembly(
+                            material=material_choice.neutron_reflector,
+                            thickness=disk_geometry_params.moderator_thickness / 2
+                            + disk_geometry_params.moderator_cladding_thickness,
+                        ),
+                        ### Emitter Assembly
+                        emitter_assembly_placeholder,
+                        ### Reflector
+                        Assembly(
+                            material=material_choice.neutron_reflector,
+                            thickness=disk_geometry_params.fuel_cladding_thickness
+                            + disk_geometry_params.fuel_thickness / 2,
+                        ),
+                    ],
+                ).parts,
+                layer_thickness=disk_geometry_params.reflector_thickness,
+            )
+        ),
+        AssemblySectionsLayer(
+            parts=mirror_assembly(
+                AssemblySections(
+                    parts=[
+                        ### Shield Moderator
+                        Assembly(
+                            material=material_choice.neutron_shield_moderator,
+                            thickness=disk_geometry_params.moderator_thickness / 2
+                            + disk_geometry_params.moderator_cladding_thickness,
+                        ),
+                        ### Emitter Assembly
+                        emitter_assembly_placeholder,
+                        ### Gamma Shield
+                        Assembly(
+                            material=material_choice.gamma_shield,
+                            thickness=disk_geometry_params.fuel_cladding_thickness
+                            + disk_geometry_params.fuel_thickness / 2,
+                        ),
+                    ],
+                ).parts,
+                layer_thickness=disk_geometry_params.neutron_shield_moderator_thickness,
+            )
+        ),
+        AssemblySectionsLayer(
+            parts=mirror_assembly(
+                AssemblySections(
+                    parts=[
+                        ### Shield Moderator
+                        Assembly(
+                            material=material_choice.neutron_shield_moderator,
+                            thickness=disk_geometry_params.moderator_thickness / 2
+                            + disk_geometry_params.moderator_cladding_thickness,
+                        ),
+                        ### Emitter Assembly
+                        emitter_assembly_placeholder,
+                        ### Neutron Absorber
+                        Assembly(
+                            material=material_choice.neutron_absorber,
+                            thickness=disk_geometry_params.fuel_cladding_thickness
+                            + disk_geometry_params.fuel_thickness / 2,
+                        ),
+                    ],
+                ).parts,
+                layer_thickness=disk_geometry_params.neutron_shield_absorber_thickness,
+            )
+        ),
+    ]
+
+    check_assembly_thickness_equal(
+        outer_core_layers_inside_shaft,
+        outer_core_layers_between_disks,
     )
 
     assembly_section_core = mirror_assembly(

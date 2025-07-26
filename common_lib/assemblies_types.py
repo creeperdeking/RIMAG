@@ -29,6 +29,10 @@ class AssemblySections(BaseModel):
     parts: List[Assembly | EmitterPlaceholder]
 
 
+class AssemblySectionsLayer(AssemblySections):
+    layer_thickness: float
+
+
 class BoundariesGeometrySettings:
     emitter_assembly: AssemblySections
     rotary_assembly_desc: RotaryAssemblyDesc
