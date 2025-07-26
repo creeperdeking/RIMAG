@@ -16,7 +16,7 @@ class Assembly(BaseModel):
     material: Optional[str] = None
     is_fuel: bool = False
     is_emitter: Optional[bool] = False
-    is_emitter_gap: Optional[bool] = False
+    is_emitter_placeholder: Optional[bool] = False
     is_photovoltaic: Optional[bool] = False
 
 

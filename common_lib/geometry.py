@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, List
 
 import openmc
 import openmc.model
@@ -50,6 +50,37 @@ def check_assembly_thickness_equal(
         raise ValueError(
             f"Assembly thickness must be the same. Assembly1 thickness: {assembly1_thickness}, Assembly2 thickness: {assembly2_thickness}"
         )
+
+
+def check_assembly_compatibility(
+    assembly1: AssemblySections, assembly2: AssemblySections, assembly_number=None
+):
+    check_assembly_thickness_equal(assembly1, assembly2)
+    current_thickness_assembly1 = 0
+    current_thickness_assembly2 = 0
+    current_index_assembly2 = 0
+    for i, part in enumerate(assembly1.parts):
+        if part.is_emitter or part.is_emitter_placeholder:
+            while current_thickness_assembly2 < current_thickness_assembly1:
+                current_thickness_assembly2 += assembly2.parts[
+                    current_index_assembly2
+                ].thickness
+                current_index_assembly2 += 1
+            if (
+                current_thickness_assembly1 != current_thickness_assembly2
+                or current_thickness_assembly1 + part.thickness
+                != current_thickness_assembly2
+                + assembly2.parts[current_index_assembly2].thickness
+            ):
+                raise ValueError(
+                    f"Element {i} of assembly {assembly_number} does not have an emmitter placeholder corresponding to the one in assembly {assembly_number + 1}"
+                )
+        current_thickness_assembly1 += part.thickness
+
+
+def check_assemblies_compatibility(assemblies: List[AssemblySections]):
+    for i in range(1, len(assemblies)):
+        check_assembly_compatibility(assemblies[i - 1], assemblies[i], i - 1)
 
 
 def define_geometry(

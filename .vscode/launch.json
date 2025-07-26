@@ -6,10 +6,10 @@
     "configurations": [
     
         {
-            "name": "Python Debugger: Current File",
+            "name": "Python Debugger: simulation_frustum.py",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/simulation_slow_superflat.py",
+            "program": "${workspaceFolder}/simulation_frustum.py",
             "console": "integratedTerminal",
             "python": "/home/alexis/anaconda3/envs/openmc-env/bin/python",
             "env": {
