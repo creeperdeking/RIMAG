@@ -11,7 +11,7 @@ from one_layer_disk_design.frustum_geometry_definition import make_simulation_ge
 
 ### Simulation parameters
 
-run_mode: RunMode = "render"
+run_mode: RunMode = "keff_notallies"
 print_core_characteristics = False
 batches = 2000  # 2500  # 1250
 weight_windows: UseWeightWindows = "no"
@@ -38,7 +38,7 @@ disk_geometry_params = DiskGeometryParams(
     thickness_photovoltaic=thickness_photovoltaic,
     reflector_thickness=20,
     neutron_shield_moderator_thickness=70,
-    neutron_shield_absorber_thickness=25,
+    neutron_shield_absorber_thickness=20,
     gamma_shield_thickness=10,
     frustum_pitch=0,
 )
