@@ -174,7 +174,7 @@ def define_geometry(
         & ~emitter_boundary
     )
 
-    outer_empty_zone_cell = openmc.Cell(name="outer_drum_zone")
+    outer_empty_zone_cell = openmc.Cell(name="outer_empty_zone")
     outer_empty_zone_cell.region = outer_empty_zone
     outer_empty_zone_cell.fill = materials_dict[geometry_settings.material_choice.void]
 

@@ -6,6 +6,7 @@ from one_layer_disk_design.disks_core_characteristics import (
 )
 from one_layer_disk_design.disks_geometry import (
     DiskGeometryParams,
+    make_disk_geometry_params,
 )
 from one_layer_disk_design.frustum_geometry_definition import make_simulation_geometry
 
@@ -27,20 +28,22 @@ emitter_gamma_rate_per_cm3 = 3.35e6  # photons/cm3/s
 
 fuel_thickness = 0.12
 thickness_photovoltaic = 0.02
-disk_geometry_params = DiskGeometryParams(
-    core_diameter=115,
-    moderator_cladding_thickness=0.05,
-    fuel_thickness=fuel_thickness,
-    fuel_cladding_thickness=(1 - fuel_thickness) / 2,
-    moderator_thickness=1,
-    fuel_emitter_gap=0.1,
-    emitter_thickness=0.5,
-    thickness_photovoltaic=thickness_photovoltaic,
-    reflector_thickness=20,
-    neutron_shield_moderator_thickness=70,
-    neutron_shield_absorber_thickness=20,
-    gamma_shield_thickness=10,
-    frustum_pitch=0,
+disk_geometry_params = make_disk_geometry_params(
+    DiskGeometryParams(
+        core_diameter=115,
+        moderator_cladding_thickness=0.05,
+        fuel_thickness=fuel_thickness,
+        fuel_cladding_thickness=(1 - fuel_thickness) / 2,
+        moderator_thickness=1,
+        fuel_emitter_gap=0.1,
+        emitter_thickness=0.5,
+        thickness_photovoltaic=thickness_photovoltaic,
+        reflector_thickness=20,
+        neutron_shield_moderator_thickness=70,
+        neutron_shield_absorber_thickness=20,
+        gamma_shield_thickness=10,
+        frustum_pitch=0,
+    )
 )
 
 ### Thermodynamic parameters
