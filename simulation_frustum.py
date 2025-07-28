@@ -15,7 +15,7 @@ from one_layer_disk_design.frustum_geometry_definition import make_simulation_ge
 run_mode: RunMode = "keff_notallies"
 print_core_characteristics = False
 batches = 2000  # 2500  # 1250
-weight_windows: UseWeightWindows = "no"
+weight_windows: UseWeightWindows = "use"
 particle_type: ParticleType = "neutron"
 # Tally absoption only for this particular nuclide:
 monitored_nuclide = None  # MonitoredNuclide(nuclide="Si30")
@@ -42,7 +42,7 @@ disk_geometry_params = make_disk_geometry_params(
         neutron_shield_moderator_thickness=70,
         neutron_shield_absorber_thickness=20,
         gamma_shield_thickness=10,
-        frustum_pitch=0,
+        frustum_pitch=45,
     )
 )
 

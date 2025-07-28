@@ -1,19 +1,9 @@
-import glob
 import openmc
 import openmc.deplete
-import os
-import time
 from typing import Any, List, Dict, Literal
-from tabulate import tabulate
-import scipy.constants as cst
 from common_lib.materials import MonitoredNuclide
-from common_lib.assemblies import calculate_assembly_thickness
-import numpy as np
-import h5py
-import sys
 from common_lib.geometry_utils import (
     get_geometry_bounding_box,
-    get_outer_empty_zone_parameters,
 )
 from common_lib.geometry_types import GeometrySettings
 from common_lib.simlib import (
@@ -83,6 +73,19 @@ def start_program(
         geometry_settings, assembly_thickness
     )
 
+    if weight_windows == "generate":
+        settings = make_sim_settings(
+            deterministic=True,
+            batches=200,
+            weight_windows=weight_windows,
+            lower_left_corner=lower_left_corner,
+            upper_right_corner=upper_right_corner,
+            geometry=geometry,
+            particle_type=particle_type,
+        )
+        run_keff_sim(geometry, settings, materials_dict)
+        weight_windows = "use"
+
     settings = make_sim_settings(
         deterministic=True,
         batches=batches,
@@ -96,7 +99,6 @@ def start_program(
     ### Run simulation
 
     if run_mode == "keff":
-        # run_keff_sim(geometry, settings, materials_dict)
         run_sim_with_tallies(
             geometry,
             settings,
