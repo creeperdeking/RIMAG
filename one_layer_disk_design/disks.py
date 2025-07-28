@@ -6,7 +6,6 @@ from pydantic import BaseModel
 
 
 class DiskAssemblyLayer(BaseModel):
-    radius: float
     height: float
     number: int
 
@@ -25,17 +24,13 @@ def get_disks_radius(
 
 
 def make_disks(
-    geometry_settings: DisksGeometrySettings,
     assembly_thickness: float,
 ) -> List[DiskAssemblyLayer]:
-    disks_radius = geometry_settings.rotary_assembly_desc.rotary_assembly_radius
-
     current_disk_height = -assembly_thickness / 2
     disks = []
 
     disks.append(
         DiskAssemblyLayer(
-            radius=disks_radius,
             height=current_disk_height,
             number=len(disks),
         )

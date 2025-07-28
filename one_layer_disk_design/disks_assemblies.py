@@ -10,6 +10,7 @@ from common_lib.assemblies_types import (
 )
 from common_lib.assemblies_types import BoundariesGeometrySettings
 from common_lib.geometry_utils import (
+    create_bounded_surface_plane,
     create_cylinder,
     create_hollow_cylinder,
 )
@@ -42,7 +43,6 @@ def get_disks_boundaries(
 
 def make_disks_cells(
     assembly_section: AssemblySections,
-    core_desc: CoreDesc,
     disks: List[DiskAssemblyLayer],
     rotary_assembly_desc: RotaryAssemblyDesc,
     materials_dict: Dict[str, openmc.Material],
@@ -53,13 +53,13 @@ def make_disks_cells(
         current_height = disk.height
         for assembly_part in assembly_section.parts:
             if not assembly_part.is_emitter and assembly_part.material is not None:
-                shape = create_cylinder(
+                shape = create_bounded_surface_plane(
                     rotary_assembly_desc,
-                    disk.radius,
                     assembly_part.thickness,
-                    distance_from_origin=rotary_assembly_desc.assembly_core_distance,
-                    height=current_height + assembly_part.thickness / 2,
+                    z0=current_height + assembly_part.thickness / 2,
+                    boundary_type="transmission",
                 )
+
                 if boundary_shape is not None:
                     shape = shape & boundary_shape
                 if assembly_part.material in shapes:
@@ -93,8 +93,8 @@ def define_discs_emitter_boundary(
             if assembly_part.is_emitter:
                 additional_boundary_shape = create_hollow_cylinder(
                     rotary_assembly_desc,
-                    outer_radius=disk.radius,
-                    inner_radius=disk.radius
+                    outer_radius=rotary_assembly_desc.rotary_assembly_radius,
+                    inner_radius=rotary_assembly_desc.rotary_assembly_radius
                     - core_desc.core_radius * 2
                     - inner_core_penetration,
                     thickness=assembly_part.thickness,

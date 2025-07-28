@@ -33,6 +33,12 @@ def get_base_geometry(
         geometry_settings.core_desc.core_radius,
         geometry_settings.core_desc.core_height,
     )
+    disk_boundary = create_cylinder(
+        geometry_settings.rotary_assembly_desc,
+        geometry_settings.rotary_assembly_desc.rotary_assembly_radius,
+        geometry_settings.core_desc.core_height,
+        distance_from_origin=geometry_settings.rotary_assembly_desc.assembly_core_distance,
+    )
     photovoltaic_boundary = define_photovoltaic_boundary_large(
         geometry_settings.core_desc,
         geometry_settings.rotary_assembly_desc,
@@ -44,7 +50,20 @@ def get_base_geometry(
     shaft_boundary = get_shaft_boundary(
         geometry_settings, outer_core_layers_thickness, assembly_thickness
     )
-    return assembly_thickness, core_boundary, photovoltaic_boundary, shaft_boundary
+    outer_empty_zone_parameters = get_outer_empty_zone_parameters(geometry_settings)
+    outer_empty_zone_boundary = -openmc.ZCylinder(
+        r=outer_empty_zone_parameters.radius,
+        x0=outer_empty_zone_parameters.x0,
+        boundary_type="vacuum",
+    )
+    return (
+        assembly_thickness,
+        core_boundary,
+        photovoltaic_boundary,
+        shaft_boundary,
+        disk_boundary,
+        outer_empty_zone_boundary,
+    )
 
 
 def check_assembly_thickness_equal(
@@ -116,7 +135,7 @@ def define_geometry(
     core_boundary: openmc.Region,
     photovoltaic_boundary: openmc.Region,
 ):
-    assembly_thickness, core_boundary, photovoltaic_boundary, shaft_boundary = (
+    _, _, photovoltaic_boundary, shaft_boundary, _, outer_empty_zone_boundary = (
         get_base_geometry(geometry_settings)
     )
     check_assembly_thickness_equal(
@@ -129,13 +148,9 @@ def define_geometry(
         geometry_settings.core_desc.outer_core_radius,
         geometry_settings.core_desc.outer_core_height,
     )
-    outer_empty_zone_parameters = get_outer_empty_zone_parameters(geometry_settings)
+
     outer_empty_zone_boundary = (
-        -openmc.ZCylinder(
-            r=outer_empty_zone_parameters.radius,
-            x0=outer_empty_zone_parameters.x0,
-            boundary_type="vacuum",
-        )
+        outer_empty_zone_boundary
         & -make_surface_plane(
             geometry_settings.rotary_assembly_desc,
             z0=geometry_settings.core_desc.outer_core_height / 2 + SPACING_CONSTANT,
@@ -157,14 +172,6 @@ def define_geometry(
         emitter_boundary,
         materials_dict,
         outer_empty_zone_boundary & shaft_boundary,
-    )
-    outer_core_layers_between_disks_cells = make_outer_core_layers(
-        geometry_settings.rotary_assembly_desc,
-        geometry_settings.outer_core_layers_between_disks,
-        geometry_settings.core_desc,
-        emitter_boundary,
-        materials_dict,
-        outer_empty_zone_boundary & ~shaft_boundary,
     )
 
     outer_empty_zone = (

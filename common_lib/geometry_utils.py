@@ -95,28 +95,38 @@ def make_surface_plane(
     )
 
 
+def create_bounded_surface_plane(
+    rotary_assembly_desc: RotaryAssemblyDesc,
+    thickness: float,
+    z0: float,
+    boundary_type: str = "transmission",
+):
+    return -make_surface_plane(
+        rotary_assembly_desc,
+        z0=thickness / 2 + z0,
+        boundary_type=boundary_type,
+    ) & +make_surface_plane(
+        rotary_assembly_desc,
+        z0=-thickness / 2 + z0,
+        boundary_type=boundary_type,
+    )
+
+
 def create_cylinder(
     rotary_assembly_desc: RotaryAssemblyDesc,
     radius: float,
     thickness: float,
     distance_from_origin: float = 0,
-    height: float = 0,
+    z0: float = 0,
     boundary_type: str = "transmission",
 ):
-    return (
-        -openmc.ZCylinder(
-            r=radius, x0=distance_from_origin, y0=0, boundary_type=boundary_type
-        )
-        & -make_surface_plane(
-            rotary_assembly_desc,
-            z0=thickness / 2 + height,
-            boundary_type=boundary_type,
-        )
-        & +make_surface_plane(
-            rotary_assembly_desc,
-            z0=-thickness / 2 + height,
-            boundary_type=boundary_type,
-        )
+    return -openmc.ZCylinder(
+        r=radius, x0=distance_from_origin, y0=0, boundary_type=boundary_type
+    ) & create_bounded_surface_plane(
+        rotary_assembly_desc,
+        thickness,
+        z0,
+        boundary_type,
     )
 
 
