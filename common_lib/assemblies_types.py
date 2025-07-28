@@ -29,8 +29,9 @@ class AssemblySections(BaseModel):
     parts: List[Assembly | EmitterPlaceholder]
 
 
-class AssemblySectionsLayer(AssemblySections):
+class OuterCoreAssemblySections(AssemblySections):
     layer_thickness: float
+    outside_disk_material: Optional[str] = None
 
 
 class BoundariesGeometrySettings:

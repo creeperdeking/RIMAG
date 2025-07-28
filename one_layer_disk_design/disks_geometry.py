@@ -53,7 +53,7 @@ def define_disks_geometry(
         photovoltaic_boundary,
         shaft_boundary,
         disk_boundary,
-        outer_empty_zone_boundary,
+        _,
     ) = get_base_geometry(
         geometry_settings,
     )
@@ -99,7 +99,7 @@ def define_disks_geometry(
 
     between_disks_shielding_cells = []
     previous_radius = geometry_settings.core_desc.core_radius
-    for outer_core_layer in geometry_settings.outer_core_layers_between_disks_2:
+    for outer_core_layer in geometry_settings.outer_core_layers_between_disks:
         inner_boundary = openmc.ZCylinder(r=previous_radius, x0=0, y0=0)
         outer_boundary = openmc.ZCylinder(
             r=previous_radius + outer_core_layer.layer_thickness, x0=0, y0=0
@@ -113,7 +113,7 @@ def define_disks_geometry(
                 disks=disks,
                 rotary_assembly_desc=geometry_settings.rotary_assembly_desc,
                 materials_dict=materials_dict,
-                boundary_shape=layer_boundary & outer_empty_zone_boundary,
+                boundary_shape=layer_boundary & disk_boundary,
             )
         )
 

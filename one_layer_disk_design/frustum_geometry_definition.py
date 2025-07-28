@@ -10,7 +10,7 @@ import openmc
 from common_lib.assemblies_types import (
     Assembly,
     AssemblySections,
-    AssemblySectionsLayer,
+    OuterCoreAssemblySections,
     EmitterPlaceholder,
 )
 from common_lib.geometry import (
@@ -162,29 +162,8 @@ def make_simulation_geometry(
         ],
     )
 
-    outer_core_layers_between_disks = AssemblySections(
-        parts=[
-            Assembly(
-                material=material_choice.neutron_reflector,
-                thickness=disk_geometry_params.reflector_thickness,
-            ),
-            Assembly(
-                material=material_choice.neutron_shield_moderator,
-                thickness=disk_geometry_params.neutron_shield_moderator_thickness,
-            ),
-            Assembly(
-                material=material_choice.gamma_shield,
-                thickness=disk_geometry_params.gamma_shield_thickness,
-            ),
-            Assembly(
-                material=material_choice.neutron_absorber,
-                thickness=disk_geometry_params.neutron_shield_absorber_thickness,
-            ),
-        ],
-    )
-
-    outer_core_layers_between_disks_2 = [
-        AssemblySectionsLayer(
+    outer_core_layers_between_disks = [
+        OuterCoreAssemblySections(
             parts=mirror_assembly(
                 AssemblySections(
                     parts=[
@@ -216,8 +195,9 @@ def make_simulation_geometry(
                 ),
             ).parts,
             layer_thickness=disk_geometry_params.reflector_thickness,
+            outside_disk_material=material_choice.neutron_reflector,
         ),
-        AssemblySectionsLayer(
+        OuterCoreAssemblySections(
             parts=mirror_assembly(
                 AssemblySections(
                     parts=[
@@ -240,8 +220,9 @@ def make_simulation_geometry(
             ).parts,
             layer_thickness=disk_geometry_params.neutron_shield_moderator_thickness
             + disk_geometry_params.gamma_shield_thickness,
+            outside_disk_material=material_choice.neutron_shield_moderator,
         ),
-        AssemblySectionsLayer(
+        OuterCoreAssemblySections(
             parts=mirror_assembly(
                 AssemblySections(
                     parts=[
@@ -263,29 +244,30 @@ def make_simulation_geometry(
                 ),
             ).parts,
             layer_thickness=disk_geometry_params.neutron_shield_absorber_thickness,
+            outside_disk_material=material_choice.neutron_absorber,
         ),
     ]
 
-    total_thickness_outer_core_layers_between_disks_2 = 0
-    for assembly in outer_core_layers_between_disks_2:
-        total_thickness_outer_core_layers_between_disks_2 += assembly.layer_thickness
+    total_thickness_outer_core_layers_between_disks = 0
+    for assembly in outer_core_layers_between_disks:
+        total_thickness_outer_core_layers_between_disks += assembly.layer_thickness
     outer_core_layers_inside_shaft_thickness = calculate_assembly_thickness(
         outer_core_layers_inside_shaft
     )
 
     if (
         outer_core_layers_inside_shaft_thickness
-        != total_thickness_outer_core_layers_between_disks_2
+        != total_thickness_outer_core_layers_between_disks
     ):
         raise ValueError(
-            f"outer_core_layers_inside_shaft has a thickness of {outer_core_layers_inside_shaft_thickness} which is not the same as total_thickness_outer_core_layers_between_disks which has a thickness of {total_thickness_outer_core_layers_between_disks_2}"
+            f"outer_core_layers_inside_shaft has a thickness of {outer_core_layers_inside_shaft_thickness} which is not the same as total_thickness_outer_core_layers_between_disks which has a thickness of {total_thickness_outer_core_layers_between_disks}"
         )
 
     check_assemblies_compatibility(
         [
             assembly_section_core,
             assembly_section_photovoltaic,
-            *outer_core_layers_between_disks_2,
+            *outer_core_layers_between_disks,
         ]
     )
 
@@ -318,7 +300,6 @@ def make_simulation_geometry(
         material_choice=material_choice,
         outer_core_layers_inside_shaft=outer_core_layers_inside_shaft,
         outer_core_layers_between_disks=outer_core_layers_between_disks,
-        outer_core_layers_between_disks_2=outer_core_layers_between_disks_2,
     )
 
     geometry, universe, tracked_cells, drums = define_disks_geometry(
@@ -333,7 +314,6 @@ def make_simulation_geometry(
         material_choice=material_choice,
         outer_core_layers_inside_shaft=outer_core_layers_inside_shaft,
         outer_core_layers_between_disks=outer_core_layers_between_disks,
-        outer_core_layers_between_disks_2=outer_core_layers_between_disks_2,
     )
     return MakeSimulationGeometryResult(
         geometry=geometry,

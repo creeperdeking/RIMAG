@@ -3,7 +3,7 @@ from pydantic import BaseModel
 
 from common_lib.assemblies_types import (
     AssemblySections,
-    AssemblySectionsLayer,
+    OuterCoreAssemblySections,
     CoreDesc,
 )
 from common_lib.materials import MaterialChoice
@@ -16,8 +16,7 @@ class GeometrySettings(BaseModel):
     material_choice: MaterialChoice
     assembly_section_core: AssemblySections
     outer_core_layers_inside_shaft: AssemblySections
-    outer_core_layers_between_disks: AssemblySections
-    outer_core_layers_between_disks_2: List[AssemblySectionsLayer]
+    outer_core_layers_between_disks: List[OuterCoreAssemblySections]
     double_assembly: bool = False
     emitter_assembly: AssemblySections
     photovoltaic_assembly: AssemblySections

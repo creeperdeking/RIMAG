@@ -85,9 +85,8 @@ def make_outer_core_layers(
     rotary_assembly_desc: RotaryAssemblyDesc,
     outer_core_layers: AssemblySections,
     core_desc: CoreDesc,
-    emitter_boundary: openmc.Cell,
     materials_dict: Dict[str, openmc.Material],
-    outer_empty_zone_boundary: openmc.Region,
+    boundary_shape: openmc.Region,
 ) -> List[openmc.Cell]:
     cells = []
     current_layer_radius = core_desc.core_radius
@@ -106,7 +105,7 @@ def make_outer_core_layers(
             & ~core_cylinder
         )
         cell = openmc.Cell(name=f"outer_core_layer_{layer.material}_{i}")
-        cell.region = cylinder & ~emitter_boundary & outer_empty_zone_boundary
+        cell.region = cylinder & boundary_shape
         cell.fill = materials_dict[layer.material]
         cells.append(cell)
         previous_layer_radius = current_layer_radius
