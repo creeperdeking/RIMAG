@@ -123,7 +123,9 @@ def make_sim_settings(
     settings.inactive = 10
     settings.max_history_splits = 5000  # cap long histories
     UPDATE_INTERVAL = 8
-    WEIGHT_WINDOWS_BATCHES = 30 * UPDATE_INTERVAL + settings.inactive
+    WEIGHT_WINDOWS_BATCHES = int(
+        batches / 10
+    )  # 30 * UPDATE_INTERVAL + settings.inactive
     settings.photon_transport = particle_type == "photon"
     settings.source = source
     if weight_windows == "generate":

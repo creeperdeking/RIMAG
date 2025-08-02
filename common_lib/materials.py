@@ -362,6 +362,23 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
             density=2.52,
             color="lightgray",
         ),
+        "Tungsten Diboride": Material(
+            composition=[
+                AtomProportion(atom=atoms["W"], proportion=1),
+                AtomProportion(atom=atoms["B"], proportion=2),
+            ],
+            density=15.2,
+            color="lightgray",
+        ),
+        "Boric Acid": Material(
+            composition=[
+                AtomProportion(atom=atoms["B"], proportion=1),
+                AtomProportion(atom=atoms["H"], proportion=3),
+                AtomProportion(atom=atoms["O"], proportion=3),
+            ],
+            density=2.4,
+            color="lightgray",
+        ),
         "Molybdenum": Material(
             composition=[AtomProportion(atom=atoms["Mo"])],
             density=10.28,
@@ -384,6 +401,10 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
         "Borated Graphite": MixedMaterial(
             materials=["Graphite NO Scattering", "Boron Carbide"],
             proportions=[0.9, 0.1],
+        ),
+        "Borated Water": MixedMaterial(
+            materials=["Light Water", "Boric Acid"],
+            proportions=[0.95, 0.05],
         ),
     }
 

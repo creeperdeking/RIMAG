@@ -76,7 +76,7 @@ def start_program(
     if weight_windows == "generate":
         settings = make_sim_settings(
             deterministic=True,
-            batches=200,
+            batches=batches,
             weight_windows=weight_windows,
             lower_left_corner=lower_left_corner,
             upper_right_corner=upper_right_corner,

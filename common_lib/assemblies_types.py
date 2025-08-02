@@ -31,7 +31,6 @@ class AssemblySections(BaseModel):
 
 class OuterCoreAssemblySections(AssemblySections):
     layer_thickness: float
-    outside_disk_material: Optional[str] = None
 
 
 class BoundariesGeometrySettings:

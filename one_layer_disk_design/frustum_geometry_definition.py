@@ -152,7 +152,7 @@ def make_simulation_geometry(
                 thickness=disk_geometry_params.neutron_shield_moderator_thickness,
             ),
             Assembly(
-                material=material_choice.gamma_shield,
+                material=material_choice.neutron_shield_moderator,
                 thickness=disk_geometry_params.gamma_shield_thickness,
             ),
             Assembly(
@@ -195,7 +195,6 @@ def make_simulation_geometry(
                 ),
             ).parts,
             layer_thickness=disk_geometry_params.reflector_thickness,
-            outside_disk_material=material_choice.neutron_reflector,
         ),
         OuterCoreAssemblySections(
             parts=mirror_assembly(
@@ -209,9 +208,9 @@ def make_simulation_geometry(
                         ),
                         ### Emitter Assembly
                         emitter_assembly_placeholder,
-                        ### Gamma Shield
+                        ### Scattering Material
                         Assembly(
-                            material=material_choice.gamma_shield,
+                            material=material_choice.neutron_reflector,
                             thickness=disk_geometry_params.fuel_cladding_thickness
                             + disk_geometry_params.fuel_thickness / 2,
                         ),
@@ -220,7 +219,6 @@ def make_simulation_geometry(
             ).parts,
             layer_thickness=disk_geometry_params.neutron_shield_moderator_thickness
             + disk_geometry_params.gamma_shield_thickness,
-            outside_disk_material=material_choice.neutron_shield_moderator,
         ),
         OuterCoreAssemblySections(
             parts=mirror_assembly(
@@ -244,7 +242,6 @@ def make_simulation_geometry(
                 ),
             ).parts,
             layer_thickness=disk_geometry_params.neutron_shield_absorber_thickness,
-            outside_disk_material=material_choice.neutron_absorber,
         ),
     ]
 
