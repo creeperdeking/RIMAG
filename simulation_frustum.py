@@ -14,7 +14,7 @@ from one_layer_disk_design.frustum_geometry_definition import make_simulation_ge
 
 run_mode: RunMode = "keff"
 print_core_characteristics = False
-batches = 3000  # 2500  # 1250
+batches = 2000  # 2500  # 1250
 weight_windows: UseWeightWindows = "generate"
 particle_type: ParticleType = "neutron"
 # Tally absoption only for this particular nuclide:
@@ -63,8 +63,8 @@ fuel_burnup = 75  # MWd/kgHM
 
 material_choice = MaterialChoice(
     moderator="Light Water",
-    neutron_absorber="Boron Carbide",
-    neutron_reflector="Graphite",
+    neutron_absorber="Borated Water",
+    neutron_reflector="Light Water",
     fuel="Uranium Oxy-Carbide",
     moderator_cladding="Zirconium",
     emitter="Graphite",

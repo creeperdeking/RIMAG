@@ -148,11 +148,11 @@ def make_simulation_geometry(
                 thickness=disk_geometry_params.reflector_thickness,
             ),
             Assembly(
-                material=material_choice.neutron_shield_moderator,
+                material=material_choice.neutron_absorber,
                 thickness=disk_geometry_params.neutron_shield_moderator_thickness,
             ),
             Assembly(
-                material=material_choice.neutron_shield_moderator,
+                material=material_choice.neutron_absorber,
                 thickness=disk_geometry_params.gamma_shield_thickness,
             ),
             Assembly(
@@ -202,7 +202,7 @@ def make_simulation_geometry(
                     parts=[
                         ### Shield Moderator
                         Assembly(
-                            material=material_choice.neutron_shield_moderator,
+                            material=material_choice.neutron_absorber,
                             thickness=disk_geometry_params.moderator_thickness / 2
                             + disk_geometry_params.moderator_cladding_thickness,
                         ),
@@ -210,7 +210,7 @@ def make_simulation_geometry(
                         emitter_assembly_placeholder,
                         ### Scattering Material
                         Assembly(
-                            material=material_choice.neutron_reflector,
+                            material=material_choice.neutron_absorber,
                             thickness=disk_geometry_params.fuel_cladding_thickness
                             + disk_geometry_params.fuel_thickness / 2,
                         ),
@@ -226,7 +226,7 @@ def make_simulation_geometry(
                     parts=[
                         ### Shield Moderator
                         Assembly(
-                            material=material_choice.neutron_shield_moderator,
+                            material=material_choice.neutron_absorber,
                             thickness=disk_geometry_params.moderator_thickness / 2
                             + disk_geometry_params.moderator_cladding_thickness,
                         ),
