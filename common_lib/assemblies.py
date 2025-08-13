@@ -23,7 +23,6 @@ def compute_core_desc(
         core_radius=core_radius,
         core_height=core_height,
         outer_core_radius=core_radius + outer_core_thickness,
-        outer_core_height=core_height,
     )
 
 

@@ -14,6 +14,7 @@ from common_lib.assemblies import (
 )
 from common_lib.geometry_utils import (
     create_cylinder,
+    get_geometry_bounding_box,
     make_surface_plane,
     SPACING_CONSTANT,
     get_outer_empty_zone_parameters,
@@ -148,22 +149,24 @@ def define_geometry(
         geometry_settings.photovoltaic_assembly,
     )
 
+    outer_empty_zone_parameters = get_outer_empty_zone_parameters(geometry_settings)
+
     outer_core_boundary = create_cylinder(
         geometry_settings.rotary_assembly_desc,
         geometry_settings.core_desc.outer_core_radius,
-        geometry_settings.core_desc.outer_core_height,
+        geometry_settings.core_desc.core_height,
     )
 
     outer_empty_zone_boundary = (
         outer_empty_zone_boundary_cylinder
         & -make_surface_plane(
             geometry_settings.rotary_assembly_desc,
-            z0=geometry_settings.core_desc.outer_core_height / 2 + SPACING_CONSTANT,
+            z0=geometry_settings.core_desc.core_height / 2 + SPACING_CONSTANT,
             boundary_type="reflective",
         )
         & +make_surface_plane(
             geometry_settings.rotary_assembly_desc,
-            z0=-geometry_settings.core_desc.outer_core_height / 2 - SPACING_CONSTANT,
+            z0=-geometry_settings.core_desc.core_height / 2 - SPACING_CONSTANT,
             boundary_type="reflective",
         )
     )
@@ -202,14 +205,45 @@ def define_geometry(
         outer_empty_zone_cell,
     ]
 
-    rotated_cells = []
+    # Translate every cells so that the geometric center of the reactor is at the origin
+
+    lower_left_corner, upper_right_corner = get_geometry_bounding_box(
+        geometry_settings, geometry_settings.core_desc.core_height
+    )
+
+    x_radius = (abs(lower_left_corner[0]) + abs(upper_right_corner[0])) / 2
+
+    core_center_x_distance = (
+        x_radius
+        - geometry_settings.outer_core_layers_inside_shaft.parts[0].thickness
+        - geometry_settings.core_desc.core_radius
+    )
+
+    translated_cells = []
     for cell in cells:
         region = cell.region
-        region = region.rotate((0, 0, 0))
+        region = region.translate((-core_center_x_distance, 0, 0))
         cell.region = region
-        rotated_cells.append(cell)
+        translated_cells.append(cell)
 
-    universe = openmc.Universe(cells=rotated_cells)
+    layer_universe = openmc.Universe(cells=translated_cells)
+
+    collat = openmc.RectLattice()
+    collat.lower_left = (
+        lower_left_corner[0],
+        lower_left_corner[1],
+        lower_left_corner[2],
+    )
+    # reactor_dimensions = tuple(abs(x * 2) for x in lower_left_corner)
+    reactor_dimensions = tuple(
+        abs(x) + abs(y) for x, y in zip(lower_left_corner, upper_right_corner)
+    )
+    print(reactor_dimensions)
+    collat.pitch = reactor_dimensions
+    collat.universes = [[[layer_universe]]] * 1
+    collat.outer = openmc.Universe(cells=[openmc.Cell(fill=None)])
+    reactor_cell = openmc.Cell(fill=collat, region=outer_empty_zone_boundary)
+    reactor_universe = openmc.Universe(cells=[reactor_cell])
 
     tracked_cells = {
         **core_assembly_cells,
@@ -218,7 +252,7 @@ def define_geometry(
     }
 
     return (
-        openmc.Geometry(universe, merge_surfaces=True, surface_precision=2),
-        universe,
+        openmc.Geometry(reactor_universe, merge_surfaces=True, surface_precision=2),
+        reactor_universe,
         tracked_cells,
     )

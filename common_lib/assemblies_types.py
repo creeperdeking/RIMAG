@@ -8,7 +8,6 @@ class CoreDesc(BaseModel):
     core_radius: float
     core_height: float
     outer_core_radius: float
-    outer_core_height: float
 
 
 class Assembly(BaseModel):
