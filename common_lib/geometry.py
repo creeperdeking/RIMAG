@@ -1,3 +1,4 @@
+import math
 from typing import Dict, List
 
 import openmc
@@ -15,6 +16,8 @@ from common_lib.assemblies import (
 from common_lib.geometry_utils import (
     create_cylinder,
     get_geometry_bounding_box,
+    get_z_from_x,
+    get_z_scaling,
     make_surface_plane,
     SPACING_CONSTANT,
     get_outer_empty_zone_parameters,
@@ -171,6 +174,20 @@ def define_geometry(
         )
     )
 
+    outer_empty_zone_boundary_2 = (
+        outer_empty_zone_boundary_cylinder
+        & -make_surface_plane(
+            geometry_settings.rotary_assembly_desc,
+            z0=geometry_settings.core_desc.core_height / 2 + SPACING_CONSTANT + 300,
+            boundary_type="reflective",
+        )
+        & +make_surface_plane(
+            geometry_settings.rotary_assembly_desc,
+            z0=-geometry_settings.core_desc.core_height / 2 - SPACING_CONSTANT - 300,
+            boundary_type="reflective",
+        )
+    )
+
     ### Making Cells
 
     outer_core_layers_inside_shaft_and_outside_disks_cells = make_outer_core_layers(
@@ -211,6 +228,11 @@ def define_geometry(
         geometry_settings, geometry_settings.core_desc.core_height
     )
 
+    z_radius = (abs(lower_left_corner[2]) + abs(upper_right_corner[2])) / 2
+
+    core_center_z_distance = round(z_radius + lower_left_corner[2], 5)
+    print(core_center_z_distance)
+
     x_radius = (abs(lower_left_corner[0]) + abs(upper_right_corner[0])) / 2
 
     core_center_x_distance = (
@@ -222,7 +244,7 @@ def define_geometry(
     translated_cells = []
     for cell in cells:
         region = cell.region
-        region = region.translate((-core_center_x_distance, 0, 0))
+        region = region.translate((-core_center_x_distance, 0, -core_center_z_distance))
         cell.region = region
         translated_cells.append(cell)
 

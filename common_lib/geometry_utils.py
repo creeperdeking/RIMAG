@@ -25,6 +25,10 @@ def get_outer_empty_zone_parameters(
     )
 
 
+def get_z_from_x(x: float, angle: float):
+    return x * math.tan(angle * math.pi / 180)
+
+
 def get_z_scaling(angle: float):
     complementary_angle = 90 - angle
     return 1 / math.sin(complementary_angle * math.pi / 180)
