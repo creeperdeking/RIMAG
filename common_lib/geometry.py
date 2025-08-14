@@ -158,19 +158,31 @@ def define_geometry(
         geometry_settings.core_desc.core_height,
     )
 
-    number_of_layers = 3
-
     core_height_with_margin = (
         geometry_settings.core_desc.core_height + SPACING_CONSTANT * 2
     )
     z_scaling = get_z_scaling(geometry_settings.rotary_assembly_desc.frustum_pitch)
     vertical_core_height_with_margin = core_height_with_margin * z_scaling
 
+    lower_left_corner, upper_right_corner = get_geometry_bounding_box(
+        geometry_settings,
+    )
+
+    number_of_layers_above = math.ceil(
+        0.5 - lower_left_corner[2] / vertical_core_height_with_margin
+    )
+    number_of_layers_below = math.ceil(
+        0.5 + upper_right_corner[2] / vertical_core_height_with_margin
+    )
+
+    number_of_layers = number_of_layers_above + number_of_layers_below + 1
+    start_index = number_of_layers_below
+
     surfaces = [
         make_surface_plane(
             geometry_settings.rotary_assembly_desc,
             z0=-core_height_with_margin / 2,
-            boundary_type="reflective",
+            boundary_type="transmission",
         )
     ]
 
@@ -178,8 +190,9 @@ def define_geometry(
         surfaces.append(
             make_surface_plane(
                 geometry_settings.rotary_assembly_desc,
-                z0=core_height_with_margin / 2 + core_height_with_margin * i,
-                boundary_type="reflective",
+                z0=core_height_with_margin / 2
+                + core_height_with_margin * (i - start_index),
+                boundary_type="transmission",
             )
         )
 
@@ -188,12 +201,12 @@ def define_geometry(
         & -make_surface_plane(
             geometry_settings.rotary_assembly_desc,
             z0=geometry_settings.core_desc.core_height / 2 + SPACING_CONSTANT,
-            boundary_type="reflective",
+            boundary_type="transmission",
         )
         & +make_surface_plane(
             geometry_settings.rotary_assembly_desc,
             z0=-geometry_settings.core_desc.core_height / 2 - SPACING_CONSTANT,
-            boundary_type="reflective",
+            boundary_type="transmission",
         )
     )
 
@@ -243,7 +256,7 @@ def define_geometry(
         c.translation = (
             0,
             0,
-            (vertical_core_height_with_margin) * k,
+            (vertical_core_height_with_margin) * (k - start_index),
         )
         layer_cells.append(c)
 
