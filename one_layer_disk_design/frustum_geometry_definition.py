@@ -1,4 +1,4 @@
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 from pydantic import BaseModel
 from common_lib.assemblies import (
@@ -15,7 +15,6 @@ from common_lib.assemblies_types import (
 )
 from common_lib.geometry import (
     check_assemblies_compatibility,
-    check_assembly_thickness_equal,
 )
 from common_lib.geometry_types import GeometrySettings
 from common_lib.materials import Material, MaterialChoice
@@ -274,6 +273,7 @@ def make_simulation_geometry(
         core_radius=disk_geometry_params.core_diameter / 2,
         core_height=assembly_thickness,
         outer_core_assembly=outer_core_layers_inside_shaft,
+        frustum_pitch=disk_geometry_params.frustum_pitch,
     )
     assembly_core_distance = (
         core_desc.core_radius

@@ -174,20 +174,6 @@ def define_geometry(
         )
     )
 
-    outer_empty_zone_boundary_2 = (
-        outer_empty_zone_boundary_cylinder
-        & -make_surface_plane(
-            geometry_settings.rotary_assembly_desc,
-            z0=geometry_settings.core_desc.core_height / 2 + SPACING_CONSTANT + 300,
-            boundary_type="reflective",
-        )
-        & +make_surface_plane(
-            geometry_settings.rotary_assembly_desc,
-            z0=-geometry_settings.core_desc.core_height / 2 - SPACING_CONSTANT - 300,
-            boundary_type="reflective",
-        )
-    )
-
     ### Making Cells
 
     outer_core_layers_inside_shaft_and_outside_disks_cells = make_outer_core_layers(
@@ -225,13 +211,12 @@ def define_geometry(
     # Translate every cells so that the geometric center of the reactor is at the origin
 
     lower_left_corner, upper_right_corner = get_geometry_bounding_box(
-        geometry_settings, geometry_settings.core_desc.core_height
+        geometry_settings,
     )
 
     z_radius = (abs(lower_left_corner[2]) + abs(upper_right_corner[2])) / 2
 
     core_center_z_distance = round(z_radius + lower_left_corner[2], 5)
-    print(core_center_z_distance)
 
     x_radius = (abs(lower_left_corner[0]) + abs(upper_right_corner[0])) / 2
 
@@ -251,16 +236,10 @@ def define_geometry(
     layer_universe = openmc.Universe(cells=translated_cells)
 
     collat = openmc.RectLattice()
-    collat.lower_left = (
-        lower_left_corner[0],
-        lower_left_corner[1],
-        lower_left_corner[2],
-    )
-    # reactor_dimensions = tuple(abs(x * 2) for x in lower_left_corner)
+    collat.lower_left = lower_left_corner
     reactor_dimensions = tuple(
         abs(x) + abs(y) for x, y in zip(lower_left_corner, upper_right_corner)
     )
-    print(reactor_dimensions)
     collat.pitch = reactor_dimensions
     collat.universes = [[[layer_universe]]] * 1
     collat.outer = openmc.Universe(cells=[openmc.Cell(fill=None)])
@@ -274,7 +253,7 @@ def define_geometry(
     }
 
     return (
-        openmc.Geometry(reactor_universe, merge_surfaces=True, surface_precision=2),
+        openmc.Geometry(reactor_universe, merge_surfaces=True, surface_precision=5),
         reactor_universe,
         tracked_cells,
     )

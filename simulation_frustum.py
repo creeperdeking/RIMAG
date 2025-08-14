@@ -109,7 +109,6 @@ start_program(
     colors=colors,
     materials_dict=materials_dict,
     geometry_settings=make_simulation_geometry_result.geometry_settings,
-    assembly_thickness=make_simulation_geometry_result.geometry_settings.core_desc.core_height,
     batches=batches,
     weight_windows=weight_windows,
     particle_type=particle_type,

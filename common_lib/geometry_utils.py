@@ -39,40 +39,49 @@ def get_z_offset(angle: float, assembly_core_distance: float):
     return assembly_core_distance / math.tan(complementary_angle * math.pi / 180)
 
 
-def get_geometry_base_height(
-    angle: float, outer_empty_zone_parameters: OuterEmptyZoneParameters
-):
+def get_height_from_length(length: float, angle: float):
     complementary_angle = 90 - angle
-    return outer_empty_zone_parameters.radius / math.tan(
-        complementary_angle * math.pi / 180
+    return length / math.tan(complementary_angle * math.pi / 180)
+
+
+def get_geometry_base_height(angle: float, geometry_settings: GeometrySettings):
+    max_frustum_diameter = (
+        geometry_settings.outer_core_layers_inside_shaft.parts[0].thickness
+        + geometry_settings.rotary_assembly_desc.rotary_assembly_radius
+    )
+    return (
+        get_height_from_length(max_frustum_diameter, angle)
+        + geometry_settings.core_desc.core_vertical_height
     )
 
 
 def get_geometry_bounding_box(
     geometry_settings: GeometrySettings,
-    assembly_thickness: float,
 ):
-    # I need: assembly section thickness, assembly core distance, and angle
     outer_empty_zone_parameters = get_outer_empty_zone_parameters(geometry_settings)
-    z_scaling = get_z_scaling(geometry_settings.rotary_assembly_desc.frustum_pitch)
+    angle = geometry_settings.rotary_assembly_desc.frustum_pitch
     base_height = get_geometry_base_height(
-        geometry_settings.rotary_assembly_desc.frustum_pitch,
-        outer_empty_zone_parameters,
+        angle,
+        geometry_settings,
     )
-    z_offset = get_z_offset(
-        geometry_settings.rotary_assembly_desc.frustum_pitch,
-        geometry_settings.rotary_assembly_desc.assembly_core_distance,
+
+    lower_z = (
+        -get_height_from_length(geometry_settings.core_desc.core_radius, angle)
+        - get_height_from_length(
+            geometry_settings.outer_core_layers_inside_shaft.parts[0].thickness, angle
+        )
+        - geometry_settings.core_desc.core_vertical_height / 2
     )
 
     lower_left_corner = (
-        -outer_empty_zone_parameters.radius + outer_empty_zone_parameters.x0 - 1,
-        -outer_empty_zone_parameters.radius - 1,
-        -assembly_thickness / 2 * z_scaling + z_offset - base_height - 1,
+        -outer_empty_zone_parameters.radius + outer_empty_zone_parameters.x0,
+        -outer_empty_zone_parameters.radius,
+        lower_z,
     )
     upper_right_corner = (
-        outer_empty_zone_parameters.radius + outer_empty_zone_parameters.x0 + 1,
-        outer_empty_zone_parameters.radius + 1,
-        assembly_thickness / 2 * z_scaling + z_offset + base_height + 1,
+        outer_empty_zone_parameters.radius + outer_empty_zone_parameters.x0,
+        outer_empty_zone_parameters.radius,
+        lower_z + base_height,
     )
 
     return lower_left_corner, upper_right_corner

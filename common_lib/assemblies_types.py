@@ -7,6 +7,7 @@ from common_lib.rotary_assembly import RotaryAssemblyDesc
 class CoreDesc(BaseModel):
     core_radius: float
     core_height: float
+    core_vertical_height: float
     outer_core_radius: float
 
 

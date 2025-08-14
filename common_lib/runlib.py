@@ -41,7 +41,6 @@ def start_program(
     colors: Dict[Any, Any],
     materials_dict: Dict[str, openmc.Material],
     geometry_settings: GeometrySettings,
-    assembly_thickness: float,
     batches: float,
     weight_windows: UseWeightWindows,
     particle_type: ParticleType,
@@ -61,7 +60,6 @@ def start_program(
             geometry,
             materials_dict,
             geometry_settings,
-            assembly_thickness,
         )
 
         core_characteristics = calculate_core_characteristics()
@@ -69,9 +67,7 @@ def start_program(
     if print_characteristics:
         print_core_characteristics(core_characteristics)
 
-    lower_left_corner, upper_right_corner = get_geometry_bounding_box(
-        geometry_settings, assembly_thickness
-    )
+    lower_left_corner, upper_right_corner = get_geometry_bounding_box(geometry_settings)
 
     if weight_windows == "generate":
         settings = make_sim_settings(

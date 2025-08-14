@@ -251,7 +251,6 @@ def stochastic_volume_calculation(
     geometry: openmc.Geometry,
     materials_dict: Dict[str, openmc.Material],
     geometry_settings: GeometrySettings,
-    assembly_thickness: float,
     samples: int = 700000000,
 ):
     """
@@ -259,7 +258,7 @@ def stochastic_volume_calculation(
     """
     if any(c.volume is None for c in cells):
         lower_left_corner, upper_right_corner = get_geometry_bounding_box(
-            geometry_settings, assembly_thickness
+            geometry_settings
         )
         # 1e5 samples per cell is usually enough for <1 % error
         volcalc = openmc.VolumeCalculation(

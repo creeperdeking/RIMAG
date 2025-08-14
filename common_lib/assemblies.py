@@ -7,8 +7,10 @@ from common_lib.assemblies_types import (
     AssemblySections,
     CoreDesc,
 )
+from common_lib.geometry_types import GeometrySettings
 from common_lib.geometry_utils import (
     create_cylinder,
+    get_z_scaling,
 )
 from common_lib.rotary_assembly import RotaryAssemblyDesc
 
@@ -17,11 +19,14 @@ def compute_core_desc(
     core_radius: float,
     core_height: float,
     outer_core_assembly: AssemblySections,
+    frustum_pitch: float,
 ):
+    z_scaling = get_z_scaling(frustum_pitch)
     outer_core_thickness = calculate_assembly_thickness(outer_core_assembly)
     return CoreDesc(
         core_radius=core_radius,
         core_height=core_height,
+        core_vertical_height=core_height * z_scaling,
         outer_core_radius=core_radius + outer_core_thickness,
     )
 
