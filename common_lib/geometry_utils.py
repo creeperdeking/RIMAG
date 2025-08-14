@@ -61,12 +61,16 @@ def get_geometry_bounding_box_one_full_layer(
         geometry_settings,
     )
 
+    vertical_core_height_with_margin = get_vertical_core_height_with_margin(
+        geometry_settings
+    )
+
     lower_z = (
         -get_height_from_length(geometry_settings.core_desc.core_radius, angle)
         - get_height_from_length(
             geometry_settings.outer_core_layers_inside_shaft.parts[0].thickness, angle
         )
-        - geometry_settings.core_desc.core_vertical_height / 2
+        - vertical_core_height_with_margin / 2
     )
 
     lower_left_corner = (
