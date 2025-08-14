@@ -160,6 +160,28 @@ def define_geometry(
         geometry_settings.core_desc.core_height,
     )
 
+    number_of_layers = 3
+
+    core_height_with_margin = (
+        geometry_settings.core_desc.core_height + SPACING_CONSTANT * 2
+    )
+    surfaces = [
+        make_surface_plane(
+            geometry_settings.rotary_assembly_desc,
+            z0=-core_height_with_margin / 2,
+            boundary_type="reflective",
+        )
+    ]
+
+    for i in range(number_of_layers):
+        surfaces.append(
+            make_surface_plane(
+                geometry_settings.rotary_assembly_desc,
+                z0=core_height_with_margin / 2 + core_height_with_margin * i,
+                boundary_type="reflective",
+            )
+        )
+
     outer_empty_zone_boundary = (
         outer_empty_zone_boundary_cylinder
         & -make_surface_plane(
@@ -227,24 +249,30 @@ def define_geometry(
     )
 
     translated_cells = []
-    for cell in cells:
-        region = cell.region
-        region = region.translate((-core_center_x_distance, 0, -core_center_z_distance))
-        cell.region = region
-        translated_cells.append(cell)
+    # for cell in cells:
+    #     region = cell.region
+    #     region = region.translate((-core_center_x_distance, 0, -core_center_z_distance))
+    #     cell.region = region
+    #     translated_cells.append(cell)
 
-    layer_universe = openmc.Universe(cells=translated_cells)
+    ### Make the reactor universe
 
-    collat = openmc.RectLattice()
-    collat.lower_left = lower_left_corner
-    reactor_dimensions = tuple(
-        abs(x) + abs(y) for x, y in zip(lower_left_corner, upper_right_corner)
-    )
-    collat.pitch = reactor_dimensions
-    collat.universes = [[[layer_universe]]] * 1
-    collat.outer = openmc.Universe(cells=[openmc.Cell(fill=None)])
-    reactor_cell = openmc.Cell(fill=collat, region=outer_empty_zone_boundary)
-    reactor_universe = openmc.Universe(cells=[reactor_cell])
+    layer_universe = openmc.Universe(cells=cells)
+
+    layer_cells = []
+    layers_universes = [layer_universe] * number_of_layers
+    for k, u in enumerate(layers_universes):
+        region = outer_empty_zone_boundary_cylinder & +surfaces[k] & -surfaces[k + 1]
+        c = openmc.Cell(region=region, fill=u)
+        c.translation = (
+            0,
+            0,
+            (geometry_settings.core_desc.core_vertical_height + SPACING_CONSTANT * 2)
+            * k,
+        )
+        layer_cells.append(c)
+
+    reactor_universe = openmc.Universe(cells=layer_cells)
 
     tracked_cells = {
         **core_assembly_cells,
