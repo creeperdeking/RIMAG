@@ -152,8 +152,6 @@ def define_geometry(
         geometry_settings.photovoltaic_assembly,
     )
 
-    outer_empty_zone_parameters = get_outer_empty_zone_parameters(geometry_settings)
-
     outer_core_boundary = create_cylinder(
         geometry_settings.rotary_assembly_desc,
         geometry_settings.core_desc.outer_core_radius,
@@ -165,6 +163,9 @@ def define_geometry(
     core_height_with_margin = (
         geometry_settings.core_desc.core_height + SPACING_CONSTANT * 2
     )
+    z_scaling = get_z_scaling(geometry_settings.rotary_assembly_desc.frustum_pitch)
+    vertical_core_height_with_margin = core_height_with_margin * z_scaling
+
     surfaces = [
         make_surface_plane(
             geometry_settings.rotary_assembly_desc,
@@ -230,31 +231,6 @@ def define_geometry(
         outer_empty_zone_cell,
     ]
 
-    # Translate every cells so that the geometric center of the reactor is at the origin
-
-    lower_left_corner, upper_right_corner = get_geometry_bounding_box(
-        geometry_settings,
-    )
-
-    z_radius = (abs(lower_left_corner[2]) + abs(upper_right_corner[2])) / 2
-
-    core_center_z_distance = round(z_radius + lower_left_corner[2], 5)
-
-    x_radius = (abs(lower_left_corner[0]) + abs(upper_right_corner[0])) / 2
-
-    core_center_x_distance = (
-        x_radius
-        - geometry_settings.outer_core_layers_inside_shaft.parts[0].thickness
-        - geometry_settings.core_desc.core_radius
-    )
-
-    translated_cells = []
-    # for cell in cells:
-    #     region = cell.region
-    #     region = region.translate((-core_center_x_distance, 0, -core_center_z_distance))
-    #     cell.region = region
-    #     translated_cells.append(cell)
-
     ### Make the reactor universe
 
     layer_universe = openmc.Universe(cells=cells)
@@ -267,12 +243,26 @@ def define_geometry(
         c.translation = (
             0,
             0,
-            (geometry_settings.core_desc.core_vertical_height + SPACING_CONSTANT * 2)
-            * k,
+            (vertical_core_height_with_margin) * k,
         )
         layer_cells.append(c)
 
     reactor_universe = openmc.Universe(cells=layer_cells)
+    z_bot = openmc.ZPlane(
+        z0=-vertical_core_height_with_margin / 2, boundary_type="periodic"
+    )
+    z_top = openmc.ZPlane(
+        z0=vertical_core_height_with_margin / 2, boundary_type="periodic"
+    )
+    z_bot.periodic_surface = z_top
+
+    reactor_universe = openmc.Universe(cells=layer_cells)
+
+    reactor_slice_cell = openmc.Cell(
+        region=outer_empty_zone_boundary_cylinder & +z_bot & -z_top,
+        fill=reactor_universe,
+    )
+    reactor_slice_universe = openmc.Universe(cells=[reactor_slice_cell])
 
     tracked_cells = {
         **core_assembly_cells,
@@ -281,7 +271,9 @@ def define_geometry(
     }
 
     return (
-        openmc.Geometry(reactor_universe, merge_surfaces=True, surface_precision=5),
-        reactor_universe,
+        openmc.Geometry(
+            reactor_slice_universe, merge_surfaces=True, surface_precision=5
+        ),
+        reactor_slice_universe,
         tracked_cells,
     )
