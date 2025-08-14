@@ -25,10 +25,6 @@ def get_outer_empty_zone_parameters(
     )
 
 
-def get_z_from_x(x: float, angle: float):
-    return x * math.tan(angle * math.pi / 180)
-
-
 def get_z_scaling(angle: float):
     complementary_angle = 90 - angle
     return 1 / math.sin(complementary_angle * math.pi / 180)
@@ -55,7 +51,7 @@ def get_geometry_base_height(angle: float, geometry_settings: GeometrySettings):
     )
 
 
-def get_geometry_bounding_box(
+def get_geometry_bounding_box_one_full_layer(
     geometry_settings: GeometrySettings,
 ):
     outer_empty_zone_parameters = get_outer_empty_zone_parameters(geometry_settings)
@@ -82,6 +78,39 @@ def get_geometry_bounding_box(
         outer_empty_zone_parameters.radius + outer_empty_zone_parameters.x0,
         outer_empty_zone_parameters.radius,
         lower_z + base_height,
+    )
+
+    return lower_left_corner, upper_right_corner
+
+
+def get_vertical_core_height_with_margin(geometry_settings: GeometrySettings):
+    core_height_with_margin = (
+        geometry_settings.core_desc.core_height + SPACING_CONSTANT * 2
+    )
+    z_scaling = get_z_scaling(geometry_settings.rotary_assembly_desc.frustum_pitch)
+    return core_height_with_margin * z_scaling
+
+
+def get_geometry_bounding_box(
+    geometry_settings: GeometrySettings,
+):
+    lower_left_corner, upper_right_corner = get_geometry_bounding_box_one_full_layer(
+        geometry_settings,
+    )
+
+    vertical_core_height_with_margin = get_vertical_core_height_with_margin(
+        geometry_settings
+    )
+
+    lower_left_corner = (
+        lower_left_corner[0],
+        lower_left_corner[1],
+        -vertical_core_height_with_margin / 2,
+    )
+    upper_right_corner = (
+        upper_right_corner[0],
+        upper_right_corner[1],
+        +vertical_core_height_with_margin / 2,
     )
 
     return lower_left_corner, upper_right_corner

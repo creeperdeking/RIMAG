@@ -15,12 +15,12 @@ from common_lib.assemblies import (
 )
 from common_lib.geometry_utils import (
     create_cylinder,
-    get_geometry_bounding_box,
-    get_z_from_x,
+    get_vertical_core_height_with_margin,
     get_z_scaling,
     make_surface_plane,
     SPACING_CONSTANT,
     get_outer_empty_zone_parameters,
+    get_geometry_bounding_box_one_full_layer,
 )
 
 from common_lib.geometry_types import GeometrySettings
@@ -161,10 +161,12 @@ def define_geometry(
     core_height_with_margin = (
         geometry_settings.core_desc.core_height + SPACING_CONSTANT * 2
     )
-    z_scaling = get_z_scaling(geometry_settings.rotary_assembly_desc.frustum_pitch)
-    vertical_core_height_with_margin = core_height_with_margin * z_scaling
 
-    lower_left_corner, upper_right_corner = get_geometry_bounding_box(
+    vertical_core_height_with_margin = get_vertical_core_height_with_margin(
+        geometry_settings
+    )
+
+    lower_left_corner, upper_right_corner = get_geometry_bounding_box_one_full_layer(
         geometry_settings,
     )
 
