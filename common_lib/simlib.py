@@ -468,7 +468,7 @@ def get_srniel_table():
     # --- 1.  Load the SR-NIEL table -----------------------------
     # Assume the first two columns are Energy [MeV] and NIEL [MeV cm2 g-1]
     E_MeV, D_mcg = np.loadtxt(
-        "scripts/srniel_Si_E722-19_compact.txt", usecols=(0, 1), unpack=True
+        "scripts/srniel_GaAs_E722-19_compact.txt", usecols=(0, 1), unpack=True
     )
 
     # --- 2.  Normalise to 1 at 1 MeV ----------------------------

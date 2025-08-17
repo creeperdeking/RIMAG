@@ -82,6 +82,10 @@ atoms: Dict[str, Atom] = {
     "Ca": Atom(name="Ca", atomic_weight=40.078),
     "K": Atom(name="K", atomic_weight=39.0983),
     "Nb": Atom(name="Nb", atomic_weight=92.90638),
+    "Ga": Atom(name="Ga", atomic_weight=69.723),
+    "As": Atom(name="As", atomic_weight=74.9216),
+    "In": Atom(name="In", atomic_weight=114.818),
+    "P": Atom(name="P", atomic_weight=30.973762),
 }
 
 
@@ -403,6 +407,20 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
         ),
         "Boron": boron,
         "Polyethylene": polyethylene,
+        "Gallium Arsenide": Material(
+            composition=[
+                AtomProportion(atom=atoms["Ga"], proportion=1),
+                AtomProportion(atom=atoms["As"], proportion=1),
+            ],
+        ),
+        "InGaAsP": Material(
+            composition=[
+                AtomProportion(atom=atoms["In"], proportion=0.83),
+                AtomProportion(atom=atoms["Ga"], proportion=0.17),
+                AtomProportion(atom=atoms["As"], proportion=0.37),
+                AtomProportion(atom=atoms["P"], proportion=0.63),
+            ],
+        ),
     }
 
     material_mixed_def = {

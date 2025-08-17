@@ -14,7 +14,7 @@ from one_layer_disk_design.frustum_geometry_definition import make_simulation_ge
 
 run_mode: RunMode = "keff"
 print_core_characteristics = False
-batches = 200  # 2500  # 1250
+batches = 2000  # 2500  # 1250
 weight_windows: UseWeightWindows = "generate"
 particle_type: ParticleType = "neutron"
 # Tally absoption only for this particular nuclide:
@@ -70,9 +70,9 @@ material_choice = MaterialChoice(
     emitter="Graphite",
     fuel_cladding="Graphite",
     void="Void",
-    photovoltaic="Silicon",
-    coolant="Light Water",
-    neutron_shield_moderator="Light Water",
+    photovoltaic="InGaAsP",
+    coolant="Borated Water",
+    neutron_shield_moderator="Borated Water",
     gamma_shield="Tungsten",
 )
 
