@@ -412,6 +412,8 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
                 AtomProportion(atom=atoms["Ga"], proportion=1),
                 AtomProportion(atom=atoms["As"], proportion=1),
             ],
+            density=5.32,
+            color="lightblue",
         ),
         "InGaAsP": Material(
             composition=[
@@ -420,6 +422,8 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
                 AtomProportion(atom=atoms["As"], proportion=0.37),
                 AtomProportion(atom=atoms["P"], proportion=0.63),
             ],
+            density=5.07,
+            color="lightblue",
         ),
     }
 
