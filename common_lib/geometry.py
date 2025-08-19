@@ -254,7 +254,7 @@ def define_geometry(
     layers_universes = [layer_universe] * number_of_layers
     for k, u in enumerate(layers_universes):
         region = outer_empty_zone_boundary_cylinder & +surfaces[k] & -surfaces[k + 1]
-        c = openmc.Cell(region=region, fill=u)
+        c = openmc.Cell(region=region, fill=u, name=f"boundary_layer_{k}")
         c.translation = (
             0,
             0,

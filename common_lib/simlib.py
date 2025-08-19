@@ -1,3 +1,4 @@
+import gc
 import glob
 import openmc
 import openmc.deplete
@@ -120,6 +121,7 @@ def make_sim_settings(
     source = openmc.IndependentSource(space=openmc.stats.Point((0, 0, 0)))
     # Define simulation settings
     settings = openmc.Settings()
+    settings.volume_normalized_flux_tallies = False
     settings.inactive = 10
     settings.max_history_splits = 5000  # cap long histories
     UPDATE_INTERVAL = 8
@@ -251,7 +253,7 @@ def stochastic_volume_calculation(
     geometry: openmc.Geometry,
     materials_dict: Dict[str, openmc.Material],
     geometry_settings: GeometrySettings,
-    samples: int = 700000000,
+    samples: int = 50000000,
 ):
     """
     Stochastic volume calculation, adds volume information to the cells
@@ -282,7 +284,7 @@ def stochastic_volume_calculation(
                 volume = vol_data[0]
                 std_dev = vol_data[1]
                 rel_uncertainty = std_dev / volume * 100 if volume > 0 else float("inf")
-                if rel_uncertainty == float("inf"):
+                if rel_uncertainty == float("inf") or "boundary_layer" in cell.name:
                     # Ignore this cell, set its volume to zero
                     cell.volume = 0.0
                     continue
@@ -467,19 +469,14 @@ def run_depletion_sim(
 def get_srniel_table():
     # --- 1.  Load the SR-NIEL table -----------------------------
     # Assume the first two columns are Energy [MeV] and NIEL [MeV cm2 g-1]
-    E_MeV, D_mcg = np.loadtxt(
+    E_MeV, NIEL_MeV_cm2_g = np.loadtxt(
         "scripts/srniel_GaAs_E722-19_compact.txt", usecols=(0, 1), unpack=True
     )
 
-    # --- 2.  Normalise to 1 at 1 MeV ----------------------------
-    E_ref = 2.0  # reference energy in MeV
-    D_ref = np.interp(E_ref, E_MeV, D_mcg)  # damage-function value in MeV
-    D_norm = D_mcg / D_ref  # dimensionless
-
-    # --- 3.  Convert energies to eV for OpenMC ------------------
+    # --- 2.  Convert energies to eV for OpenMC ------------------
     E_eV = E_MeV * 1.0e6
 
-    return E_eV, D_norm
+    return E_eV, NIEL_MeV_cm2_g
 
 
 def create_photovoltaic_tally(
@@ -506,7 +503,7 @@ def create_photovoltaic_flux_tally(
     photovoltaic_cell, materials_dict, particle_type: Literal["neutron", "photon"]
 ):
     E_eV, D_norm = get_srniel_table()
-    tally = openmc.Tally(name="photovoltaic_flux")
+    tally = openmc.Tally(name="photovoltaic_ddd")
     tally.filters = [
         openmc.CellFilter(photovoltaic_cell),
         openmc.ParticleFilter(particle_type),
@@ -606,11 +603,11 @@ def print_neutron_fluence_cm2s(
 ):
     results = openmc.StatePoint(f"statepoint.{batches}.h5")
     photovolatic = results.get_tally(name="photovoltaic")
-    flux_photovoltaic = results.get_tally(name="photovoltaic_flux")
+    ddd_photovoltaic = results.get_tally(name="photovoltaic_ddd")
     fluence_emitter = results.get_tally(name="emitter")
 
-    # Get normalized flux (particle-cm per source particle)
-    normalized_flux_photovoltaic = flux_photovoltaic.mean[0][0][0]
+    # Get normalized flux (MeV/g/source particle)
+    normalized_ddd_photovoltaic = ddd_photovoltaic.mean[0][0][0]
 
     # Get absorption in photovoltaic
     normalized_absorption_photovoltaic = photovolatic.mean[0][0][0]
@@ -633,8 +630,8 @@ def print_neutron_fluence_cm2s(
     )  # kGy/year
 
     # Calculate absolute flux (neutrons/cm²-s)
-    absolute_flux_photovoltaic = (
-        normalized_flux_photovoltaic * source_strength / photovoltaic_slice_volume
+    absolute_ddd_photovoltaic = (
+        normalized_ddd_photovoltaic * source_strength / photovoltaic_slice_volume
     )
 
     absorption_photovoltaic = (
@@ -649,7 +646,7 @@ def print_neutron_fluence_cm2s(
     print("--------------------------------")
     print("photovoltaic")
     print(
-        f"Fluence: {absolute_flux_photovoltaic * 365 * 24 * 60 * 60:.4e} neutrons/cm²/year"
+        f"Displacement damage: {absolute_ddd_photovoltaic * 365 * 24 * 60 * 60:.4e} MeV/g/year"
     )
     print(
         f"Absorption: {absorption_photovoltaic * 365 * 24 * 60 * 60:.4e} neutrons/cm3/year"
@@ -697,7 +694,7 @@ def run_sim_with_tallies(
         batches,
     )
 
-    clean_directory()
+    # clean_directory()
 
 
 def print_core_characteristics(

@@ -1,5 +1,6 @@
 from common_lib.materials import MaterialChoice, make_materials
 from common_lib.runlib import ParticleType, RunMode, UseWeightWindows, start_program
+from scipy import constants as cst
 
 from one_layer_disk_design.disks_core_characteristics import (
     calculate_disk_core_characteristics,
@@ -38,9 +39,9 @@ disk_geometry_params = make_disk_geometry_params(
         fuel_emitter_gap=0.1,
         emitter_thickness=0.5,
         thickness_photovoltaic=thickness_photovoltaic,
-        reflector_thickness=20,
-        neutron_shield_moderator_thickness=70,
-        neutron_shield_absorber_thickness=20,
+        reflector_thickness=10,
+        neutron_shield_moderator_thickness=100,  # 160
+        neutron_shield_absorber_thickness=10,
         gamma_shield_thickness=10,
         frustum_pitch=45,
     )
@@ -49,7 +50,7 @@ disk_geometry_params = make_disk_geometry_params(
 ### Thermodynamic parameters
 
 hot_temp = 1250 + 273  # K
-cold_temp = 1150 + 273  # K
+cold_temp = 1050 + 273  # K
 
 photovoltaic_efficiency = 0.40
 photovoltaic_power_density = 0.61  # W/cm2
@@ -63,8 +64,8 @@ fuel_burnup = 75  # MWd/kgHM
 
 material_choice = MaterialChoice(
     moderator="Light Water",
-    neutron_absorber="Borated Water",
-    neutron_reflector="Light Water",
+    neutron_absorber="Boron Carbide",
+    neutron_reflector="Graphite",
     fuel="Uranium Oxy-Carbide",
     moderator_cladding="Zirconium",
     emitter="Graphite",
