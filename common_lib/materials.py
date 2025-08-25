@@ -89,6 +89,64 @@ atoms: Dict[str, Atom] = {
 }
 
 
+def borated_water_atom_proportions_from_boron_ppm(
+    boron_ppm: float,
+) -> List[AtomProportion]:
+    """
+    Create atom proportions for a water solution containing boron (as boric acid, H3BO3)
+    at a specified elemental boron concentration in ppm by mass.
+
+    The output is a "chemical-like" formula expressed as atom proportions for H, O, and B.
+
+    Definitions:
+    - ppm is parts-per-million by mass of elemental boron (B), i.e. mass fraction of B = ppm / 1e6
+    - Boron is present solely as boric acid (H3BO3)
+
+    Let y be the number of water molecules (H2O) and x the number of boric acid molecules (H3BO3).
+    Mass fraction constraint on B:
+        w_B = (x * M_B) / (y * M_H2O + x * M_H3BO3)
+    Solving for r = x / y gives:
+        r = (w_B * M_H2O) / (M_B - w_B * M_H3BO3)
+
+    We set y = 1 and compute r, then return atom counts proportional to:
+        H: 2*y + 3*x = 2 + 3*r
+        O: 1*y + 3*x = 1 + 3*r
+        B: x = r
+    """
+    if boron_ppm <= 0:
+        return [
+            AtomProportion(atom=atoms["H"], proportion=2.0),
+            AtomProportion(atom=atoms["O"], proportion=1.0),
+            AtomProportion(atom=atoms["B"], proportion=0.0),
+        ]
+
+    # Convert ppm to mass fraction
+    w_B = boron_ppm / 1_000_000.0
+
+    mass_B = atoms["B"].atomic_weight
+    mass_H = atoms["H"].atomic_weight
+    mass_O = atoms["O"].atomic_weight
+
+    mass_H2O = 2.0 * mass_H + mass_O
+    mass_H3BO3 = mass_B + 3.0 * mass_H + 3.0 * mass_O
+
+    max_boron_mass_fraction = mass_B / mass_H3BO3
+    if w_B >= max_boron_mass_fraction:
+        raise ValueError(
+            f"Boron ppm too high: maximum elemental boron mass fraction in pure boric acid is "
+            f"{max_boron_mass_fraction:.6f} (≈ {max_boron_mass_fraction * 1e6:.0f} ppm). "
+            f"Got {boron_ppm} ppm."
+        )
+
+    r = (w_B * mass_H2O) / (mass_B - w_B * mass_H3BO3)
+
+    return [
+        AtomProportion(atom=atoms["H"], proportion=2.0 + 3.0 * r),
+        AtomProportion(atom=atoms["O"], proportion=1.0 + 3.0 * r),
+        AtomProportion(atom=atoms["B"], proportion=r),
+    ]
+
+
 def heavy_metals_density(material: Material) -> float:
     return (
         material.density
@@ -384,14 +442,14 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
             color="lightgray",
         ),
         "Borated Water": Material(
-            composition=[
-                AtomProportion(atom=atoms["H"], proportion=130),
-                AtomProportion(atom=atoms["O"], proportion=65),
-                AtomProportion(atom=atoms["H"], proportion=3),
-                AtomProportion(atom=atoms["O"], proportion=3),
-                AtomProportion(atom=atoms["B"], proportion=1),
-            ],
+            composition=borated_water_atom_proportions_from_boron_ppm(2000),
             density=1.016,
+            color="darkblue",
+            scattering="c_H_in_H2O",
+        ),
+        "Borated Water Moderator": Material(
+            composition=borated_water_atom_proportions_from_boron_ppm(250),
+            density=1.016 / 2,
             color="darkblue",
             scattering="c_H_in_H2O",
         ),
