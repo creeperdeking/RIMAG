@@ -50,6 +50,7 @@ def start_program(
     monitored_nuclide: MonitoredNuclide,
     emitter_gamma_energy_MeV: float,
     print_characteristics=True,
+    deterministic=False,
 ):
     ### Calculate core characteristics
 
@@ -71,7 +72,7 @@ def start_program(
 
     if weight_windows == "generate":
         settings = make_sim_settings(
-            deterministic=True,
+            deterministic=deterministic,
             batches=batches,
             weight_windows=weight_windows,
             lower_left_corner=lower_left_corner,
@@ -83,7 +84,7 @@ def start_program(
         weight_windows = "use"
 
     settings = make_sim_settings(
-        deterministic=True,
+        deterministic=deterministic,
         batches=batches,
         weight_windows=weight_windows,
         lower_left_corner=lower_left_corner,
@@ -115,7 +116,7 @@ def start_program(
         settings = make_sim_photon_from_cells(
             [tracked_cells[material_choice.emitter]],
             gamma_E_MeV=emitter_gamma_energy_MeV,
-            deterministic=False,
+            deterministic=deterministic,
             batches=batches,
         )
         run_sim_with_tallies(

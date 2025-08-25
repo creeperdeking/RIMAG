@@ -729,6 +729,11 @@ def print_core_characteristics(
         round(core_characteristics.photovoltaic_power_density * 1e4, 2),
         "W/m2",
     )
+    print(
+        "photovoltaic power per m",
+        round(core_characteristics.photovoltaic_power_per_m / 1e6, 2),
+        "MW/m",
+    )
 
     print(
         "photovoltaic area",

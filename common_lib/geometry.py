@@ -76,7 +76,7 @@ def check_assembly_thickness_equal(
 ):
     assembly1_thickness = calculate_assembly_thickness(assembly1)
     assembly2_thickness = calculate_assembly_thickness(assembly2)
-    if assembly1_thickness != assembly2_thickness:
+    if round(assembly1_thickness, 10) != round(assembly2_thickness, 10):
         raise ValueError(
             f"Assembly thickness must be the same. Assembly1 thickness: {assembly1_thickness}, Assembly2 thickness: {assembly2_thickness}"
         )

@@ -14,9 +14,9 @@ from one_layer_disk_design.frustum_geometry_definition import make_simulation_ge
 ### Simulation parameters
 
 run_mode: RunMode = "keff"
-print_core_characteristics = False
+print_core_characteristics = True
 batches = 2000  # 2500  # 1250
-weight_windows: UseWeightWindows = "generate"
+weight_windows: UseWeightWindows = "no"
 particle_type: ParticleType = "neutron"
 # Tally absoption only for this particular nuclide:
 monitored_nuclide = None  # MonitoredNuclide(nuclide="Si30")
@@ -31,19 +31,19 @@ fuel_thickness = 0.12
 thickness_photovoltaic = 0.02
 disk_geometry_params = make_disk_geometry_params(
     DiskGeometryParams(
-        core_diameter=115,
+        core_diameter=135,
         moderator_cladding_thickness=0.05,
         fuel_thickness=fuel_thickness,
         fuel_cladding_thickness=(1 - fuel_thickness) / 2,
         moderator_thickness=1,
-        fuel_emitter_gap=0.1,
+        fuel_emitter_gap=0.2,
         emitter_thickness=0.5,
         thickness_photovoltaic=thickness_photovoltaic,
         reflector_thickness=10,
-        neutron_shield_moderator_thickness=100,  # 160
+        neutron_shield_moderator_thickness=50,  # 175
         neutron_shield_absorber_thickness=10,
         gamma_shield_thickness=10,
-        frustum_pitch=45,
+        frustum_pitch=0,
     )
 )
 
@@ -52,8 +52,8 @@ disk_geometry_params = make_disk_geometry_params(
 hot_temp = 1250 + 273  # K
 cold_temp = 1050 + 273  # K
 
-photovoltaic_efficiency = 0.40
-photovoltaic_power_density = 0.61  # W/cm2
+photovoltaic_efficiency = 0.33
+photovoltaic_power_density = 0.92  # 0.61  # W/cm2
 
 ### Nuclear parameters
 
@@ -73,7 +73,7 @@ material_choice = MaterialChoice(
     void="Void",
     photovoltaic="InGaAsP",
     coolant="Borated Water",
-    neutron_shield_moderator="Borated Water",
+    neutron_shield_moderator="Graphite",
     gamma_shield="Tungsten",
 )
 
@@ -99,6 +99,7 @@ def calculate_core_characteristics():
         photovoltaic_thickness=thickness_photovoltaic,
         fuel_burnup=fuel_burnup,
         fuel_thickness=fuel_thickness,
+        vertical_core_height=make_simulation_geometry_result.geometry_settings.core_desc.core_vertical_height,
     )
 
 
