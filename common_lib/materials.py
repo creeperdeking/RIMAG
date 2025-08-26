@@ -162,7 +162,13 @@ def heavy_metals_density(material: Material) -> float:
     )
 
 
-def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
+def make_materials(
+    uranium_enrichment: float,
+    material_choice: MaterialChoice,
+    borated_water_moderator_boron_ppm: float = 2000,
+    moderator_density: float = 1.016,
+    gadolinium_oxide_in_fuel_proportion: float = 0.0,
+):
     natural_uranium = Material(
         composition=[
             AtomProportion(atom=atoms["U"], proportion=1),
@@ -204,6 +210,14 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
         ],
         density=18.95,
         color="green",
+    )
+
+    gadolinium_oxide = Material(
+        composition=[
+            AtomProportion(atom=atoms["Gd"], proportion=2),
+            AtomProportion(atom=atoms["O"], proportion=3),
+        ],
+        density=7.4,
     )
 
     uranium_oxy_carbide = Material(
@@ -442,14 +456,16 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
             color="lightgray",
         ),
         "Borated Water": Material(
-            composition=borated_water_atom_proportions_from_boron_ppm(2000),
+            composition=borated_water_atom_proportions_from_boron_ppm(3000),
             density=1.016,
             color="darkblue",
             scattering="c_H_in_H2O",
         ),
         "Borated Water Moderator": Material(
-            composition=borated_water_atom_proportions_from_boron_ppm(250),
-            density=1.016 / 2,
+            composition=borated_water_atom_proportions_from_boron_ppm(
+                borated_water_moderator_boron_ppm
+            ),
+            density=moderator_density,
             color="darkblue",
             scattering="c_H_in_H2O",
         ),
@@ -493,6 +509,13 @@ def make_materials(uranium_enrichment: float, material_choice: MaterialChoice):
         "Borated Graphite": MixedMaterial(
             materials=["Graphite NO Scattering", "Boron Carbide"],
             proportions=[0.9, 0.1],
+        ),
+        "Uranium Oxy-Carbide with Gadolinium Oxide": MixedMaterial(
+            materials=["Uranium Oxy-Carbide", "Gadolinium Oxide"],
+            proportions=[
+                1 - gadolinium_oxide_in_fuel_proportion,
+                gadolinium_oxide_in_fuel_proportion,
+            ],
         ),
     }
 

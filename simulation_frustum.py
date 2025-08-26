@@ -15,7 +15,7 @@ from one_layer_disk_design.frustum_geometry_definition import make_simulation_ge
 
 run_mode: RunMode = "keff"
 print_core_characteristics = True
-batches = 2000  # 2500  # 1250
+batches = 30  # 2500  # 1250
 weight_windows: UseWeightWindows = "no"
 particle_type: ParticleType = "neutron"
 # Tally absoption only for this particular nuclide:
@@ -31,16 +31,16 @@ fuel_thickness = 0.12
 thickness_photovoltaic = 0.02
 disk_geometry_params = make_disk_geometry_params(
     DiskGeometryParams(
-        core_diameter=135,
+        core_diameter=115,
         moderator_cladding_thickness=0.05,
         fuel_thickness=fuel_thickness,
         fuel_cladding_thickness=(1 - fuel_thickness) / 2,
-        moderator_thickness=1,
+        moderator_thickness=1 / 4,
         fuel_emitter_gap=0.2,
         emitter_thickness=0.5,
         thickness_photovoltaic=thickness_photovoltaic,
-        reflector_thickness=10,
-        neutron_shield_moderator_thickness=50,  # 175
+        reflector_thickness=30,
+        neutron_shield_moderator_thickness=170,  # 175
         neutron_shield_absorber_thickness=10,
         gamma_shield_thickness=10,
         frustum_pitch=0,
@@ -57,13 +57,15 @@ photovoltaic_power_density = 0.92  # 0.61  # W/cm2
 
 ### Nuclear parameters
 
-u235_enrichment = 19.5
+u235_enrichment = 9.5
 fuel_burnup = 75  # MWd/kgHM
+borated_moderator_ppm = 3000 * 1
+moderator_density = 1.016 / 2
 
 ### Material definition
 
 material_choice = MaterialChoice(
-    moderator="Light Water",
+    moderator="Borated Water Moderator",
     neutron_absorber="Boron Carbide",
     neutron_reflector="Graphite",
     fuel="Uranium Oxy-Carbide",
@@ -73,11 +75,13 @@ material_choice = MaterialChoice(
     void="Void",
     photovoltaic="InGaAsP",
     coolant="Borated Water",
-    neutron_shield_moderator="Graphite",
+    neutron_shield_moderator="Borated Water",
     gamma_shield="Tungsten",
 )
 
-materials_dict, materials_def, colors = make_materials(u235_enrichment, material_choice)
+materials_dict, materials_def, colors = make_materials(
+    u235_enrichment, material_choice, borated_moderator_ppm, moderator_density
+)
 
 make_simulation_geometry_result = make_simulation_geometry(
     material_choice=material_choice,

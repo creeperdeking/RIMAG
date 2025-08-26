@@ -46,7 +46,7 @@ def make_simulation_geometry(
         parts=[
             ### Void
             Assembly(
-                material="Void",
+                material=material_choice.void,
                 thickness=disk_geometry_params.fuel_emitter_gap,
                 is_emitter_placeholder=True,
             ),
@@ -58,7 +58,7 @@ def make_simulation_geometry(
             ),
             ### Void
             Assembly(
-                material="Void",
+                material=material_choice.void,
                 thickness=disk_geometry_params.fuel_emitter_gap,
                 is_emitter_placeholder=True,
             ),
@@ -257,6 +257,10 @@ def make_simulation_geometry(
         raise ValueError(
             f"outer_core_layers_inside_shaft has a thickness of {outer_core_layers_inside_shaft_thickness} which is not the same as total_thickness_outer_core_layers_between_disks which has a thickness of {total_thickness_outer_core_layers_between_disks}"
         )
+
+    check_assemblies_compatibility(
+        [assembly_section_core, assembly_section_photovoltaic],
+    )
 
     check_assemblies_compatibility(
         [

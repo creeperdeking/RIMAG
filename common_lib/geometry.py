@@ -5,6 +5,7 @@ import openmc
 import openmc.model
 
 
+from common_lib import math_utils
 from common_lib.assemblies_types import (
     AssemblySections,
 )
@@ -76,7 +77,7 @@ def check_assembly_thickness_equal(
 ):
     assembly1_thickness = calculate_assembly_thickness(assembly1)
     assembly2_thickness = calculate_assembly_thickness(assembly2)
-    if round(assembly1_thickness, 10) != round(assembly2_thickness, 10):
+    if not math.isclose(assembly1_thickness, assembly2_thickness):
         raise ValueError(
             f"Assembly thickness must be the same. Assembly1 thickness: {assembly1_thickness}, Assembly2 thickness: {assembly2_thickness}"
         )
@@ -91,16 +92,21 @@ def check_assembly_compatibility(
     current_index_assembly2 = 0
     for i, part in enumerate(assembly1.parts):
         if part.is_emitter or part.is_emitter_placeholder:
-            while current_thickness_assembly2 < current_thickness_assembly1:
+            prev_thicknesses = [current_thickness_assembly2]
+            while math_utils.strict_less_than(
+                current_thickness_assembly2, current_thickness_assembly1
+            ):
                 current_thickness_assembly2 += assembly2.parts[
                     current_index_assembly2
                 ].thickness
                 current_index_assembly2 += 1
-            if (
-                current_thickness_assembly1 != current_thickness_assembly2
-                or current_thickness_assembly1 + part.thickness
-                != current_thickness_assembly2
-                + assembly2.parts[current_index_assembly2].thickness
+                prev_thicknesses.append(current_thickness_assembly2)
+            if not math.isclose(
+                current_thickness_assembly1, current_thickness_assembly2
+            ) or not math.isclose(
+                current_thickness_assembly1 + part.thickness,
+                current_thickness_assembly2
+                + assembly2.parts[current_index_assembly2].thickness,
             ):
                 raise ValueError(
                     f"Element {i} of assembly {assembly_number} does not have an emmitter placeholder corresponding to the one in assembly {assembly_number + 1}"

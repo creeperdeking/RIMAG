@@ -38,7 +38,24 @@ def clean_directory():
                 pass
 
 
+def clean_xml():
+    patternlist = [
+        "materials.xml",
+        "settings.xml",
+        "tallies.xml",
+        "geometry.xml",
+    ]
+    for pattern in patternlist:
+        filelist = glob.glob(pattern)
+        for file in filelist:
+            try:
+                os.remove(file)
+            except OSError as e:
+                pass
+
+
 def generate_XML(geometry, settings, tallies, materials_dict):
+    clean_xml()
     materials = openmc.Materials(materials_dict.values())
 
     materials.export_to_xml()
@@ -594,7 +611,7 @@ def calculate_source_strength(
     return source_strength
 
 
-def print_neutron_fluence_cm2s(
+def print_tallies(
     source_strength,
     photovoltaic_slice_volume,
     photovoltaic_density,
@@ -602,9 +619,11 @@ def print_neutron_fluence_cm2s(
     batches,
 ):
     results = openmc.StatePoint(f"statepoint.{batches}.h5")
+    k_eff = results.keff  # keff (mean)
     photovolatic = results.get_tally(name="photovoltaic")
     ddd_photovoltaic = results.get_tally(name="photovoltaic_ddd")
     fluence_emitter = results.get_tally(name="emitter")
+    ifp_scores = results.get_tally(name="ifp-scores")
 
     # Get normalized flux (MeV/g/source particle)
     normalized_ddd_photovoltaic = ddd_photovoltaic.mean[0][0][0]
@@ -640,6 +659,19 @@ def print_neutron_fluence_cm2s(
     absorption_emitter = (
         normalized_absorption_emitter * source_strength / emitter_slice_volume
     )
+
+    # Calculate beta-eff
+    S_time = float(ifp_scores.get_values(scores=["ifp-time-numerator"], value="mean"))
+    S_beta = float(ifp_scores.get_values(scores=["ifp-beta-numerator"], value="mean"))
+    S_den = float(ifp_scores.get_values(scores=["ifp-denominator"], value="mean"))
+    beta_eff = S_beta / S_den
+    Lambda_eff = S_time / (S_den * k_eff)
+
+    print("--------------------------------")
+    print(f"Keff: {k_eff:.6e}")
+    print(f"beta_eff: {beta_eff:.6e}")
+    print(f"Lambda_eff : {Lambda_eff:.6e} seconds")
+    print("--------------------------------")
 
     print("--------------------------------")
     print(f"Source strength: {source_strength:.4e} neutrons/second")
@@ -682,11 +714,15 @@ def run_sim_with_tallies(
     tally_emitter = create_emitter_tally(
         emitter_cell, materials_dict, particle_type, monitored_nuclide
     )
+    # IFP tally: no filters -> global; three scores in one tally
+    tally_ifp = openmc.Tally(name="ifp-scores")
+    tally_ifp.scores = ["ifp-time-numerator", "ifp-beta-numerator", "ifp-denominator"]
+
     tallies = openmc.Tallies(
-        [tally_photovoltaic, photovoltaic_flux_tally, tally_emitter]
+        [tally_photovoltaic, photovoltaic_flux_tally, tally_emitter, tally_ifp]
     )
     run_sim(geometry, settings, materials_dict, tallies)
-    print_neutron_fluence_cm2s(
+    print_tallies(
         source_strength,
         photovoltaic_cell.volume,
         photovoltaic_density,
