@@ -1,6 +1,5 @@
 from common_lib.materials import MaterialChoice, make_materials
 from common_lib.runlib import ParticleType, RunMode, UseWeightWindows, start_program
-from scipy import constants as cst
 
 from one_layer_disk_design.disks_core_characteristics import (
     calculate_disk_core_characteristics,
@@ -60,7 +59,7 @@ photovoltaic_power_density = 0.92  # 0.61  # W/cm2
 u235_enrichment = 9.5
 fuel_burnup = 75  # MWd/kgHM
 borated_moderator_ppm = 3000 * 1
-moderator_density = 1.016 / 2
+moderator_density = 1.016
 
 ### Material definition
 

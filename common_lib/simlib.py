@@ -496,7 +496,7 @@ def get_srniel_table():
     return E_eV, NIEL_MeV_cm2_g
 
 
-def create_photovoltaic_tally(
+def create_photovoltaic_heating_absorption_tally(
     photovoltaic_cell,
     materials_dict,
     particle_type: Literal["neutron", "photon"],
@@ -528,39 +528,8 @@ def create_photovoltaic_flux_tally(
     ]
     tally.scores = [
         "flux",
-    ]  # careful, changing the order can mess up output
+    ]
     return tally
-
-
-def create_photovoltaic_energy_tally(
-    photovoltaic_cell, materials_dict, particle_type: Literal["neutron", "photon"]
-):
-    cell_filter = openmc.CellFilter(
-        [photovoltaic_cell.id]
-    )  # replace cell.id with yours
-
-    particle_filter = openmc.ParticleFilter(particle_type)
-
-    ##############################################################################
-    # 2.  Denominator – plain flux  φ(E) dE
-    ##############################################################################
-    flux_tally = openmc.Tally(name="flux_in_cell")
-    flux_tally.filters = [cell_filter, particle_filter]
-    flux_tally.scores = ["flux"]  # ∫ φ(E) dE
-
-    ##############################################################################
-    # 3.  Numerator – E · φ(E) dE
-    ##############################################################################
-    # y(E)=E   (piece-wise linear, so two points is enough)
-    Emin, Emax = 0.0, 20e6  # eV (0–20 MeV, change if needed)
-    E_func_filter = openmc.EnergyFunctionFilter(
-        energy=[Emin, Emax], y=[Emin, Emax]
-    )  # multiplies score by energy
-
-    Eflux_tally = openmc.Tally(name="E_flux_in_cell")
-    Eflux_tally.filters = [cell_filter, particle_filter, E_func_filter]
-    Eflux_tally.scores = ["flux"]  # ∫ E φ(E) dE
-    return flux_tally, Eflux_tally
 
 
 def create_emitter_tally(
@@ -582,16 +551,94 @@ def create_emitter_tally(
     return tally
 
 
-def print_neutron_energy_photovoltaics(
-    batches,
+def get_energy_bands():
+    E_bands = np.array([0.0, 0.625, 1.0e5, 2.0e7])
+    return E_bands
+
+
+def create_fission_energy_weighted_flux_tally(
+    fuel_cell: openmc.Cell,
 ):
-    statepoint = openmc.StatePoint(f"statepoint.{batches}.h5")
-    φ = statepoint.get_tally(name="flux_in_cell").mean.flatten()[0]  # ∫φ
-    Eφ = statepoint.get_tally(name="E_flux_in_cell").mean.flatten()[0]  # ∫Eφ
-    avg_E_eV = Eφ / φ
-    avg_E_MeV = avg_E_eV / 1e6
-    avg_E_keV = avg_E_MeV * 1e3
-    print(f"Average neutron energy in cell = {avg_E_keV:.3f} keV")
+    E_bands = get_energy_bands()
+    t_flux = openmc.Tally(name="phi_E")
+    t_flux.filters = [
+        openmc.CellFilter(fuel_cell),
+        openmc.ParticleFilter("neutron"),
+        openmc.EnergyFilter(E_bands),
+    ]
+    t_flux.scores = ["flux"]
+    # --- build tallies ---
+    t_nufi = openmc.Tally(name="nufis_E")
+    t_nufi.filters = t_flux.filters
+    t_nufi.scores = ["nu-fission"]
+
+    Egrid = np.logspace(-5, np.log10(2e7), 1200)  # eV
+    Efunc = openmc.EnergyFunctionFilter(Egrid, Egrid)  # y(E)=E
+
+    t_Enufi = openmc.Tally(name="E_nufi")
+    t_Enufi.filters = [
+        openmc.CellFilter(fuel_cell),
+        openmc.ParticleFilter("neutron"),
+        Efunc,
+    ]
+    t_Enufi.scores = ["nu-fission"]
+    return t_flux, t_nufi, t_Enufi
+
+
+def create_flux_band_tally(
+    cell: openmc.Cell,
+    tally_name: str = "phi_E_cell",
+):
+    """
+    Flux-by-energy for one cell, binned into thermal / epithermal / fast.
+    Returns (t_flux, E_bands_eV).
+    """
+    E_bands_eV = get_energy_bands()
+
+    t_flux = openmc.Tally(name=tally_name)
+    t_flux.filters = [
+        openmc.CellFilter(cell),
+        openmc.ParticleFilter("neutron"),
+        openmc.EnergyFilter(E_bands_eV),
+    ]
+    t_flux.scores = [
+        "flux"
+    ]  # track-length flux per energy bin (integral over each bin)
+
+    return t_flux
+
+
+def flux_band_percentages(
+    sp: openmc.StatePoint, tally_name: str, E_bands_eV: np.ndarray
+):
+    """
+    Compute % of total flux in each energy band for the given tally.
+    Uses tally arithmetic so uncertainties are correctly propagated.
+    Returns (labels, pct_mean, pct_sd).
+    """
+    # Keep EnergyFilter for binwise values; remove only the CellFilter.
+    phi_bins = sp.get_tally(name=tally_name).summation(
+        filter_type=openmc.CellFilter, remove_filter=True
+    )
+    # Scalar total over all energy bins.
+    phi_total = (
+        sp.get_tally(name=tally_name)
+        .summation(filter_type=openmc.CellFilter, remove_filter=True)
+        .summation(filter_type=openmc.EnergyFilter, remove_filter=True)
+    )
+
+    # Derived tally: per-bin fraction = phi_bins / phi_total (vector / scalar)
+    frac = phi_bins / phi_total
+
+    pct_mean = 100.0 * frac.mean.ravel()
+    pct_sd = 100.0 * frac.std_dev.ravel()
+
+    # Human-friendly labels
+    labels = [
+        f"[{E_bands_eV[i]:.3g}, {E_bands_eV[i + 1]:.3g}) eV"
+        for i in range(len(E_bands_eV) - 1)
+    ]
+    return labels, pct_mean, pct_sd
 
 
 def calculate_source_strength(
@@ -618,12 +665,51 @@ def print_tallies(
     emitter_slice_volume,
     batches,
 ):
-    results = openmc.StatePoint(f"statepoint.{batches}.h5")
-    k_eff = results.keff  # keff (mean)
-    photovolatic = results.get_tally(name="photovoltaic")
-    ddd_photovoltaic = results.get_tally(name="photovoltaic_ddd")
-    fluence_emitter = results.get_tally(name="emitter")
-    ifp_scores = results.get_tally(name="ifp-scores")
+    sp = openmc.StatePoint(f"statepoint.{batches}.h5")
+    k_eff = sp.keff  # keff (mean)
+    photovolatic = sp.get_tally(name="photovoltaic")
+    ddd_photovoltaic = sp.get_tally(name="photovoltaic_ddd")
+    fluence_emitter = sp.get_tally(name="emitter")
+    ifp_scores = sp.get_tally(name="ifp-scores")
+
+    ###### Compute energy distribution in the fuel ######
+
+    # --- binwise ν-fission fractions (this is the new bit) ---
+    # Keep the EnergyFilter so we still have per-bin values
+    nufi_byE = sp.get_tally(name="nufis_E").summation(
+        filter_type=openmc.CellFilter, remove_filter=True
+    )
+
+    # Bin integrals (one per energy bin)
+    nufi_vals = nufi_byE.mean.ravel()  # shape (nbins,)
+    nufi_sum = nufi_vals.sum()
+    nufi_pct = 100.0 * nufi_vals / nufi_sum
+
+    # (Optional) rough 1σ on percentages via simple error propagation (ignores covariance)
+    nufi_sd = nufi_byE.std_dev.ravel()
+    nufi_sum_sd = np.sqrt((nufi_sd**2).sum())
+    nufi_pct_sd = 100.0 * np.sqrt(
+        (nufi_sd / nufi_sum) ** 2 + (nufi_vals * nufi_sum_sd / nufi_sum**2) ** 2
+    )
+
+    # Nice labels
+    E_bands = get_energy_bands()
+    labels = [
+        f"[{E_bands[i]:.3g}, {E_bands[i + 1]:.3g}) eV" for i in range(len(E_bands) - 1)
+    ]
+    print("--------------------------------")
+    print("Fission energy distribution")
+    for lab, p in zip(labels, nufi_pct):
+        print(f"{lab}: {p:.2f}%")
+    print("--------------------------------")
+
+    ######
+    labels, pct_mean, pct_sd = flux_band_percentages(sp, "phi_E_photovoltaic", E_bands)
+    print("--------------------------------")
+    print("Flux band percentages in photovoltaic")
+    for lab, p in zip(labels, pct_mean):
+        print(f"{lab}: {p:.2f}%")
+    print("--------------------------------")
 
     # Get normalized flux (MeV/g/source particle)
     normalized_ddd_photovoltaic = ddd_photovoltaic.mean[0][0][0]
@@ -700,26 +786,40 @@ def run_sim_with_tallies(
     photovoltaic_cell,
     photovoltaic_density,
     emitter_cell,
+    fuel_cell,
     source_strength,
     batches,
     particle_type: Literal["neutron", "photon"] = "neutron",
     monitored_nuclide: MonitoredNuclide = None,
 ):
-    tally_photovoltaic = create_photovoltaic_tally(
+    tally_photovoltaic = create_photovoltaic_heating_absorption_tally(
         photovoltaic_cell, materials_dict, particle_type, monitored_nuclide
     )
     photovoltaic_flux_tally = create_photovoltaic_flux_tally(
         photovoltaic_cell, materials_dict, particle_type
     )
+    t_flux, t_nufi, t_Enufi = create_fission_energy_weighted_flux_tally(fuel_cell)
     tally_emitter = create_emitter_tally(
         emitter_cell, materials_dict, particle_type, monitored_nuclide
+    )
+    tally_photovoltaic_flux_band = create_flux_band_tally(
+        photovoltaic_cell, "phi_E_photovoltaic"
     )
     # IFP tally: no filters -> global; three scores in one tally
     tally_ifp = openmc.Tally(name="ifp-scores")
     tally_ifp.scores = ["ifp-time-numerator", "ifp-beta-numerator", "ifp-denominator"]
 
     tallies = openmc.Tallies(
-        [tally_photovoltaic, photovoltaic_flux_tally, tally_emitter, tally_ifp]
+        [
+            tally_photovoltaic,
+            photovoltaic_flux_tally,
+            tally_emitter,
+            tally_ifp,
+            t_flux,
+            t_nufi,
+            t_Enufi,
+            tally_photovoltaic_flux_band,
+        ]
     )
     run_sim(geometry, settings, materials_dict, tallies)
     print_tallies(

@@ -17,7 +17,6 @@ from common_lib.assemblies import (
 from common_lib.geometry_utils import (
     create_cylinder,
     get_vertical_core_height_with_margin,
-    get_z_scaling,
     make_surface_plane,
     SPACING_CONSTANT,
     get_outer_empty_zone_parameters,
