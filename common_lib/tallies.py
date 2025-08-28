@@ -52,8 +52,9 @@ def create_photovoltaic_heating_absorption_tally(
 
 def create_B10_tritium_production_tally(
     cell,
+    suffix: str = "",
 ):
-    tally = openmc.Tally(name="B10_tritium_production")
+    tally = openmc.Tally(name=f"B10_tritium_production{suffix}")
     tally.filters = [
         openmc.CellFilter(cell),
         openmc.ParticleFilter("neutron"),
@@ -299,11 +300,53 @@ def deposition_percentages(sp: openmc.StatePoint, tally_prefix: str = "dep_"):
     return results
 
 
+def print_tritium_production(sp: openmc.StatePoint, source_strength, electric_power):
+    """
+    Print tritium production in mol/year/MWe.
+    """
+    curie_per_mol_tritium = 3.4e-5  # mol/Ci
+    t_tritium_production_shield = sp.get_tally(
+        name="B10_tritium_production_shield_moderator"
+    )
+    t_tritium_production = sp.get_tally(name="B10_tritium_production_moderator")
+    tritium_production_shield = (
+        (
+            t_tritium_production_shield.get_values(scores=["(n,Xt)"], value="sum").sum()
+            * source_strength
+            / electric_power
+            / cst.Avogadro
+        )
+        * 365
+        * 24
+        * 60
+        * 60
+        * 1e9
+        / curie_per_mol_tritium
+    )
+    tritium_production = (
+        (
+            t_tritium_production.get_values(scores=["(n,Xt)"], value="sum").sum()
+            * source_strength
+            / electric_power
+            / cst.Avogadro
+        )
+        * 365
+        * 24
+        * 60
+        * 60
+        * 1e9
+        / curie_per_mol_tritium
+    )
+    print(f"tritium production: {tritium_production:.2e} Ci/year/GWe")
+    print(f"tritium production shield: {tritium_production_shield:.2e} Ci/year/GWe")
+
+
 def print_tallies(
     source_strength,
     photovoltaic_slice_volume,
     photovoltaic_density,
     emitter_slice_volume,
+    electric_power,
     batches,
 ):
     sp = openmc.StatePoint(f"statepoint.{batches}.h5")
@@ -321,6 +364,8 @@ def print_tallies(
     print(
         f"heating moderator percentages: {results_heat_moderator['agg_pct_of_heat_mean']:.2f}%"
     )
+
+    print_tritium_production(sp, source_strength, electric_power)
 
     ###### Compute energy distribution in the fuel ######
 

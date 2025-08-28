@@ -15,6 +15,7 @@ import sys
 from common_lib.geometry_utils import get_geometry_bounding_box
 from common_lib.geometry_types import GeometrySettings
 from common_lib.tallies import (
+    create_B10_tritium_production_tally,
     create_emitter_tally,
     create_energy_deposition_tallies,
     create_fission_energy_weighted_flux_tally,
@@ -518,6 +519,8 @@ def run_sim_with_tallies(
     emitter_cell,
     fuel_cell,
     moderator_cell,
+    shield_moderator_cell,
+    electric_power,
     heat_deposition_cells,
     source_strength,
     batches,
@@ -529,6 +532,12 @@ def run_sim_with_tallies(
     )
     photovoltaic_flux_tally = create_photovoltaic_flux_tally(
         photovoltaic_cell, materials_dict, particle_type
+    )
+    tally_B10_tritium_production = create_B10_tritium_production_tally(
+        moderator_cell, suffix="_moderator"
+    )
+    tally_B10_tritium_production_shield = create_B10_tritium_production_tally(
+        shield_moderator_cell, suffix="_shield_moderator"
     )
     t_flux, t_nufi, t_Enufi = create_fission_energy_weighted_flux_tally(fuel_cell)
     tally_emitter = create_emitter_tally(
@@ -567,6 +576,8 @@ def run_sim_with_tallies(
             t_heat_moderator_cells,
             t_heat_moderator_total,
             t_kapf_moderator_total,
+            tally_B10_tritium_production,
+            tally_B10_tritium_production_shield,
         ]
     )
     run_sim(geometry, settings, materials_dict, tallies)
@@ -575,6 +586,7 @@ def run_sim_with_tallies(
         photovoltaic_cell.volume,
         photovoltaic_density,
         emitter_cell.volume,
+        electric_power,
         batches,
     )
 
