@@ -1,0 +1,429 @@
+import gc
+import glob
+import openmc
+import openmc.deplete
+import os
+import time
+from typing import List, Dict, Literal
+from tabulate import tabulate
+import scipy.constants as cst
+from common_lib.materials import MonitoredNuclide
+from common_lib.assemblies import calculate_assembly_thickness
+import numpy as np
+import h5py
+import sys
+from common_lib.geometry_utils import get_geometry_bounding_box
+from common_lib.geometry_types import GeometrySettings
+from one_layer_disk_design.disks_core_characteristics import CoreCharacteristics
+
+
+def get_srniel_table():
+    # --- 1.  Load the SR-NIEL table -----------------------------
+    # Assume the first two columns are Energy [MeV] and NIEL [MeV cm2 g-1]
+    E_MeV, NIEL_MeV_cm2_g = np.loadtxt(
+        "scripts/srniel_GaAs_E722-19_compact.txt", usecols=(0, 1), unpack=True
+    )
+
+    # --- 2.  Convert energies to eV for OpenMC ------------------
+    E_eV = E_MeV * 1.0e6
+
+    return E_eV, NIEL_MeV_cm2_g
+
+
+def create_photovoltaic_heating_absorption_tally(
+    photovoltaic_cell,
+    materials_dict,
+    particle_type: Literal["neutron", "photon"],
+    monitored_nuclide: MonitoredNuclide = None,
+):
+    tally = openmc.Tally(name="photovoltaic")
+    tally.filters = [
+        openmc.CellFilter(photovoltaic_cell),
+        openmc.ParticleFilter(particle_type),
+    ]
+    if monitored_nuclide is not None:
+        tally.nuclides = [monitored_nuclide.nuclide]
+    tally.scores = [
+        "(n,gamma)",
+        "heating",
+    ]  # careful, changing the order can mess up output
+    return tally
+
+
+def create_B10_tritium_production_tally(
+    cell,
+):
+    tally = openmc.Tally(name="B10_tritium_production")
+    tally.filters = [
+        openmc.CellFilter(cell),
+        openmc.ParticleFilter("neutron"),
+    ]
+    tally.nuclides = ["B10"]
+    tally.scores = ["H3-production"]
+    return tally
+
+
+def create_photovoltaic_flux_tally(
+    photovoltaic_cell, materials_dict, particle_type: Literal["neutron", "photon"]
+):
+    E_eV, D_norm = get_srniel_table()
+    tally = openmc.Tally(name="photovoltaic_ddd")
+    tally.filters = [
+        openmc.CellFilter(photovoltaic_cell),
+        openmc.ParticleFilter(particle_type),
+        openmc.EnergyFunctionFilter(E_eV, D_norm),
+    ]
+    tally.scores = [
+        "flux",
+    ]
+    return tally
+
+
+def create_emitter_tally(
+    emitter_cell,
+    materials_dict,
+    particle_type: Literal["neutron", "photon"],
+    monitored_nuclide: MonitoredNuclide = None,
+):
+    tally = openmc.Tally(name="emitter")
+    tally.filters = [
+        openmc.CellFilter(emitter_cell),
+        openmc.ParticleFilter(particle_type),
+    ]
+    tally.scores = [
+        "(n,gamma)",
+    ]  # careful, changing the order can mess up output
+    if monitored_nuclide is not None:
+        tally.nuclides = [monitored_nuclide.nuclide]
+    return tally
+
+
+def get_energy_bands():
+    E_bands = np.array([0.0, 0.625, 1.0e5, 2.0e7])
+    return E_bands
+
+
+def create_fission_energy_weighted_flux_tally(
+    fuel_cell: openmc.Cell,
+):
+    E_bands = get_energy_bands()
+    t_flux = openmc.Tally(name="phi_E")
+    t_flux.filters = [
+        openmc.CellFilter(fuel_cell),
+        openmc.ParticleFilter("neutron"),
+        openmc.EnergyFilter(E_bands),
+    ]
+    t_flux.scores = ["flux"]
+    # --- build tallies ---
+    t_nufi = openmc.Tally(name="nufis_E")
+    t_nufi.filters = t_flux.filters
+    t_nufi.scores = ["nu-fission"]
+
+    Egrid = np.logspace(-5, np.log10(2e7), 1200)  # eV
+    Efunc = openmc.EnergyFunctionFilter(Egrid, Egrid)  # y(E)=E
+
+    t_Enufi = openmc.Tally(name="E_nufi")
+    t_Enufi.filters = [
+        openmc.CellFilter(fuel_cell),
+        openmc.ParticleFilter("neutron"),
+        Efunc,
+    ]
+    t_Enufi.scores = ["nu-fission"]
+    return t_flux, t_nufi, t_Enufi
+
+
+def create_flux_band_tally(
+    cell: openmc.Cell,
+    tally_name: str = "phi_E_cell",
+):
+    """
+    Flux-by-energy for one cell, binned into thermal / epithermal / fast.
+    Returns (t_flux, E_bands_eV).
+    """
+    E_bands_eV = get_energy_bands()
+
+    t_flux = openmc.Tally(name=tally_name)
+    t_flux.filters = [
+        openmc.CellFilter(cell),
+        openmc.ParticleFilter("neutron"),
+        openmc.EnergyFilter(E_bands_eV),
+    ]
+    t_flux.scores = [
+        "flux"
+    ]  # track-length flux per energy bin (integral over each bin)
+
+    return t_flux
+
+
+def flux_band_percentages(
+    sp: openmc.StatePoint, tally_name: str, E_bands_eV: np.ndarray
+):
+    """
+    Compute % of total flux in each energy band for the given tally.
+    Uses tally arithmetic so uncertainties are correctly propagated.
+    Returns (labels, pct_mean, pct_sd).
+    """
+    # Keep EnergyFilter for binwise values; remove only the CellFilter.
+    phi_bins = sp.get_tally(name=tally_name).summation(
+        filter_type=openmc.CellFilter, remove_filter=True
+    )
+    # Scalar total over all energy bins.
+    phi_total = (
+        sp.get_tally(name=tally_name)
+        .summation(filter_type=openmc.CellFilter, remove_filter=True)
+        .summation(filter_type=openmc.EnergyFilter, remove_filter=True)
+    )
+
+    # Derived tally: per-bin fraction = phi_bins / phi_total (vector / scalar)
+    frac = phi_bins / phi_total
+
+    pct_mean = 100.0 * frac.mean.ravel()
+    pct_sd = 100.0 * frac.std_dev.ravel()
+
+    # Human-friendly labels
+    labels = [
+        f"[{E_bands_eV[i]:.3g}, {E_bands_eV[i + 1]:.3g}) eV"
+        for i in range(len(E_bands_eV) - 1)
+    ]
+    return labels, pct_mean, pct_sd
+
+
+def create_energy_deposition_tallies(
+    cells: List[openmc.Cell],
+    *,
+    tally_prefix: str = "dep_",
+    use_heating_local: bool = False,
+):
+    """
+    Tallies for energy deposition fractions in a set of cells.
+
+    - dep_heat_cells: heating (or heating-local) in the specified cells
+    - dep_heat_total: global heating (or heating-local)
+    - dep_kapf_total: global kappa-fission (recoverable fission energy)
+
+    Parameters
+    ----------
+    cells : list of openmc.Cell
+        Cells where you want to measure deposited heat.
+    tally_prefix : str
+        Prefix for tally names.
+    use_heating_local : bool
+        True for neutron-only runs (credits γ energy locally).
+        False when transporting photons (credits where γ actually deposits).
+
+    Returns
+    -------
+    tuple[openmc.Tally, openmc.Tally, openmc.Tally]
+    """
+    heat_score = "heating-local" if use_heating_local else "heating"
+
+    # Heat deposited in the target cells (all particles; don't add ParticleFilter)
+    t_heat_cells = openmc.Tally(name=f"{tally_prefix}heat_cells")
+    t_heat_cells.filters = [openmc.CellFilter(cells)]
+    t_heat_cells.scores = [heat_score]
+
+    # Total deposited heat over the whole geometry (no filters)
+    t_heat_total = openmc.Tally(name=f"{tally_prefix}heat_total")
+    t_heat_total.scores = [heat_score]
+
+    # Total recoverable fission energy produced (no spatial filter)
+    t_kapf_total = openmc.Tally(name=f"{tally_prefix}kapf_total")
+    t_kapf_total.filters = [openmc.ParticleFilter("neutron")]
+    t_kapf_total.scores = ["kappa-fission"]
+
+    return t_heat_cells, t_heat_total, t_kapf_total
+
+
+def deposition_percentages(sp: openmc.StatePoint, tally_prefix: str = "dep_"):
+    """
+    Compute deposited-heat percentages using tally arithmetic (with uncertainties).
+
+    Returns
+    -------
+    dict with:
+      - agg_pct_of_kapf_mean, agg_pct_of_kapf_sd
+      - agg_pct_of_heat_mean, agg_pct_of_heat_sd
+      - per_cell: list of (cell_id, pct_of_kapf_mean, sd, pct_of_heat_mean, sd)
+    """
+    name = lambda s: f"{tally_prefix}{s}"
+
+    # Fetch tallies
+    heat_cells = sp.get_tally(name=name("heat_cells"))  # has CellFilter
+    heat_total = sp.get_tally(name=name("heat_total"))  # scalar
+    kapf_total = sp.get_tally(name=name("kapf_total"))  # scalar
+
+    # Aggregate over the provided cell list
+    heat_cells_sum = heat_cells.summation(
+        filter_type=openmc.CellFilter, remove_filter=True
+    )
+
+    # Fractions via tally arithmetic (keeps uncertainty correct)
+    agg_frac_of_kapf = heat_cells_sum / kapf_total
+    agg_frac_of_heat = heat_cells_sum / heat_total
+
+    results = {
+        "agg_pct_of_kapf_mean": 100.0 * agg_frac_of_kapf.mean.item(),
+        "agg_pct_of_kapf_sd": 100.0 * agg_frac_of_kapf.std_dev.item(),
+        "agg_pct_of_heat_mean": 100.0 * agg_frac_of_heat.mean.item(),
+        "agg_pct_of_heat_sd": 100.0 * agg_frac_of_heat.std_dev.item(),
+        "per_cell": [],
+    }
+
+    # Per-cell breakdown (relative to global totals)
+    # Keep CellFilter to preserve one value per cell
+    per_cell_frac_kapf = heat_cells / kapf_total
+    per_cell_frac_heat = heat_cells / heat_total
+
+    # Pull cell IDs from the filter for labeling
+    cell_filter = next(
+        f for f in heat_cells.filters if isinstance(f, openmc.CellFilter)
+    )
+    cell_ids = list(cell_filter.bins)
+
+    mean_kapf = 100.0 * per_cell_frac_kapf.mean.ravel()
+    sd_kapf = 100.0 * per_cell_frac_kapf.std_dev.ravel()
+    mean_heat = 100.0 * per_cell_frac_heat.mean.ravel()
+    sd_heat = 100.0 * per_cell_frac_heat.std_dev.ravel()
+
+    for cid, mk, sk, mh, sh in zip(cell_ids, mean_kapf, sd_kapf, mean_heat, sd_heat):
+        results["per_cell"].append(
+            {
+                "cell_id": int(cid),
+                "pct_of_kapf_mean": float(mk),
+                "pct_of_kapf_sd": float(sk),
+                "pct_of_heat_mean": float(mh),
+                "pct_of_heat_sd": float(sh),
+            }
+        )
+
+    return results
+
+
+def print_tallies(
+    source_strength,
+    photovoltaic_slice_volume,
+    photovoltaic_density,
+    emitter_slice_volume,
+    batches,
+):
+    sp = openmc.StatePoint(f"statepoint.{batches}.h5")
+    k_eff = sp.keff  # keff (mean)
+    photovolatic = sp.get_tally(name="photovoltaic")
+    ddd_photovoltaic = sp.get_tally(name="photovoltaic_ddd")
+    fluence_emitter = sp.get_tally(name="emitter")
+    ifp_scores = sp.get_tally(name="ifp-scores")
+
+    results_heat_used = deposition_percentages(sp)
+    print(
+        f"useful heating percentages: {results_heat_used['agg_pct_of_heat_mean']:.2f}%"
+    )
+    results_heat_moderator = deposition_percentages(sp, tally_prefix="dep_moderator_")
+    print(
+        f"heating moderator percentages: {results_heat_moderator['agg_pct_of_heat_mean']:.2f}%"
+    )
+
+    ###### Compute energy distribution in the fuel ######
+
+    # --- binwise ν-fission fractions (this is the new bit) ---
+    # Keep the EnergyFilter so we still have per-bin values
+    nufi_byE = sp.get_tally(name="nufis_E").summation(
+        filter_type=openmc.CellFilter, remove_filter=True
+    )
+
+    # Bin integrals (one per energy bin)
+    nufi_vals = nufi_byE.mean.ravel()  # shape (nbins,)
+    nufi_sum = nufi_vals.sum()
+    nufi_pct = 100.0 * nufi_vals / nufi_sum
+
+    # (Optional) rough 1σ on percentages via simple error propagation (ignores covariance)
+    nufi_sd = nufi_byE.std_dev.ravel()
+    nufi_sum_sd = np.sqrt((nufi_sd**2).sum())
+    nufi_pct_sd = 100.0 * np.sqrt(
+        (nufi_sd / nufi_sum) ** 2 + (nufi_vals * nufi_sum_sd / nufi_sum**2) ** 2
+    )
+
+    # Nice labels
+    E_bands = get_energy_bands()
+    labels = [
+        f"[{E_bands[i]:.3g}, {E_bands[i + 1]:.3g}) eV" for i in range(len(E_bands) - 1)
+    ]
+    print("--------------------------------")
+    print("Fission energy distribution")
+    for lab, p in zip(labels, nufi_pct):
+        print(f"{lab}: {p:.2f}%")
+    print("--------------------------------")
+
+    ######
+    labels, pct_mean, pct_sd = flux_band_percentages(sp, "phi_E_photovoltaic", E_bands)
+    print("--------------------------------")
+    print("Flux band percentages in photovoltaic")
+    for lab, p in zip(labels, pct_mean):
+        print(f"{lab}: {p:.2f}%")
+    print("--------------------------------")
+
+    # Get normalized flux (MeV/g/source particle)
+    normalized_ddd_photovoltaic = ddd_photovoltaic.mean[0][0][0]
+
+    # Get absorption in photovoltaic
+    normalized_absorption_photovoltaic = photovolatic.mean[0][0][0]
+    # Get absorption in emitter
+    normalized_absorption_emitter = fluence_emitter.mean[0][0][0]
+
+    # Get heating in photovoltaic
+    heating_photovoltaic = photovolatic.mean[0][0][1] / cst.value(
+        "joule-electron volt relationship"
+    )  # J/particle
+
+    mass_photovoltaic = photovoltaic_slice_volume * photovoltaic_density  # g
+
+    # Calculate heating rate in photovoltaic
+    heating_rate_photovoltaic = (
+        heating_photovoltaic * source_strength / mass_photovoltaic
+    )  # kGy/s
+    yearly_heating_rate_photovoltaic = (
+        heating_rate_photovoltaic * 365 * 24 * 60 * 60
+    )  # kGy/year
+
+    # Calculate absolute flux (neutrons/cm²-s)
+    absolute_ddd_photovoltaic = (
+        normalized_ddd_photovoltaic * source_strength / photovoltaic_slice_volume
+    )
+
+    absorption_photovoltaic = (
+        normalized_absorption_photovoltaic * source_strength / photovoltaic_slice_volume
+    )
+    absorption_emitter = (
+        normalized_absorption_emitter * source_strength / emitter_slice_volume
+    )
+
+    # Calculate beta-eff
+    S_time = float(ifp_scores.get_values(scores=["ifp-time-numerator"], value="mean"))
+    S_beta = float(ifp_scores.get_values(scores=["ifp-beta-numerator"], value="mean"))
+    S_den = float(ifp_scores.get_values(scores=["ifp-denominator"], value="mean"))
+    beta_eff = S_beta / S_den
+    Lambda_eff = S_time / (S_den * k_eff)
+
+    print("--------------------------------")
+    print(f"Keff: {k_eff:.6e}")
+    print(f"beta_eff: {beta_eff:.6e}")
+    print(f"Lambda_eff : {Lambda_eff:.6e} seconds")
+    print("--------------------------------")
+
+    print("--------------------------------")
+    print(f"Source strength: {source_strength:.4e} neutrons/second")
+    print("--------------------------------")
+    print("photovoltaic")
+    print(
+        f"Displacement damage: {absolute_ddd_photovoltaic * 365 * 24 * 60 * 60:.4e} MeV/g/year"
+    )
+    print(
+        f"Absorption: {absorption_photovoltaic * 365 * 24 * 60 * 60:.4e} neutrons/cm3/year"
+    )
+    print(f"Dose rate: {yearly_heating_rate_photovoltaic:.4e} kGy/year")
+    print("--------------------------------")
+
+    print("emitter")
+    print(
+        f"Absorption: {absorption_emitter * 365 * 24 * 60 * 60:.4e} neutrons/cm3/year"
+    )
+    print("--------------------------------")
