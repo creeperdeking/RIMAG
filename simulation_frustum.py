@@ -14,7 +14,7 @@ from one_layer_disk_design.frustum_geometry_definition import make_simulation_ge
 
 run_mode: RunMode = "keff"
 print_core_characteristics = True
-batches = 30  # 2500  # 1250
+batches = 15  # 2500  # 1250
 weight_windows: UseWeightWindows = "no"
 particle_type: ParticleType = "neutron"
 # Tally absoption only for this particular nuclide:
@@ -42,7 +42,7 @@ disk_geometry_params = make_disk_geometry_params(
         neutron_shield_moderator_thickness=170,  # 175
         neutron_shield_absorber_thickness=10,
         gamma_shield_thickness=10,
-        frustum_pitch=0,
+        frustum_pitch=2,
     )
 )
 
@@ -57,6 +57,7 @@ photovoltaic_power_density = 0.92  # 0.61  # W/cm2
 ### Nuclear parameters
 
 u235_enrichment = 9.5
+gadolinium_oxide_in_fuel_proportion = 0.05
 fuel_burnup = 75  # MWd/kgHM
 borated_moderator_ppm = 3000 * 1
 moderator_density = 1.016
@@ -81,15 +82,18 @@ material_choice = MaterialChoice(
     gamma_shield="Tungsten",
 )
 
-materials_dict, materials_def, colors = make_materials(
-    u235_enrichment, material_choice, borated_moderator_ppm, moderator_density
+materials_dict, colors = make_materials(
+    u235_enrichment,
+    material_choice,
+    borated_moderator_ppm,
+    moderator_density,
+    gadolinium_oxide_in_fuel_proportion,
 )
 
 make_simulation_geometry_result = make_simulation_geometry(
     material_choice=material_choice,
     disk_geometry_params=disk_geometry_params,
     materials_dict=materials_dict,
-    materials_def=materials_def,
 )
 
 
@@ -97,7 +101,7 @@ def calculate_core_characteristics():
     return calculate_disk_core_characteristics(
         tracked_cells=make_simulation_geometry_result.tracked_cells,
         material_choice=material_choice,
-        materials_def=materials_def,
+        materials_dict=materials_dict,
         hot_temp=hot_temp,
         cold_temp=cold_temp,
         photovoltaic_efficiency=photovoltaic_efficiency,

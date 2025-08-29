@@ -413,15 +413,28 @@ def print_tallies(
     print("--------------------------------")
 
     # Get normalized flux (MeV/g/source particle)
-    normalized_ddd_photovoltaic = ddd_photovoltaic.mean[0][0][0]
+    normalized_ddd_photovoltaic = float(
+        ddd_photovoltaic.get_values(scores=["flux"], value="mean")
+    )
+    normalized_ddd_photovoltaic_old = ddd_photovoltaic.mean[0][0][0]
 
     # Get absorption in photovoltaic
-    normalized_absorption_photovoltaic = photovolatic.mean[0][0][0]
+    normalized_absorption_photovoltaic = float(
+        photovolatic.get_values(scores=["(n,gamma)"], value="mean")
+    )
+    # normalized_absorption_photovoltaic_old = photovolatic.mean[0][0][0]
     # Get absorption in emitter
-    normalized_absorption_emitter = fluence_emitter.mean[0][0][0]
+    normalized_absorption_emitter = float(
+        fluence_emitter.get_values(scores=["(n,gamma)"], value="mean")
+    )
+    # normalized_absorption_emitter = fluence_emitter.mean[0][0][0]
 
     # Get heating in photovoltaic
-    heating_photovoltaic = photovolatic.mean[0][0][1] / cst.value(
+    heating_photovoltaic = float(
+        photovolatic.get_values(scores=["heating"], value="mean")
+        / cst.value("joule-electron volt relationship")
+    )  # J/particle
+    heating_photovoltaic_old = photovolatic.mean[0][0][1] / cst.value(
         "joule-electron volt relationship"
     )  # J/particle
 

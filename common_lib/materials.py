@@ -147,19 +147,51 @@ def borated_water_atom_proportions_from_boron_ppm(
     ]
 
 
-def heavy_metals_density(material: Material) -> float:
-    return (
-        material.density
-        * sum(
-            atom_prop.proportion * atom_prop.atom.atomic_weight
-            for atom_prop in material.composition
-            if atom_prop.atom.atomic_weight > 200
+def heavy_metal_density(mat, elements=None, z_min=90):
+    """
+    Return the heavy-metal mass density of an OpenMC Material in g/cm^3.
+
+    Parameters
+    ----------
+    mat : openmc.Material
+        The material to evaluate.
+    elements : set of str, optional
+        If given, only nuclides whose element symbol is in this set are counted
+        (e.g., {'U','Pu','Th'}). Symbols are case-sensitive.
+        If None, all nuclides with atomic number >= z_min are counted.
+    z_min : int, optional
+        Minimum atomic number to include (default 90 for actinides).
+
+    Notes
+    -----
+    - Uses `Material.get_nuclide_atom_densities()` which returns densities
+      in atom/b-cm, independent of how `mat` density was originally specified.
+    - Converts atom/b-cm → atoms/cm^3 via 1e24, then to mass with the
+      tabulated atomic mass and Avogadro’s number.
+
+    Returns
+    -------
+    float
+        Heavy-metal mass density in g/cm^3.
+    """
+    # Atom densities for every nuclide in atom/b-cm
+    adens = mat.get_nuclide_atom_densities()
+
+    hm_rho = 0.0
+    for nuc, n_bcm in adens.items():
+        Z, _, _ = openmc.data.zam(nuc)  # atomic number, mass number, metastable
+        symbol = openmc.data.ATOMIC_SYMBOL[Z]
+
+        include = (elements is not None and symbol in elements) or (
+            elements is None and Z >= z_min
         )
-        / sum(
-            atom_prop.proportion * atom_prop.atom.atomic_weight
-            for atom_prop in material.composition
-        )
-    )
+        if not include:
+            continue
+
+        # atomic_mass() is in g/mol; convert atoms/b-cm → g/cm^3
+        hm_rho += n_bcm * 1.0e24 * openmc.data.atomic_mass(nuc) / openmc.data.AVOGADRO
+
+    return hm_rho
 
 
 def make_materials(
@@ -573,9 +605,11 @@ def make_materials(
                 materials_dict[material_name]
                 for material_name in mixed_material.materials
             ]
-            materials_dict[name] = openmc.Material.mix_materials(
+            mixed_material = openmc.Material.mix_materials(
                 mat_list, mixed_material.proportions, "wo"
             )
+            mixed_material.name = name
+            materials_dict[name] = mixed_material
 
     colors = {}
     for name, material in materials_def.items():
@@ -584,4 +618,4 @@ def make_materials(
         colors[materials_dict[name]] = (
             "orange" if material.color is None else material.color
         )
-    return materials_dict, materials_def, colors
+    return materials_dict, colors

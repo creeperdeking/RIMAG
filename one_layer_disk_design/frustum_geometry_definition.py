@@ -32,7 +32,6 @@ class MakeSimulationGeometryResult(BaseModel, arbitrary_types_allowed=True):
     universe: openmc.Universe
     tracked_cells: Dict[str, List[openmc.Cell]]
     drums: List[DiskAssemblyLayer]
-    materials_def: Dict[str, Material]
     geometry_settings: GeometrySettings
 
 
@@ -40,7 +39,6 @@ def make_simulation_geometry(
     material_choice: MaterialChoice,
     disk_geometry_params: DiskGeometryParams,
     materials_dict: Dict[str, openmc.Material],
-    materials_def: Dict[str, Material],
 ) -> MakeSimulationGeometryResult:
     emitter_assembly = AssemblySections(
         parts=[
@@ -320,6 +318,5 @@ def make_simulation_geometry(
         universe=universe,
         tracked_cells=tracked_cells,
         drums=drums,
-        materials_def=materials_def,
         geometry_settings=geometry_settings,
     )

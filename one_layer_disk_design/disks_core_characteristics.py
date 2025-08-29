@@ -4,7 +4,10 @@ import openmc
 from pydantic import BaseModel
 
 from common_lib.light import radiative_heat_flux_between_plates
-from common_lib.materials import Material, MaterialChoice, heavy_metals_density
+from common_lib.materials import (
+    MaterialChoice,
+    heavy_metal_density,
+)
 
 
 def sanity_check_triso_fuel_volume(hm_volume: float, graphite_volume: float):
@@ -40,7 +43,7 @@ class CoreCharacteristics(BaseModel):
 def calculate_disk_core_characteristics(
     tracked_cells: Dict[str, List[openmc.Cell]],
     material_choice: MaterialChoice,
-    materials_def: Dict[str, Material],
+    materials_dict: Dict[str, openmc.Material],
     hot_temp: float,
     cold_temp: float,
     photovoltaic_efficiency: float,
@@ -79,7 +82,7 @@ def calculate_disk_core_characteristics(
 
     heavy_metal_mass = (
         fuel_cell_volume
-        * heavy_metals_density(materials_def[material_choice.fuel])
+        * heavy_metal_density(materials_dict[material_choice.fuel])
         / 1000
     )
 
