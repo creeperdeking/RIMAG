@@ -284,11 +284,12 @@ def define_geometry(
     )
     reactor_slice_universe = openmc.Universe(cells=[reactor_slice_cell])
 
-    tracked_cells = {
-        **core_assembly_cells,
-        **photovoltaic_assembly_cells,
-        **emitter_assembly_cells,
-    }
+    from collections import defaultdict
+
+    # Collect all key-value pairs
+    tracked_cells = defaultdict(list)
+    for cell in cells:
+        tracked_cells[cell.fill.name].append(cell)
 
     return (
         openmc.Geometry(

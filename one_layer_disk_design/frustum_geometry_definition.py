@@ -30,7 +30,7 @@ from one_layer_disk_design.disks_geometry import (
 class MakeSimulationGeometryResult(BaseModel, arbitrary_types_allowed=True):
     geometry: openmc.Geometry
     universe: openmc.Universe
-    tracked_cells: Dict[str, openmc.Cell]
+    tracked_cells: Dict[str, List[openmc.Cell]]
     drums: List[DiskAssemblyLayer]
     materials_def: Dict[str, Material]
     geometry_settings: GeometrySettings

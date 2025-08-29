@@ -14,7 +14,7 @@ from one_layer_disk_design.frustum_geometry_definition import make_simulation_ge
 
 run_mode: RunMode = "keff"
 print_core_characteristics = True
-batches = 15  # 2500  # 1250
+batches = 30  # 2500  # 1250
 weight_windows: UseWeightWindows = "no"
 particle_type: ParticleType = "neutron"
 # Tally absoption only for this particular nuclide:
@@ -60,20 +60,23 @@ u235_enrichment = 9.5
 fuel_burnup = 75  # MWd/kgHM
 borated_moderator_ppm = 3000 * 1
 moderator_density = 1.016
+add_xe135 = False
 
 ### Material definition
 
+# TODO: current bug with the implementation: in order to tally regions of the reactor properly,
+# we need to have a unique material for each cell.
 material_choice = MaterialChoice(
     moderator="Borated Water Moderator",
     neutron_absorber="Boron Carbide",
     neutron_reflector="Graphite",
     fuel="Uranium Oxy-Carbide",
     moderator_cladding="Zirconium",
-    emitter="Graphite",
+    emitter="Graphite 3",
     fuel_cladding="Graphite 2",
     void="Void",
     photovoltaic="InGaAsP",
-    coolant="Borated Water",
+    coolant="Borated Water 2",
     neutron_shield_moderator="Borated Water",
     gamma_shield="Tungsten",
 )
@@ -123,4 +126,5 @@ start_program(
     monitored_nuclide=monitored_nuclide,
     emitter_gamma_energy_MeV=emitter_gamma_energy_MeV,
     print_characteristics=print_core_characteristics,
+    add_xe135=add_xe135,
 )

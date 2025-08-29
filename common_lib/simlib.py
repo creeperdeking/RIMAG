@@ -8,9 +8,9 @@ from typing import List, Dict, Literal
 from tabulate import tabulate
 import scipy.constants as cst
 from common_lib.materials import MonitoredNuclide
-from common_lib.assemblies import calculate_assembly_thickness
 import numpy as np
 import h5py
+import math
 import sys
 from common_lib.geometry_utils import get_geometry_bounding_box
 from common_lib.geometry_types import GeometrySettings
@@ -511,47 +511,51 @@ def calculate_source_strength(
 
 
 def run_sim_with_tallies(
-    geometry,
-    settings,
-    materials_dict,
-    photovoltaic_cell,
-    photovoltaic_density,
-    emitter_cell,
-    fuel_cell,
-    moderator_cell,
-    shield_moderator_cell,
-    electric_power,
-    heat_deposition_cells,
-    source_strength,
-    batches,
+    geometry: openmc.Geometry,
+    settings: openmc.Settings,
+    materials_dict: Dict[str, openmc.Material],
+    photovoltaic_cells: List[openmc.Cell],
+    photovoltaic_density: float,
+    emitter_cells: List[openmc.Cell],
+    fuel_cells: List[openmc.Cell],
+    moderator_cells: List[openmc.Cell],
+    shield_moderator_cells: List[openmc.Cell],
+    coolant_cells: List[openmc.Cell],
+    electric_power: float,
+    heat_deposition_cells: List[openmc.Cell],
+    source_strength: float,
+    batches: int,
     particle_type: Literal["neutron", "photon"] = "neutron",
     monitored_nuclide: MonitoredNuclide = None,
 ):
     tally_photovoltaic = create_photovoltaic_heating_absorption_tally(
-        photovoltaic_cell, materials_dict, particle_type, monitored_nuclide
+        photovoltaic_cells, particle_type, monitored_nuclide
     )
     photovoltaic_flux_tally = create_photovoltaic_flux_tally(
-        photovoltaic_cell, materials_dict, particle_type
+        photovoltaic_cells, particle_type
     )
     tally_B10_tritium_production = create_B10_tritium_production_tally(
-        moderator_cell, suffix="_moderator"
+        moderator_cells, suffix="_moderator"
     )
     tally_B10_tritium_production_shield = create_B10_tritium_production_tally(
-        shield_moderator_cell, suffix="_shield_moderator"
+        shield_moderator_cells, suffix="_shield_moderator"
     )
-    t_flux, t_nufi, t_Enufi = create_fission_energy_weighted_flux_tally(fuel_cell)
+    tally_B10_tritium_production_coolant = create_B10_tritium_production_tally(
+        coolant_cells, suffix="_coolant"
+    )
+    t_flux, t_nufi, t_Enufi = create_fission_energy_weighted_flux_tally(fuel_cells)
     tally_emitter = create_emitter_tally(
-        emitter_cell, materials_dict, particle_type, monitored_nuclide
+        emitter_cells, materials_dict, particle_type, monitored_nuclide
     )
     tally_photovoltaic_flux_band = create_flux_band_tally(
-        photovoltaic_cell, "phi_E_photovoltaic"
+        photovoltaic_cells, "phi_E_photovoltaic"
     )
     t_heat_cells, t_heat_total, t_kapf_total = create_energy_deposition_tallies(
         heat_deposition_cells, use_heating_local=particle_type != "photon"
     )
     t_heat_moderator_cells, t_heat_moderator_total, t_kapf_moderator_total = (
         create_energy_deposition_tallies(
-            [moderator_cell],
+            moderator_cells,
             use_heating_local=particle_type != "photon",
             tally_prefix="dep_moderator_",
         )
@@ -578,19 +582,105 @@ def run_sim_with_tallies(
             t_kapf_moderator_total,
             tally_B10_tritium_production,
             tally_B10_tritium_production_shield,
+            tally_B10_tritium_production_coolant,
         ]
     )
     run_sim(geometry, settings, materials_dict, tallies)
     print_tallies(
         source_strength,
-        photovoltaic_cell.volume,
+        sum(cell.volume for cell in photovoltaic_cells),
         photovoltaic_density,
-        emitter_cell.volume,
+        sum(cell.volume for cell in emitter_cells),
         electric_power,
         batches,
     )
 
     # clean_directory()
+
+
+def xe135_peak_mass_g(
+    P_th_W,
+    # --- defaults (SI) ---
+    thermal_flux=3.7e17,  # n·m^-2·s^-1  (≈3.7e13 n·cm^-2·s^-1 typical PWR)
+    E_f_J=200e6 * 1.602176634e-19,  # J per fission (~200 MeV)
+    y_I=6.28968e-2,  # I-135 cumulative yield per fission (U-235, thermal)
+    t12_I_s=6.57 * 3600.0,  # I-135 half-life (s)
+    t12_Xe_s=9.14 * 3600.0,  # Xe-135 half-life (s)
+    M_Xe135_kg_per_mol=134.9072075e-3,  # kg·mol^-1
+    N_A=6.02214076e23,  # mol^-1
+):
+    """
+    Return the total mass (kg) of Xe-135 in the core at its post-shutdown maximum,
+    assuming long full-power operation (I-135 at equilibrium) followed by shutdown.
+    Inputs are SI; P_th_W is thermal power in watts.
+    """
+
+    # decay constants
+    lam_I = math.log(2) / t12_I_s
+    lam_Xe = math.log(2) / t12_Xe_s
+
+    # fission rate (#/s)
+    F = P_th_W / E_f_J
+
+    # Xe-135 absorption removal rate during full power, r=0.02 is the epithermal index
+    sigma_a_xe135 = 2.65e-22
+    sigmaPhi = thermal_flux * sigma_a_xe135
+
+    # Equilibrium inventories at power:
+    # I0 = y_I * F / lam_I ; Xe0 not needed explicitly for the peak formula below
+    I0 = y_I * F / lam_I
+
+    # Time-to-peak after shutdown (Φ → 0) for the long-run steady state:
+    # t_peak = ln[ (lam_Xe/lam_I)*((lam_I+sigmaPhi)/(lam_Xe+sigmaPhi)) ] / (lam_Xe - lam_I)
+    bracket = (lam_Xe / lam_I) * ((lam_I + sigmaPhi) / (lam_Xe + sigmaPhi))
+    t_peak = math.log(bracket) / (lam_Xe - lam_I)
+
+    # At the peak, Xe = (lam_I/lam_Xe)*I(t_peak)
+    I_tp = I0 * math.exp(-lam_I * t_peak)
+    N_Xe_peak = (lam_I / lam_Xe) * I_tp  # atoms
+
+    # convert atoms -> mass (g)
+    m_g = (N_Xe_peak / N_A) * M_Xe135_kg_per_mol * 1e3
+    return m_g
+
+
+def add_xe135_to_geometry(
+    geometry, materials_dict, material_choice, core_characteristics
+):
+    # For all cells in the geometry that have the same material as material_choice.fuel,
+    # print their volume and change their composition to add 5% Xenon135 by weight
+
+    # Find the material object for the fuel
+    fuel_material = materials_dict[material_choice.fuel]
+
+    # Get all cells in the geometry
+    all_cells = [cell for _, cell in geometry.get_all_cells().items()]
+
+    found_cells = []
+
+    # Loop through all cells and find those with the same material as the fuel
+    for cell in all_cells:
+        # cell.fill can be a Material or a Universe; we want only Material
+        if hasattr(cell, "fill") and isinstance(cell.fill, type(fuel_material)):
+            if cell.fill is fuel_material:
+                xe135 = openmc.Material(name="Xe135")
+                xe135.add_nuclide("Xe135", 1.0, "wo")
+                xe135.set_density("g/cm3", 12)
+                weight_xe135 = xe135_peak_mass_g(core_characteristics.core_power)
+                weight_fuel = cell.volume * fuel_material.density
+                weight_total = weight_fuel + weight_xe135
+                weight_xe135_fraction = weight_xe135 / weight_total
+                new_material = openmc.Material.mix_materials(
+                    [fuel_material, xe135],
+                    [1 - weight_xe135_fraction, weight_xe135_fraction],
+                    "wo",
+                )
+                new_material.name = "Fuel + Xe135"
+                materials_dict[new_material.name] = new_material
+                cell.fill = new_material
+                found_cells.append(cell)
+    if len(found_cells) > 1:
+        raise ValueError("Found multiple cells with the same fuel material")
 
 
 def print_core_characteristics(

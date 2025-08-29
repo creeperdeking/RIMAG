@@ -1,20 +1,8 @@
-import gc
-import glob
 import openmc
-import openmc.deplete
-import os
-import time
-from typing import List, Dict, Literal
-from tabulate import tabulate
+from typing import List, Literal
 import scipy.constants as cst
 from common_lib.materials import MonitoredNuclide
-from common_lib.assemblies import calculate_assembly_thickness
 import numpy as np
-import h5py
-import sys
-from common_lib.geometry_utils import get_geometry_bounding_box
-from common_lib.geometry_types import GeometrySettings
-from one_layer_disk_design.disks_core_characteristics import CoreCharacteristics
 
 
 def get_srniel_table():
@@ -31,14 +19,13 @@ def get_srniel_table():
 
 
 def create_photovoltaic_heating_absorption_tally(
-    photovoltaic_cell,
-    materials_dict,
+    photovoltaic_cells: List[openmc.Cell],
     particle_type: Literal["neutron", "photon"],
     monitored_nuclide: MonitoredNuclide = None,
 ):
     tally = openmc.Tally(name="photovoltaic")
     tally.filters = [
-        openmc.CellFilter(photovoltaic_cell),
+        openmc.CellFilter(photovoltaic_cells),
         openmc.ParticleFilter(particle_type),
     ]
     if monitored_nuclide is not None:
@@ -51,12 +38,12 @@ def create_photovoltaic_heating_absorption_tally(
 
 
 def create_B10_tritium_production_tally(
-    cell,
+    cells: List[openmc.Cell],
     suffix: str = "",
 ):
     tally = openmc.Tally(name=f"B10_tritium_production{suffix}")
     tally.filters = [
-        openmc.CellFilter(cell),
+        openmc.CellFilter(cells),
         openmc.ParticleFilter("neutron"),
     ]
     tally.nuclides = ["B10"]
@@ -65,12 +52,13 @@ def create_B10_tritium_production_tally(
 
 
 def create_photovoltaic_flux_tally(
-    photovoltaic_cell, materials_dict, particle_type: Literal["neutron", "photon"]
+    photovoltaic_cells: List[openmc.Cell],
+    particle_type: Literal["neutron", "photon"],
 ):
     E_eV, D_norm = get_srniel_table()
     tally = openmc.Tally(name="photovoltaic_ddd")
     tally.filters = [
-        openmc.CellFilter(photovoltaic_cell),
+        openmc.CellFilter(photovoltaic_cells),
         openmc.ParticleFilter(particle_type),
         openmc.EnergyFunctionFilter(E_eV, D_norm),
     ]
@@ -81,14 +69,14 @@ def create_photovoltaic_flux_tally(
 
 
 def create_emitter_tally(
-    emitter_cell,
+    emitter_cells: List[openmc.Cell],
     materials_dict,
     particle_type: Literal["neutron", "photon"],
     monitored_nuclide: MonitoredNuclide = None,
 ):
     tally = openmc.Tally(name="emitter")
     tally.filters = [
-        openmc.CellFilter(emitter_cell),
+        openmc.CellFilter(emitter_cells),
         openmc.ParticleFilter(particle_type),
     ]
     tally.scores = [
@@ -105,12 +93,12 @@ def get_energy_bands():
 
 
 def create_fission_energy_weighted_flux_tally(
-    fuel_cell: openmc.Cell,
+    fuel_cells: List[openmc.Cell],
 ):
     E_bands = get_energy_bands()
     t_flux = openmc.Tally(name="phi_E")
     t_flux.filters = [
-        openmc.CellFilter(fuel_cell),
+        openmc.CellFilter(fuel_cells),
         openmc.ParticleFilter("neutron"),
         openmc.EnergyFilter(E_bands),
     ]
@@ -125,7 +113,7 @@ def create_fission_energy_weighted_flux_tally(
 
     t_Enufi = openmc.Tally(name="E_nufi")
     t_Enufi.filters = [
-        openmc.CellFilter(fuel_cell),
+        openmc.CellFilter(fuel_cells),
         openmc.ParticleFilter("neutron"),
         Efunc,
     ]
@@ -134,7 +122,7 @@ def create_fission_energy_weighted_flux_tally(
 
 
 def create_flux_band_tally(
-    cell: openmc.Cell,
+    cells: List[openmc.Cell],
     tally_name: str = "phi_E_cell",
 ):
     """
@@ -145,7 +133,7 @@ def create_flux_band_tally(
 
     t_flux = openmc.Tally(name=tally_name)
     t_flux.filters = [
-        openmc.CellFilter(cell),
+        openmc.CellFilter(cells),
         openmc.ParticleFilter("neutron"),
         openmc.EnergyFilter(E_bands_eV),
     ]
@@ -300,45 +288,63 @@ def deposition_percentages(sp: openmc.StatePoint, tally_prefix: str = "dep_"):
     return results
 
 
+def calculate_tritium_production(
+    sp: openmc.StatePoint, source_strength, electric_power, tally_name: str
+):
+    curie_per_mol_tritium = 3.4e-5  # mol/Ci
+    t_tritium_production = sp.get_tally(name=tally_name)
+    # Get mean and std_dev for the tally
+    mean_val = t_tritium_production.get_values(scores=["(n,Xt)"], value="mean").sum()
+    std_val = t_tritium_production.get_values(scores=["(n,Xt)"], value="std_dev").sum()
+    # Calculate tritium production and its standard deviation
+    factor = (
+        source_strength
+        / electric_power
+        / cst.Avogadro
+        * 365
+        * 24
+        * 60
+        * 60
+        * 1e9
+        / curie_per_mol_tritium
+    )
+    tritium_production = mean_val * factor
+    tritium_production_sd = std_val * factor
+    return tritium_production, tritium_production_sd
+
+
 def print_tritium_production(sp: openmc.StatePoint, source_strength, electric_power):
     """
-    Print tritium production in mol/year/MWe.
+    Print tritium production in Ci/year/GWe.
     """
-    curie_per_mol_tritium = 3.4e-5  # mol/Ci
-    t_tritium_production_shield = sp.get_tally(
-        name="B10_tritium_production_shield_moderator"
-    )
-    t_tritium_production = sp.get_tally(name="B10_tritium_production_moderator")
-    tritium_production_shield = (
-        (
-            t_tritium_production_shield.get_values(scores=["(n,Xt)"], value="sum").sum()
-            * source_strength
-            / electric_power
-            / cst.Avogadro
+    tritium_production_shield, tritium_production_shield_sd = (
+        calculate_tritium_production(
+            sp,
+            source_strength,
+            electric_power,
+            "B10_tritium_production_shield_moderator",
         )
-        * 365
-        * 24
-        * 60
-        * 60
-        * 1e9
-        / curie_per_mol_tritium
     )
-    tritium_production = (
-        (
-            t_tritium_production.get_values(scores=["(n,Xt)"], value="sum").sum()
-            * source_strength
-            / electric_power
-            / cst.Avogadro
+    tritium_production_moderator, tritium_production_moderator_sd = (
+        calculate_tritium_production(
+            sp, source_strength, electric_power, "B10_tritium_production_moderator"
         )
-        * 365
-        * 24
-        * 60
-        * 60
-        * 1e9
-        / curie_per_mol_tritium
     )
-    print(f"tritium production: {tritium_production:.2e} Ci/year/GWe")
-    print(f"tritium production shield: {tritium_production_shield:.2e} Ci/year/GWe")
+    tritium_production_coolant, tritium_production_coolant_sd = (
+        calculate_tritium_production(
+            sp, source_strength, electric_power, "B10_tritium_production_coolant"
+        )
+    )
+
+    print(
+        f"tritium production: {tritium_production_moderator:.2e} Ci/year/GWe ± {tritium_production_moderator_sd:.2e} Ci/year/GWe"
+    )
+    print(
+        f"tritium production shield: {tritium_production_shield:.2e} Ci/year/GWe ± {tritium_production_shield_sd:.2e} Ci/year/GWe"
+    )
+    print(
+        f"tritium production coolant: {tritium_production_coolant:.2e} Ci/year/GWe ± {tritium_production_coolant_sd:.2e} Ci/year/GWe"
+    )
 
 
 def print_tallies(

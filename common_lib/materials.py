@@ -421,6 +421,12 @@ def make_materials(
             color="yellow",
             scattering="c_Graphite",
         ),
+        "Graphite 3": Material(
+            composition=[AtomProportion(atom=atoms["C"])],
+            density=2.26,
+            color="yellow",
+            scattering="c_Graphite",
+        ),
         "Graphite NO Scattering": Material(
             composition=[AtomProportion(atom=atoms["C"])],
             density=2.26,
@@ -456,6 +462,12 @@ def make_materials(
             color="lightgray",
         ),
         "Borated Water": Material(
+            composition=borated_water_atom_proportions_from_boron_ppm(3000),
+            density=1.016,
+            color="darkblue",
+            scattering="c_H_in_H2O",
+        ),
+        "Borated Water 2": Material(
             composition=borated_water_atom_proportions_from_boron_ppm(3000),
             density=1.016,
             color="darkblue",

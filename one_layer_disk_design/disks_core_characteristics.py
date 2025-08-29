@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, List
 
 import openmc
 from pydantic import BaseModel
@@ -38,7 +38,7 @@ class CoreCharacteristics(BaseModel):
 
 
 def calculate_disk_core_characteristics(
-    tracked_cells: Dict[str, openmc.Cell],
+    tracked_cells: Dict[str, List[openmc.Cell]],
     material_choice: MaterialChoice,
     materials_def: Dict[str, Material],
     hot_temp: float,
@@ -50,13 +50,16 @@ def calculate_disk_core_characteristics(
     fuel_thickness: float,
     vertical_core_height: float,
 ) -> CoreCharacteristics:
-    fuel_cell = tracked_cells[material_choice.fuel]
-    photovoltaic_cell = tracked_cells[material_choice.photovoltaic]
+    fuel_cells = tracked_cells[material_choice.fuel]
+    photovoltaic_cells = tracked_cells[material_choice.photovoltaic]
+
+    fuel_cell_volume = sum(cell.volume for cell in fuel_cells)
+    photovoltaic_cell_volume = sum(cell.volume for cell in photovoltaic_cells)
 
     # multiply by 2 because each section has two faces exposed to the fuel
-    fuel_emissive_area = (fuel_cell.volume / fuel_thickness) * 2
+    fuel_emissive_area = (fuel_cell_volume / fuel_thickness) * 2
 
-    photovoltaic_area = photovoltaic_cell.volume / photovoltaic_thickness
+    photovoltaic_area = photovoltaic_cell_volume / photovoltaic_thickness
 
     photovoltaic_power = photovoltaic_area * photovoltaic_power_density
 
@@ -75,7 +78,7 @@ def calculate_disk_core_characteristics(
         )
 
     heavy_metal_mass = (
-        fuel_cell.volume
+        fuel_cell_volume
         * heavy_metals_density(materials_def[material_choice.fuel])
         / 1000
     )

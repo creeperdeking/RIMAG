@@ -7,6 +7,7 @@ from common_lib.geometry_utils import (
 )
 from common_lib.geometry_types import GeometrySettings
 from common_lib.simlib import (
+    add_xe135_to_geometry,
     calculate_source_strength,
     make_sim_photon_from_cells,
     make_sim_settings,
@@ -18,7 +19,6 @@ from common_lib.simlib import (
     run_sim_with_tallies,
     stochastic_volume_calculation,
 )
-from one_layer_disk_design.disks_core_characteristics import CoreCharacteristics
 
 type RunMode = Literal[
     "keff",
@@ -44,11 +44,12 @@ def start_program(
     batches: float,
     weight_windows: UseWeightWindows,
     particle_type: ParticleType,
-    tracked_cells: List[openmc.Cell],
+    tracked_cells: Dict[str, List[openmc.Cell]],
     material_choice: Dict[str, openmc.Material],
     emitter_gamma_rate: float,  # particle per cm3
     monitored_nuclide: MonitoredNuclide,
     emitter_gamma_energy_MeV: float,
+    add_xe135: bool,
     print_characteristics=True,
     deterministic=False,
 ):
@@ -64,6 +65,14 @@ def start_program(
         )
 
         core_characteristics = calculate_core_characteristics()
+
+    if add_xe135 and core_characteristics is not None:
+        add_xe135_to_geometry(
+            geometry,
+            materials_dict,
+            material_choice,
+            core_characteristics,
+        )
 
     if print_characteristics:
         print_core_characteristics(core_characteristics)
@@ -95,27 +104,32 @@ def start_program(
 
     ### Run simulation
 
+    moderator_cells = tracked_cells[material_choice.moderator]
+
     if run_mode == "keff":
         run_sim_with_tallies(
-            geometry,
-            settings,
-            materials_dict,
-            tracked_cells[material_choice.photovoltaic],
-            materials_dict[material_choice.photovoltaic].density,
-            tracked_cells[material_choice.emitter],
-            tracked_cells[material_choice.fuel],
-            tracked_cells[material_choice.moderator],
-            tracked_cells[material_choice.neutron_shield_moderator],
-            core_characteristics.core_power_electric,
-            [
-                tracked_cells[material_choice.emitter],
-                tracked_cells[material_choice.fuel],
-                tracked_cells[material_choice.fuel_cladding],
+            geometry=geometry,
+            settings=settings,
+            materials_dict=materials_dict,
+            photovoltaic_cells=tracked_cells[material_choice.photovoltaic],
+            photovoltaic_density=materials_dict[material_choice.photovoltaic].density,
+            emitter_cells=tracked_cells[material_choice.emitter],
+            fuel_cells=tracked_cells[material_choice.fuel],
+            moderator_cells=moderator_cells,
+            shield_moderator_cells=tracked_cells[
+                material_choice.neutron_shield_moderator
             ],
-            calculate_source_strength(core_characteristics.core_power_electric),
-            batches,
+            electric_power=core_characteristics.core_power_electric,
+            heat_deposition_cells=[
+                *tracked_cells[material_choice.emitter],
+                *tracked_cells[material_choice.fuel],
+                *tracked_cells[material_choice.fuel_cladding],
+            ],
+            source_strength=calculate_source_strength(core_characteristics.core_power),
+            batches=batches,
             particle_type=particle_type,
             monitored_nuclide=monitored_nuclide,
+            coolant_cells=tracked_cells[material_choice.coolant],
         )
 
     if run_mode == "keff_notallies":
@@ -123,30 +137,35 @@ def start_program(
 
     if run_mode == "keff_emitter_gamma_source":
         settings = make_sim_photon_from_cells(
-            [tracked_cells[material_choice.emitter]],
+            tracked_cells[material_choice.emitter],
             gamma_E_MeV=emitter_gamma_energy_MeV,
             deterministic=deterministic,
             batches=batches,
         )
         run_sim_with_tallies(
-            geometry,
-            settings,
-            materials_dict,
-            tracked_cells[material_choice.photovoltaic],
-            materials_dict[material_choice.photovoltaic].density,
-            tracked_cells[material_choice.emitter],
-            tracked_cells[material_choice.fuel],
-            tracked_cells[material_choice.moderator],
-            tracked_cells[material_choice.neutron_shield_moderator],
-            core_characteristics.core_power_electric,
-            [
-                tracked_cells[material_choice.emitter],
-                tracked_cells[material_choice.fuel],
-                tracked_cells[material_choice.fuel_cladding],
+            geometry=geometry,
+            settings=settings,
+            materials_dict=materials_dict,
+            photovoltaic_cells=tracked_cells[material_choice.photovoltaic],
+            photovoltaic_density=materials_dict[material_choice.photovoltaic].density,
+            emitter_cells=tracked_cells[material_choice.emitter],
+            fuel_cells=tracked_cells[material_choice.fuel],
+            moderator_cells=moderator_cells,
+            shield_moderator_cells=tracked_cells[
+                material_choice.neutron_shield_moderator
             ],
-            emitter_gamma_rate * tracked_cells[material_choice.emitter].volume,
-            batches,
+            coolant_cells=tracked_cells[material_choice.coolant],
+            electric_power=core_characteristics.core_power_electric,
+            heat_deposition_cells=[
+                *tracked_cells[material_choice.emitter],
+                *tracked_cells[material_choice.fuel],
+                *tracked_cells[material_choice.fuel_cladding],
+            ],
+            source_strength=emitter_gamma_rate
+            * sum(cell.volume for cell in tracked_cells[material_choice.emitter]),
+            batches=batches,
             particle_type="photon",
+            monitored_nuclide=monitored_nuclide,
         )
 
     if run_mode == "render":
