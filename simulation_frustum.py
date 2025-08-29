@@ -57,7 +57,7 @@ photovoltaic_power_density = 0.92  # 0.61  # W/cm2
 ### Nuclear parameters
 
 u235_enrichment = 9.5
-gadolinium_oxide_in_fuel_proportion = 0.05
+gadolinium_oxide_in_fuel_proportion = 0.0005 * 0
 fuel_burnup = 75  # MWd/kgHM
 borated_moderator_ppm = 3000 * 1
 moderator_density = 1.016
@@ -71,7 +71,7 @@ material_choice = MaterialChoice(
     moderator="Borated Water Moderator",
     neutron_absorber="Boron Carbide",
     neutron_reflector="Graphite",
-    fuel="Uranium Oxy-Carbide",
+    fuel="Uranium Oxy-Carbide with Gadolinium Oxide",
     moderator_cladding="Zirconium",
     emitter="Graphite 3",
     fuel_cladding="Graphite 2",

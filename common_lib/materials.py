@@ -244,14 +244,6 @@ def make_materials(
         color="green",
     )
 
-    gadolinium_oxide = Material(
-        composition=[
-            AtomProportion(atom=atoms["Gd"], proportion=2),
-            AtomProportion(atom=atoms["O"], proportion=3),
-        ],
-        density=7.4,
-    )
-
     uranium_oxy_carbide = Material(
         composition=[
             AtomProportion(atom=atoms["C"], proportion=0.2),
@@ -306,8 +298,8 @@ def make_materials(
         "Depleted Uranium": depleted_uranium,
         "Gadolinium Oxide": Material(
             composition=[
-                AtomProportion(atom=atoms["Gd"], proportion=1),
-                AtomProportion(atom=atoms["O"], proportion=1),
+                AtomProportion(atom=atoms["Gd"], proportion=2),
+                AtomProportion(atom=atoms["O"], proportion=3),
             ],
             density=7.9,
             color="gray",
