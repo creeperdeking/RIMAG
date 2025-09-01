@@ -144,6 +144,56 @@ def create_flux_band_tally(
     return t_flux
 
 
+def create_dpa_tally(
+    cells: List[openmc.Cell],
+    suffix: str = "",
+):
+    # all materials present in that cell (handles universes/lattices too)
+    mats_in_cell = [mat for cell in cells for mat in cell.get_all_materials().values()]
+
+    # expand to real nuclide names (e.g., "C12", "C13") and deduplicate
+    nuclide_names = sorted({n for m in mats_in_cell for n in m.get_nuclides()})
+    cell_filter = openmc.CellFilter(cells)  # the cell you care about
+    t_dam = openmc.Tally(name=f"damage-energy_cell{suffix}")
+    t_dam.filters = [cell_filter]
+    t_dam.scores = ["damage-energy"]  # MT=444
+    t_dam.nuclides = nuclide_names
+
+    return t_dam
+
+
+def calculate_dpa(
+    sp: openmc.StatePoint,
+    tally_name: str,
+    source_strength: float,
+    cells: List[openmc.Cell],
+):
+    t_dam = sp.get_tally(name=tally_name)
+    T_eV_per_source = t_dam.get_values(scores=["damage-energy"], value="sum").ravel()
+    T_eV = T_eV_per_source * source_strength
+    Ed_eV = {"Fe56": 40.0, "Cr52": 40.0, "Ni58": 40.0, "C0": 33}
+    nucs = t_dam.nuclides
+
+    # Get number of atoms of each nuclide in the cell’s material (or number density × volume)
+    mat = list(cells[0].get_all_materials().values())[0]
+    atoms = mat.get_nuclide_atoms(
+        volume=sum(cell.volume for cell in cells)
+    )  # returns dict {nuc: atoms}
+    dpa_rate_by_nuc = {}
+    for nuc, Tdot in zip(nucs, T_eV):
+        if nuc in Ed_eV and atoms.get(nuc, 0.0) > 0.0:
+            dpa_rate_by_nuc[nuc] = (
+                0.8 * Tdot / (2.0 * Ed_eV[nuc]) / atoms[nuc]
+            )  # [1/s]'
+
+    N_tot = sum(atoms.get(n, 0.0) for n in nucs if n in Ed_eV)
+    dpa_rate_cell = (
+        sum(dpa_rate_by_nuc[n] * atoms[n] for n in dpa_rate_by_nuc) / N_tot
+    )  # [1/s]
+
+    return dpa_rate_cell * 365 * 24 * 60 * 60
+
+
 def flux_band_percentages(
     sp: openmc.StatePoint, tally_name: str, E_bands_eV: np.ndarray
 ):
@@ -349,6 +399,7 @@ def print_tritium_production(sp: openmc.StatePoint, source_strength, electric_po
 
 def print_tallies(
     source_strength,
+    emitter_cells,
     photovoltaic_slice_volume,
     photovoltaic_density,
     emitter_slice_volume,
@@ -487,6 +538,10 @@ def print_tallies(
     print("--------------------------------")
 
     print("emitter")
+    dpa_emitter = calculate_dpa(
+        sp, "damage-energy_cell_emitter", source_strength, emitter_cells
+    )
+    print(f"dpa emitter: {dpa_emitter:.2e} dpa/year")
     print(
         f"Absorption: {absorption_emitter * 365 * 24 * 60 * 60:.4e} neutrons/cm3/year"
     )

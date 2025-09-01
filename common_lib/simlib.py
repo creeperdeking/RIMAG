@@ -16,6 +16,7 @@ from common_lib.geometry_utils import get_geometry_bounding_box
 from common_lib.geometry_types import GeometrySettings
 from common_lib.tallies import (
     create_B10_tritium_production_tally,
+    create_dpa_tally,
     create_emitter_tally,
     create_energy_deposition_tallies,
     create_fission_energy_weighted_flux_tally,
@@ -553,6 +554,7 @@ def run_sim_with_tallies(
     t_heat_cells, t_heat_total, t_kapf_total = create_energy_deposition_tallies(
         heat_deposition_cells, use_heating_local=particle_type != "photon"
     )
+    dpa_emitter = create_dpa_tally(emitter_cells, suffix="_emitter")
     t_heat_moderator_cells, t_heat_moderator_total, t_kapf_moderator_total = (
         create_energy_deposition_tallies(
             moderator_cells,
@@ -583,11 +585,13 @@ def run_sim_with_tallies(
             tally_B10_tritium_production,
             tally_B10_tritium_production_shield,
             tally_B10_tritium_production_coolant,
+            dpa_emitter,
         ]
     )
     run_sim(geometry, settings, materials_dict, tallies)
     print_tallies(
         source_strength,
+        emitter_cells,
         sum(cell.volume for cell in photovoltaic_cells),
         photovoltaic_density,
         sum(cell.volume for cell in emitter_cells),
