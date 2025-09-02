@@ -71,6 +71,7 @@ material_choice = MaterialChoice(
     moderator="Borated Water Moderator",
     neutron_absorber="Boron Carbide",
     neutron_reflector="Graphite",
+    bottom_reflector="Graphite",
     fuel="Uranium Oxy-Carbide with Gadolinium Oxide",
     moderator_cladding="Zirconium",
     emitter="Graphite 3",

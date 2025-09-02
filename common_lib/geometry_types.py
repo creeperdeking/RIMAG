@@ -17,6 +17,7 @@ class GeometrySettings(BaseModel):
     assembly_section_core: AssemblySections
     outer_core_layers_inside_shaft: AssemblySections
     outer_core_layers_between_disks: List[OuterCoreAssemblySections]
+    outer_core_layers_bottom: AssemblySections
     double_assembly: bool = False
     emitter_assembly: AssemblySections
     photovoltaic_assembly: AssemblySections

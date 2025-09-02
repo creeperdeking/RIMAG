@@ -41,6 +41,7 @@ class MaterialChoice(BaseModel):
     neutron_absorber: str
     neutron_reflector: str
     neutron_shield_moderator: str
+    bottom_reflector: str
     fuel: str
     moderator_cladding: str
     emitter: str

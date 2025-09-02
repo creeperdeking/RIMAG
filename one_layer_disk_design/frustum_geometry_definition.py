@@ -159,6 +159,27 @@ def make_simulation_geometry(
         ],
     )
 
+    outer_core_layers_bottom = AssemblySections(
+        parts=[
+            Assembly(
+                material=material_choice.bottom_reflector,
+                thickness=disk_geometry_params.reflector_thickness,
+            ),
+            Assembly(
+                material=material_choice.neutron_shield_moderator,
+                thickness=disk_geometry_params.neutron_shield_moderator_thickness,
+            ),
+            # Assembly(
+            #     material=material_choice.gamma_shield,
+            #     thickness=disk_geometry_params.gamma_shield_thickness,
+            # ),
+            Assembly(
+                material=material_choice.neutron_absorber,
+                thickness=disk_geometry_params.neutron_shield_absorber_thickness,
+            ),
+        ],
+    )
+
     outer_core_layers_between_disks = [
         OuterCoreAssemblySections(
             parts=mirror_assembly(
@@ -298,20 +319,11 @@ def make_simulation_geometry(
         material_choice=material_choice,
         outer_core_layers_inside_shaft=outer_core_layers_inside_shaft,
         outer_core_layers_between_disks=outer_core_layers_between_disks,
+        outer_core_layers_bottom=outer_core_layers_bottom,
     )
 
     geometry, universe, tracked_cells, drums = define_disks_geometry(
         geometry_settings, materials_dict
-    )
-    geometry_settings = GeometrySettings(
-        assembly_section_core=assembly_section_core,
-        photovoltaic_assembly=assembly_section_photovoltaic,
-        emitter_assembly=emitter_assembly,
-        core_desc=core_desc,
-        rotary_assembly_desc=rotary_assembly_desc,
-        material_choice=material_choice,
-        outer_core_layers_inside_shaft=outer_core_layers_inside_shaft,
-        outer_core_layers_between_disks=outer_core_layers_between_disks,
     )
     return MakeSimulationGeometryResult(
         geometry=geometry,
