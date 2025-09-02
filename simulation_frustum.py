@@ -74,22 +74,23 @@ material_choice = MaterialChoice(
     bottom_reflector="Graphite",
     fuel="Uranium Oxy-Carbide with Gadolinium Oxide",
     moderator_cladding="Zirconium",
-    emitter="Graphite 3",
-    fuel_cladding="Graphite 2",
+    emitter="Graphite",
+    fuel_cladding="Graphite",
     void="Void",
     photovoltaic="InGaAsP",
-    coolant="Borated Water 2",
+    coolant="Borated Water",
     neutron_shield_moderator="Borated Water",
     gamma_shield="Tungsten",
 )
 
-materials_dict, colors = make_materials(
+materials_dict, colors, updated_material_choice = make_materials(
     u235_enrichment,
     material_choice,
     borated_moderator_ppm,
     moderator_density,
     gadolinium_oxide_in_fuel_proportion,
 )
+material_choice = updated_material_choice
 
 make_simulation_geometry_result = make_simulation_geometry(
     material_choice=material_choice,

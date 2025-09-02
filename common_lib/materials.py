@@ -195,6 +195,125 @@ def heavy_metal_density(mat, elements=None, z_min=90):
     return hm_rho
 
 
+def separate_duplicate_materials(
+    material_choice: MaterialChoice, materials_dict: Dict[str, openmc.Material]
+):
+    # If some elements of material_choice have the same value, create a duplicated material in material_dict named "[material_name] X"
+    # For example, if "Graphite" is used for both "neutron_reflector" and "emitter", create "Graphite 2", "Graphite 3", etc.
+
+    # Count occurrences of each material name in material_choice
+    from collections import Counter, defaultdict
+
+    material_values = list(material_choice.model_dump().values())
+    value_counts = Counter(material_values)
+
+    # For each value with count > 1, assign unique names for each occurrence
+    value_indices = defaultdict(int)
+    for field, value in material_choice.model_dump().items():
+        count = value_counts[value]
+        if count > 1:
+            value_indices[value] += 1
+            if value_indices[value] == 1:
+                # The first occurrence keeps the original name
+                continue
+            # For subsequent occurrences, create a new material with a unique name
+            new_name = f"{value} {value_indices[value]}"
+            # Duplicate the material in materials_dict
+            if value in materials_dict:
+                # Copy the material
+                import copy
+
+                next_material = openmc.Material(name=new_name)
+                next_id = next_material.next_id
+                id = next_material.id
+
+                new_material = copy.deepcopy(materials_dict[value])
+                new_material.name = new_name
+                new_material.next_id = next_id
+                new_material.id = id
+                materials_dict[new_name] = new_material
+
+    # After duplicating materials for repeated values in material_choice,
+    # update the fields in material_choice to refer to the new unique material names.
+    # This ensures that each field points to the correct (possibly renamed) material.
+
+    # Build a mapping from (field, value) to the correct material name
+    value_indices = defaultdict(int)
+    field_to_new_name = {}
+    for field, value in material_choice.model_dump().items():
+        count = value_counts[value]
+        if count > 1:
+            value_indices[value] += 1
+            if value_indices[value] == 1:
+                # First occurrence keeps the original name
+                field_to_new_name[field] = value
+            else:
+                new_name = f"{value} {value_indices[value]}"
+                field_to_new_name[field] = new_name
+        else:
+            field_to_new_name[field] = value
+
+    # Create a new MaterialChoice with updated field values
+    # (Assume MaterialChoice is a pydantic model or similar)
+    updated_material_choice = type(material_choice)(**field_to_new_name)
+    return materials_dict, updated_material_choice
+
+
+def make_materials_dict(
+    materials_def: Dict[str, Material],
+    material_mixed_def: Dict[str, MixedMaterial],
+    material_choice: MaterialChoice,
+):
+    materials_dict: Dict[str, openmc.Material] = {}
+
+    used_materials = set(material_choice.model_dump().values())
+    for name, material in material_mixed_def.items():
+        if name in used_materials:
+            used_materials.update(material.materials)
+
+    for name, material in materials_def.items():
+        if name not in used_materials:
+            continue
+        materials_dict[name] = openmc.Material(name=name)
+        for atom_prop in material.composition:
+            if atom_prop.atom.name == "U":
+                materials_dict[name].add_element(
+                    atom_prop.atom.name,
+                    atom_prop.proportion,
+                    enrichment=atom_prop.enrichment,
+                )
+            else:
+                try:
+                    materials_dict[name].add_element(
+                        atom_prop.atom.name,
+                        atom_prop.proportion,
+                        enrichment=atom_prop.enrichment,
+                        enrichment_target=atom_prop.enrichment_target,
+                    )
+                except Exception as e:
+                    # for nuclides we use weight percent because it is how enrichment is given
+                    materials_dict[name].add_nuclide(
+                        atom_prop.atom.name,
+                        atom_prop.proportion,
+                    )
+        if material.scattering is not None:
+            materials_dict[name].add_s_alpha_beta(material.scattering)
+        materials_dict[name].set_density("g/cm3", material.density)
+
+    for name, mixed_material in material_mixed_def.items():
+        if name in used_materials:
+            mat_list = [
+                materials_dict[material_name]
+                for material_name in mixed_material.materials
+            ]
+            mixed_material = openmc.Material.mix_materials(
+                mat_list, mixed_material.proportions, "wo"
+            )
+            mixed_material.name = name
+            materials_dict[name] = mixed_material
+    return materials_dict
+
+
 def make_materials(
     uranium_enrichment: float,
     material_choice: MaterialChoice,
@@ -319,21 +438,6 @@ def make_materials(
             density=6.52,
             color="gray",
         ),
-        "Zirconium 2": Material(
-            composition=[AtomProportion(atom=atoms["Zr"])],
-            density=6.52,
-            color="gray",
-        ),
-        "Tungsten 2": Material(
-            composition=[AtomProportion(atom=atoms["W"])],
-            density=19.25,
-            color="yellow",
-        ),
-        "Silicon 2": Material(
-            composition=[AtomProportion(atom=atoms["Si"])],
-            density=2.33,
-            color="lightblue",
-        ),
         "Aluminum": Material(
             composition=[AtomProportion(atom=atoms["Al"])],
             density=2.7,
@@ -440,18 +544,6 @@ def make_materials(
         #     color="green",
         # ),
         "Graphite": graphite,
-        "Graphite 2": Material(
-            composition=[AtomProportion(atom=atoms["C"])],
-            density=2.26,
-            color="yellow",
-            scattering="c_Graphite",
-        ),
-        "Graphite 3": Material(
-            composition=[AtomProportion(atom=atoms["C"])],
-            density=2.26,
-            color="yellow",
-            scattering="c_Graphite",
-        ),
         "Graphite NO Scattering": Material(
             composition=[AtomProportion(atom=atoms["C"])],
             density=2.26,
@@ -487,12 +579,6 @@ def make_materials(
             color="lightgray",
         ),
         "Borated Water": Material(
-            composition=borated_water_atom_proportions_from_boron_ppm(3000),
-            density=1.016,
-            color="darkblue",
-            scattering="c_H_in_H2O",
-        ),
-        "Borated Water 2": Material(
             composition=borated_water_atom_proportions_from_boron_ppm(3000),
             density=1.016,
             color="darkblue",
@@ -556,59 +642,18 @@ def make_materials(
         ),
     }
 
-    materials_dict: Dict[str, openmc.Material] = {}
+    materials_dict = make_materials_dict(
+        materials_def, material_mixed_def, material_choice
+    )
 
-    used_materials = set(material_choice.model_dump().values())
-    for name, material in material_mixed_def.items():
-        if name in used_materials:
-            used_materials.update(material.materials)
-
-    for name, material in materials_def.items():
-        if name not in used_materials:
-            continue
-        materials_dict[name] = openmc.Material(name=name)
-        for atom_prop in material.composition:
-            if atom_prop.atom.name == "U":
-                materials_dict[name].add_element(
-                    atom_prop.atom.name,
-                    atom_prop.proportion,
-                    enrichment=atom_prop.enrichment,
-                )
-            else:
-                try:
-                    materials_dict[name].add_element(
-                        atom_prop.atom.name,
-                        atom_prop.proportion,
-                        enrichment=atom_prop.enrichment,
-                        enrichment_target=atom_prop.enrichment_target,
-                    )
-                except Exception as e:
-                    # for nuclides we use weight percent because it is how enrichment is given
-                    materials_dict[name].add_nuclide(
-                        atom_prop.atom.name,
-                        atom_prop.proportion,
-                    )
-        if material.scattering is not None:
-            materials_dict[name].add_s_alpha_beta(material.scattering)
-        materials_dict[name].set_density("g/cm3", material.density)
-
-    for name, mixed_material in material_mixed_def.items():
-        if name in used_materials:
-            mat_list = [
-                materials_dict[material_name]
-                for material_name in mixed_material.materials
-            ]
-            mixed_material = openmc.Material.mix_materials(
-                mat_list, mixed_material.proportions, "wo"
-            )
-            mixed_material.name = name
-            materials_dict[name] = mixed_material
-
+    updated_materials_dict, updated_material_choice = separate_duplicate_materials(
+        material_choice, materials_dict
+    )
     colors = {}
     for name, material in materials_def.items():
-        if name not in material_choice.model_dump().values():
+        if name not in updated_material_choice.model_dump().values():
             continue
-        colors[materials_dict[name]] = (
+        colors[updated_materials_dict[name]] = (
             "orange" if material.color is None else material.color
         )
-    return materials_dict, colors
+    return updated_materials_dict, colors, updated_material_choice
