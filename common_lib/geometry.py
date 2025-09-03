@@ -127,8 +127,7 @@ def get_shaft_boundary(
         geometry_settings.rotary_assembly_desc,
         outer_core_layers_thickness / 2,
         assembly_thickness,
-        distance_from_origin=geometry_settings.core_desc.core_radius
-        + outer_core_layers_thickness / 2,
+        distance_from_origin=geometry_settings.rotary_assembly_desc.assembly_core_distance,
     )
 
 
@@ -137,7 +136,7 @@ def define_geometry(
     materials_dict: Dict[str, openmc.Material],
     photovoltaic_assembly_cells: Dict[str, openmc.Cell],
     core_assembly_cells: Dict[str, openmc.Cell],
-    between_disks_shielding_cells: List[Dict[str, openmc.Cell]],
+    outer_core_layers_between_disks_scells: List[Dict[str, openmc.Cell]],
     emitter_assembly_cells: Dict[str, openmc.Cell],
     emitter_boundary: openmc.Region,
     assemblies_boundary: openmc.Region,
@@ -149,7 +148,7 @@ def define_geometry(
         _,
         photovoltaic_boundary,
         shaft_boundary,
-        _,
+        disk_boundary,
         outer_empty_zone_boundary_cylinder,
     ) = get_base_geometry(geometry_settings)
     check_assembly_thickness_equal(
@@ -220,19 +219,21 @@ def define_geometry(
     ### Making Cells
 
     outer_core_layers_inside_shaft = make_outer_core_layers(
+        geometry_settings,
         geometry_settings.rotary_assembly_desc,
         geometry_settings.outer_core_layers_inside_shaft,
         geometry_settings.core_desc,
         materials_dict,
-        shaft_boundary & ~emitter_boundary,
+        shaft_boundary,
     )
 
     outer_core_layers_bottom_cells = make_outer_core_layers(
+        geometry_settings,
         geometry_settings.rotary_assembly_desc,
         geometry_settings.outer_core_layers_bottom,
         geometry_settings.core_desc,
         materials_dict,
-        outer_empty_zone_boundary & ~emitter_boundary,
+        outer_empty_zone_boundary & ~disk_boundary,
     )
 
     outer_empty_zone = (
@@ -247,7 +248,7 @@ def define_geometry(
     outer_empty_zone_cell.fill = materials_dict[geometry_settings.material_choice.void]
 
     flattenned_between_disks_shielding_cells = []
-    for shielding_layer in between_disks_shielding_cells:
+    for shielding_layer in outer_core_layers_between_disks_scells:
         flattenned_between_disks_shielding_cells.extend(shielding_layer.values())
 
     cells = [

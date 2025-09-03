@@ -16,6 +16,7 @@ class GeometrySettings(BaseModel):
     material_choice: MaterialChoice
     assembly_section_core: AssemblySections
     outer_core_layers_inside_shaft: AssemblySections
+    outer_core_thickness: float
     outer_core_layers_between_disks: List[OuterCoreAssemblySections]
     outer_core_layers_bottom: AssemblySections
     double_assembly: bool = False

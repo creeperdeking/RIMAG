@@ -6,6 +6,7 @@ from common_lib.assemblies_types import (
     Assembly,
     AssemblySections,
     CoreDesc,
+    OuterCoreAssemblySections,
 )
 from common_lib.geometry_types import GeometrySettings
 from common_lib.geometry_utils import (
@@ -18,11 +19,10 @@ from common_lib.rotary_assembly import RotaryAssemblyDesc
 def compute_core_desc(
     core_radius: float,
     core_height: float,
-    outer_core_assembly: AssemblySections,
+    outer_core_thickness: float,
     frustum_pitch: float,
 ):
     z_scaling = get_z_scaling(frustum_pitch)
-    outer_core_thickness = calculate_assembly_thickness(outer_core_assembly)
     return CoreDesc(
         core_radius=core_radius,
         core_height=core_height,
@@ -86,6 +86,7 @@ def make_emitter_only_assembly(
 
 
 def make_outer_core_layers(
+    geometry_settings: GeometrySettings,
     rotary_assembly_desc: RotaryAssemblyDesc,
     outer_core_layers: AssemblySections,
     core_desc: CoreDesc,
@@ -93,7 +94,11 @@ def make_outer_core_layers(
     boundary_shape: openmc.Region,
 ) -> List[openmc.Cell]:
     cells = []
-    current_layer_radius = core_desc.core_radius
+    outer_core_radius_delta = (
+        geometry_settings.outer_core_thickness
+        - calculate_assembly_thickness(outer_core_layers)
+    ) / 2
+    current_layer_radius = core_desc.core_radius + outer_core_radius_delta
     previous_layer_radius = current_layer_radius
     for i, layer in enumerate(outer_core_layers.parts):
         current_layer_radius = current_layer_radius + layer.thickness
@@ -133,6 +138,10 @@ def create_outer_core_assembly_section(
         parts.append(Assembly(material=None, thickness=current_part_thickness))
 
     return AssemblySections(parts=parts)
+
+
+def calculate_layers_thickness(layers: List[OuterCoreAssemblySections]) -> float:
+    return sum(layer.layer_thickness for layer in layers)
 
 
 def calculate_assembly_thickness(assembly_section: AssemblySections) -> float:

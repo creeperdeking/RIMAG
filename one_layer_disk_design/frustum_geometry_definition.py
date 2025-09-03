@@ -3,6 +3,7 @@ from typing import Dict, List
 from pydantic import BaseModel
 from common_lib.assemblies import (
     calculate_assembly_thickness,
+    calculate_layers_thickness,
     compute_core_desc,
     mirror_assembly,
 )
@@ -138,11 +139,18 @@ def make_simulation_geometry(
         )
     )
 
+    assert (
+        disk_geometry_params.reflector_thickness
+        - disk_geometry_params.neutron_shield_absorber_thickness
+        > 0
+    )
+
     outer_core_layers_inside_shaft = AssemblySections(
         parts=[
             Assembly(
                 material=material_choice.neutron_reflector,
-                thickness=disk_geometry_params.reflector_thickness,
+                thickness=disk_geometry_params.reflector_thickness
+                - disk_geometry_params.neutron_shield_absorber_thickness,
             ),
             Assembly(
                 material=material_choice.neutron_shield_moderator,
@@ -152,10 +160,6 @@ def make_simulation_geometry(
             #     material=material_choice.gamma_shield,
             #     thickness=disk_geometry_params.gamma_shield_thickness,
             # ),
-            Assembly(
-                material=material_choice.neutron_absorber,
-                thickness=disk_geometry_params.neutron_shield_absorber_thickness,
-            ),
         ],
     )
 
@@ -262,23 +266,21 @@ def make_simulation_geometry(
         ),
     ]
 
-    total_thickness_outer_core_layers_between_disks = 0
-    for assembly in outer_core_layers_between_disks:
-        total_thickness_outer_core_layers_between_disks += assembly.layer_thickness
-    outer_core_layers_inside_shaft_thickness = calculate_assembly_thickness(
+    outer_core_between_disks_thickness = calculate_layers_thickness(
+        outer_core_layers_between_disks
+    )
+
+    assert outer_core_between_disks_thickness >= calculate_assembly_thickness(
         outer_core_layers_inside_shaft
     )
 
-    if (
-        outer_core_layers_inside_shaft_thickness
-        != total_thickness_outer_core_layers_between_disks
-    ):
-        raise ValueError(
-            f"outer_core_layers_inside_shaft has a thickness of {outer_core_layers_inside_shaft_thickness} which is not the same as total_thickness_outer_core_layers_between_disks which has a thickness of {total_thickness_outer_core_layers_between_disks}"
-        )
-
     check_assemblies_compatibility(
         [assembly_section_core, assembly_section_photovoltaic],
+    )
+
+    assert (
+        calculate_assembly_thickness(outer_core_layers_bottom)
+        == outer_core_between_disks_thickness
     )
 
     check_assemblies_compatibility(
@@ -294,12 +296,11 @@ def make_simulation_geometry(
     core_desc = compute_core_desc(
         core_radius=disk_geometry_params.core_diameter / 2,
         core_height=assembly_thickness,
-        outer_core_assembly=outer_core_layers_inside_shaft,
+        outer_core_thickness=outer_core_between_disks_thickness,
         frustum_pitch=disk_geometry_params.frustum_pitch,
     )
     assembly_core_distance = (
-        core_desc.core_radius
-        + (core_desc.outer_core_radius - core_desc.core_radius) / 2
+        core_desc.core_radius + outer_core_between_disks_thickness / 2
     )
     rotary_assembly_desc = RotaryAssemblyDesc(
         assembly_core_distance=assembly_core_distance,
@@ -314,6 +315,7 @@ def make_simulation_geometry(
         assembly_section_core=assembly_section_core,
         photovoltaic_assembly=assembly_section_photovoltaic,
         emitter_assembly=emitter_assembly,
+        outer_core_thickness=outer_core_between_disks_thickness,
         core_desc=core_desc,
         rotary_assembly_desc=rotary_assembly_desc,
         material_choice=material_choice,

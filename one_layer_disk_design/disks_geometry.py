@@ -3,9 +3,11 @@ from typing import Dict
 import openmc
 from pydantic import BaseModel
 
-from common_lib.assemblies import make_emitter_only_assembly
+from common_lib.assemblies import (
+    calculate_assembly_thickness,
+    make_emitter_only_assembly,
+)
 from common_lib.geometry import GeometrySettings, define_geometry, get_base_geometry
-from common_lib.geometry_utils import create_cylinder
 from one_layer_disk_design.disks_assemblies import (
     define_discs_emitter_boundary,
     make_disks_cells,
@@ -73,8 +75,8 @@ def define_disks_geometry(
     assemblies_boundary = get_disks_boundaries(
         geometry_settings,
         geometry_settings.rotary_assembly_desc.rotary_assembly_radius,
-        geometry_settings.rotary_assembly_desc.assembly_core_distance
-        - geometry_settings.core_desc.core_radius,
+        calculate_assembly_thickness(geometry_settings.outer_core_layers_inside_shaft)
+        / 2,
         assembly_thickness,
         disks,
     )
@@ -105,7 +107,7 @@ def define_disks_geometry(
             r=previous_radius + outer_core_layer.layer_thickness, x0=0, y0=0
         )
 
-        layer_boundary = +inner_boundary & -outer_boundary & ~shaft_boundary
+        layer_boundary = +inner_boundary & -outer_boundary
 
         between_disks_shielding_cells.append(
             make_disks_cells(
@@ -113,7 +115,7 @@ def define_disks_geometry(
                 disks=disks,
                 rotary_assembly_desc=geometry_settings.rotary_assembly_desc,
                 materials_dict=materials_dict,
-                boundary_shape=layer_boundary & disk_boundary,
+                boundary_shape=layer_boundary & disk_boundary & ~shaft_boundary,
             )
         )
 
@@ -135,7 +137,7 @@ def define_disks_geometry(
         materials_dict=materials_dict,
         photovoltaic_assembly_cells=photovoltaic_assembly_cells,
         core_assembly_cells=core_assembly_cells,
-        between_disks_shielding_cells=between_disks_shielding_cells,
+        outer_core_layers_between_disks_scells=between_disks_shielding_cells,
         emitter_assembly_cells=emitter_assembly_cells,
         emitter_boundary=emitter_boundary,
         assemblies_boundary=assemblies_boundary,

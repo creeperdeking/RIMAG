@@ -19,9 +19,9 @@ def get_outer_empty_zone_parameters(
 ) -> OuterEmptyZoneParameters:
     return OuterEmptyZoneParameters(
         radius=geometry_settings.rotary_assembly_desc.rotary_assembly_radius
-        + geometry_settings.outer_core_layers_inside_shaft.parts[0].thickness / 2,
+        + geometry_settings.outer_core_layers_between_disks[0].layer_thickness / 2,
         x0=geometry_settings.rotary_assembly_desc.assembly_core_distance
-        - geometry_settings.outer_core_layers_inside_shaft.parts[0].thickness / 2,
+        - geometry_settings.outer_core_layers_between_disks[0].layer_thickness / 2,
     )
 
 
@@ -42,7 +42,7 @@ def get_height_from_length(length: float, angle: float):
 
 def get_geometry_base_height(angle: float, geometry_settings: GeometrySettings):
     max_frustum_diameter = (
-        geometry_settings.outer_core_layers_inside_shaft.parts[0].thickness
+        geometry_settings.outer_core_layers_between_disks[0].layer_thickness
         + geometry_settings.rotary_assembly_desc.rotary_assembly_radius
     )
     return (
@@ -68,7 +68,7 @@ def get_geometry_bounding_box_one_full_layer(
     lower_z = (
         -get_height_from_length(geometry_settings.core_desc.core_radius, angle)
         - get_height_from_length(
-            geometry_settings.outer_core_layers_inside_shaft.parts[0].thickness, angle
+            geometry_settings.outer_core_layers_between_disks[0].layer_thickness, angle
         )
         - vertical_core_height_with_margin / 2
     )

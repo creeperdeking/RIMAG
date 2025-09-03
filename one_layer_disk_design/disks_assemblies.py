@@ -11,7 +11,6 @@ from common_lib.assemblies_types import (
 from common_lib.assemblies_types import BoundariesGeometrySettings
 from common_lib.geometry_utils import (
     create_bounded_surface_plane,
-    create_cylinder,
     create_hollow_cylinder,
 )
 from common_lib.rotary_assembly import RotaryAssemblyDesc
