@@ -50,6 +50,7 @@ class MaterialChoice(BaseModel):
     photovoltaic: str
     coolant: str
     gamma_shield: str
+    rotary_axle: str
 
 
 atoms: Dict[str, Atom] = {

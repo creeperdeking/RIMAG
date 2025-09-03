@@ -54,6 +54,12 @@ def get_base_geometry(
     shaft_boundary = get_shaft_boundary(
         geometry_settings, outer_core_layers_thickness, assembly_thickness
     )
+    inner_shaft_boundary = get_shaft_boundary(
+        geometry_settings,
+        outer_core_layers_thickness
+        - geometry_settings.rotary_assembly_desc.rotary_axle_thickness * 2,
+        assembly_thickness,
+    )
     outer_empty_zone_parameters = get_outer_empty_zone_parameters(geometry_settings)
     outer_empty_zone_boundary_cylinder = -openmc.ZCylinder(
         r=outer_empty_zone_parameters.radius,
@@ -65,6 +71,7 @@ def get_base_geometry(
         core_boundary,
         photovoltaic_boundary,
         shaft_boundary,
+        inner_shaft_boundary,
         disk_boundary,
         outer_empty_zone_boundary_cylinder,
     )
@@ -148,6 +155,7 @@ def define_geometry(
         _,
         photovoltaic_boundary,
         shaft_boundary,
+        inner_shaft_boundary,
         disk_boundary,
         outer_empty_zone_boundary_cylinder,
     ) = get_base_geometry(geometry_settings)
@@ -216,6 +224,8 @@ def define_geometry(
         )
     )
 
+    shaft_region = shaft_boundary & ~inner_shaft_boundary
+
     ### Making Cells
 
     outer_core_layers_inside_shaft = make_outer_core_layers(
@@ -224,7 +234,13 @@ def define_geometry(
         geometry_settings.outer_core_layers_inside_shaft,
         geometry_settings.core_desc,
         materials_dict,
-        shaft_boundary,
+        inner_shaft_boundary,
+    )
+
+    shaft_cell = openmc.Cell(
+        region=shaft_region,
+        fill=materials_dict[geometry_settings.material_choice.rotary_axle],
+        name="shaft",
     )
 
     outer_core_layers_bottom_cells = make_outer_core_layers(
@@ -259,6 +275,7 @@ def define_geometry(
         *photovoltaic_assembly_cells.values(),
         *emitter_assembly_cells.values(),
         outer_empty_zone_cell,
+        shaft_cell,
     ]
 
     ### Make the reactor universe

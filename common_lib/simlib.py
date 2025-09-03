@@ -691,6 +691,11 @@ def print_core_characteristics(
     core_characteristics: CoreCharacteristics,
 ):
     print(
+        "rotary axle diameter",
+        round(core_characteristics.rotary_axle_radius * 2),
+        "cm",
+    )
+    print(
         "emissive_surface",
         round(core_characteristics.fuel_emissive_area / 1e4, 2),
         "m2",

@@ -309,6 +309,7 @@ def make_simulation_geometry(
             assembly_core_distance, core_desc.core_radius
         ),
         frustum_pitch=disk_geometry_params.frustum_pitch,
+        rotary_axle_thickness=disk_geometry_params.rotary_axle_thickness,
     )
 
     geometry_settings = GeometrySettings(

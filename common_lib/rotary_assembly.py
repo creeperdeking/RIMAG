@@ -6,3 +6,4 @@ class RotaryAssemblyDesc(BaseModel):
     assembly_core_margin: float
     rotary_assembly_radius: float
     frustum_pitch: float
+    rotary_axle_thickness: float

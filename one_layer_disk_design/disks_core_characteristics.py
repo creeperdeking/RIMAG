@@ -38,6 +38,7 @@ class CoreCharacteristics(BaseModel):
     photovoltaic_area: float
     photovoltaic_power_density: float
     photovoltaic_power_per_m: float
+    rotary_axle_radius: float
 
 
 def calculate_disk_core_characteristics(
@@ -52,6 +53,7 @@ def calculate_disk_core_characteristics(
     fuel_burnup: float,
     fuel_thickness: float,
     vertical_core_height: float,
+    rotary_axle_radius: float,
 ) -> CoreCharacteristics:
     fuel_cells = tracked_cells[material_choice.fuel]
     photovoltaic_cells = tracked_cells[material_choice.photovoltaic]
@@ -101,4 +103,5 @@ def calculate_disk_core_characteristics(
         photovoltaic_area=photovoltaic_area,
         photovoltaic_power_density=photovoltaic_power_density,
         photovoltaic_power_per_m=photovoltaic_power_per_m,
+        rotary_axle_radius=rotary_axle_radius,
     )

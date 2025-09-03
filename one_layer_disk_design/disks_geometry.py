@@ -28,6 +28,7 @@ class DiskGeometryParams(BaseModel):
     fuel_emitter_gap: float
     emitter_thickness: float
     thickness_photovoltaic: float
+    rotary_axle_thickness: float
 
     reflector_thickness: float
     neutron_shield_moderator_thickness: float
@@ -54,6 +55,7 @@ def define_disks_geometry(
         core_boundary,
         photovoltaic_boundary,
         shaft_boundary,
+        _,
         disk_boundary,
         _,
     ) = get_base_geometry(

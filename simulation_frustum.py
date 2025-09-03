@@ -38,6 +38,7 @@ disk_geometry_params = make_disk_geometry_params(
         fuel_emitter_gap=0.2,
         emitter_thickness=0.5,
         thickness_photovoltaic=thickness_photovoltaic,
+        rotary_axle_thickness=10,
         reflector_thickness=30,
         neutron_shield_moderator_thickness=170,  # 175
         neutron_shield_absorber_thickness=10,
@@ -72,6 +73,7 @@ material_choice = MaterialChoice(
     neutron_absorber="Boron Carbide",
     neutron_reflector="Graphite",
     bottom_reflector="Graphite",
+    rotary_axle="Graphite",
     fuel="Uranium Oxy-Carbide with Gadolinium Oxide",
     moderator_cladding="Zirconium",
     emitter="Graphite",
@@ -112,6 +114,7 @@ def calculate_core_characteristics():
         fuel_burnup=fuel_burnup,
         fuel_thickness=fuel_thickness,
         vertical_core_height=make_simulation_geometry_result.geometry_settings.core_desc.core_vertical_height,
+        rotary_axle_radius=make_simulation_geometry_result.geometry_settings.rotary_assembly_desc.rotary_assembly_radius,
     )
 
 
