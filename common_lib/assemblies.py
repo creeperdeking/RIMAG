@@ -150,9 +150,10 @@ def calculate_assembly_thickness(assembly_section: AssemblySections) -> float:
 
 # The assembly parts will be repeated but flipped
 def mirror_assembly(assembly: AssemblySections) -> AssemblySections:
-    flipped_parts = copy(assembly.parts)
-    flipped_parts.reverse()
-    new_assembly = []
-    new_assembly.extend(assembly.parts)
-    new_assembly.extend(flipped_parts)
+    first_part = assembly.parts[0:-1]
+    middle_part = copy(assembly.parts[-1])
+    middle_part.thickness *= 2
+    second_part = copy(first_part)
+    second_part.reverse()
+    new_assembly = first_part + [middle_part] + second_part
     return AssemblySections(parts=new_assembly)

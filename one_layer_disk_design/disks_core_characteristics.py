@@ -1,9 +1,12 @@
+import math
 from typing import Dict, List
 
 import openmc
 from pydantic import BaseModel
 
-from common_lib.light import radiative_heat_flux_between_plates
+from common_lib.light import (
+    calc_T2_radiative_heat_flux_between_plates,
+)
 from common_lib.materials import (
     MaterialChoice,
     heavy_metal_density,
@@ -32,6 +35,7 @@ class CoreCharacteristics(BaseModel):
     fuel_emissive_area: float
     core_power: float
     core_power_electric: float
+    cold_temp: float
     radiative_flux: float
     fuel_lifetime: float
     photovoltaic_power: float
@@ -46,7 +50,6 @@ def calculate_disk_core_characteristics(
     material_choice: MaterialChoice,
     materials_dict: Dict[str, openmc.Material],
     hot_temp: float,
-    cold_temp: float,
     photovoltaic_efficiency: float,
     photovoltaic_power_density: float,
     photovoltaic_thickness: float,
@@ -54,6 +57,7 @@ def calculate_disk_core_characteristics(
     fuel_thickness: float,
     vertical_core_height: float,
     rotary_axle_radius: float,
+    min_cold_temp: float,
 ) -> CoreCharacteristics:
     fuel_cells = tracked_cells[material_choice.fuel]
     photovoltaic_cells = tracked_cells[material_choice.photovoltaic]
@@ -66,21 +70,35 @@ def calculate_disk_core_characteristics(
 
     photovoltaic_area = photovoltaic_cell_volume / photovoltaic_thickness
 
+    ratio_photovoltaic_to_fuel = photovoltaic_area / fuel_emissive_area
+
     photovoltaic_power = photovoltaic_area * photovoltaic_power_density
 
-    radiative_flux = radiative_heat_flux_between_plates(hot_temp, cold_temp, 0.9, 0.9)
+    photovoltaic_power_density_total = (
+        photovoltaic_power_density / photovoltaic_efficiency
+    )
+    photovoltaic_power_per_m2_fuel_area = (
+        photovoltaic_power_density_total * 10000 * ratio_photovoltaic_to_fuel
+    )
 
-    core_power = radiative_flux * fuel_emissive_area / 10000
+    cold_temp = calc_T2_radiative_heat_flux_between_plates(
+        hot_temp,
+        photovoltaic_power_per_m2_fuel_area,
+        0.95,
+        0.95,
+    )
+    assert cold_temp > 0 and cold_temp < hot_temp
+    if cold_temp < min_cold_temp:
+        print(
+            f"❌ The cold temperature {cold_temp - 273}°C is below the minimum allowed {min_cold_temp - 273}°C"
+        )
+
+    core_power = photovoltaic_power_per_m2_fuel_area * fuel_emissive_area / 10000
     core_power_electric = core_power * photovoltaic_efficiency
 
     photovoltaic_power_per_m = photovoltaic_power * (100 / vertical_core_height)
 
-    if core_power_electric < photovoltaic_power:
-        print(
-            f"❌ The temperature differential between the emitter surface and the fuel is \
-                insufficient, thus the calculated core power of {round(core_power_electric)} \
-                Watts is inferior to the calculated photovoltaic power of {round(photovoltaic_power)} W"
-        )
+    assert math.isclose(core_power_electric, photovoltaic_power)
 
     heavy_metal_mass = (
         fuel_cell_volume
@@ -97,7 +115,8 @@ def calculate_disk_core_characteristics(
         fuel_emissive_area=fuel_emissive_area,
         core_power=core_power,
         core_power_electric=core_power_electric,
-        radiative_flux=radiative_flux,
+        cold_temp=cold_temp,
+        radiative_flux=photovoltaic_power_per_m2_fuel_area,
         fuel_lifetime=fuel_lifetime,
         photovoltaic_power=photovoltaic_power,
         photovoltaic_area=photovoltaic_area,

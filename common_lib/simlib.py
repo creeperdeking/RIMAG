@@ -696,6 +696,11 @@ def print_core_characteristics(
         "cm",
     )
     print(
+        "cold temp",
+        round(core_characteristics.cold_temp - 273),
+        "°C",
+    )
+    print(
         "emissive_surface",
         round(core_characteristics.fuel_emissive_area / 1e4, 2),
         "m2",

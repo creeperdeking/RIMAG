@@ -50,9 +50,8 @@ disk_geometry_params = make_disk_geometry_params(
 
 ### Thermodynamic parameters
 
-hot_temp = 1250 + 273  # K
-cold_temp = 1050 + 273  # K
-
+hot_temp = 1300 + 273  # K
+min_cold_temp = 1100 + 273  # K
 photovoltaic_efficiency = 0.33
 photovoltaic_power_density = 0.92  # 0.61  # W/cm2
 
@@ -109,7 +108,6 @@ def calculate_core_characteristics():
         material_choice=material_choice,
         materials_dict=materials_dict,
         hot_temp=hot_temp,
-        cold_temp=cold_temp,
         photovoltaic_efficiency=photovoltaic_efficiency,
         photovoltaic_power_density=photovoltaic_power_density,
         photovoltaic_thickness=thickness_photovoltaic,
@@ -117,6 +115,7 @@ def calculate_core_characteristics():
         fuel_thickness=fuel_thickness,
         vertical_core_height=make_simulation_geometry_result.geometry_settings.core_desc.core_vertical_height,
         rotary_axle_radius=make_simulation_geometry_result.geometry_settings.rotary_assembly_desc.rotary_assembly_radius,
+        min_cold_temp=min_cold_temp,
     )
 
 
