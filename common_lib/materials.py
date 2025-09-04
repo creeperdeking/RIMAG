@@ -44,6 +44,7 @@ class MaterialChoice(BaseModel):
     bottom_reflector: str
     fuel: str
     moderator_cladding: str
+    coolant_cladding: str
     emitter: str
     fuel_cladding: str
     void: str
@@ -88,6 +89,10 @@ atoms: Dict[str, Atom] = {
     "As": Atom(name="As", atomic_weight=74.9216),
     "In": Atom(name="In", atomic_weight=114.818),
     "P": Atom(name="P", atomic_weight=30.973762),
+    "Cr": Atom(name="Cr", atomic_weight=51.9961),
+    "Ni": Atom(name="Ni", atomic_weight=58.6934),
+    "Mn": Atom(name="Mn", atomic_weight=54.938045),
+    "S": Atom(name="S", atomic_weight=32.065),
 }
 
 
@@ -443,6 +448,21 @@ def make_materials(
             composition=[AtomProportion(atom=atoms["Al"])],
             density=2.7,
             color="lightblue",
+        ),
+        "Stainless Steel": Material(
+            composition=[
+                AtomProportion(atom=atoms["Fe"], proportion=69.43),
+                AtomProportion(atom=atoms["Cr"], proportion=19.53),
+                AtomProportion(atom=atoms["Ni"], proportion=8.65),
+                AtomProportion(atom=atoms["Mn"], proportion=1),
+                AtomProportion(atom=atoms["Si"], proportion=0.977),
+                AtomProportion(atom=atoms["N"], proportion=0.196),
+                AtomProportion(atom=atoms["C"], proportion=0.16),
+                AtomProportion(atom=atoms["P"], proportion=0.04),
+                AtomProportion(atom=atoms["S"], proportion=0.013),
+            ],
+            density=8.0,
+            color="gray",
         ),
         "Beryllium Oxide": Material(
             composition=[
