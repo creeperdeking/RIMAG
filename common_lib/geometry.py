@@ -23,6 +23,7 @@ from common_lib.geometry_utils import (
     SPACING_CONSTANT,
     get_outer_empty_zone_parameters,
     get_geometry_bounding_box_one_full_layer,
+    offset_core_boundary_planes_points,
 )
 
 from common_lib.geometry_types import GeometrySettings
@@ -34,6 +35,15 @@ def get_base_geometry(
     core_boundary_planes_points = make_core_boundary_planes_points(geometry_settings)
     boundary_planes = make_boundary_planes(
         core_boundary_planes_points,
+    )
+
+    outer_core_boundary_planes_points = offset_core_boundary_planes_points(
+        core_boundary_planes_points,
+        geometry_settings,
+        geometry_settings.outer_core_thickness,
+    )
+    outer_core_boundary_planes = make_boundary_planes(
+        outer_core_boundary_planes_points,
     )
 
     assembly_thickness = calculate_assembly_thickness(
@@ -59,9 +69,20 @@ def get_base_geometry(
         )
         & disk_boundary
     )
+
+    outer_core_boundary = create_cylinder(
+        geometry_settings.rotary_assembly_desc,
+        geometry_settings.core_desc.outer_core_radius,
+        geometry_settings.core_desc.core_height,
+    ) | (
+        -outer_core_boundary_planes.positive_y_plane
+        & +outer_core_boundary_planes.negative_y_plane
+        & -outer_core_boundary_planes.upper_boundary_plane
+    )
     photovoltaic_boundary = define_photovoltaic_boundary_large(
         geometry_settings.core_desc,
         geometry_settings.rotary_assembly_desc,
+        outer_core_boundary,
     )
     outer_core_layers_thickness = calculate_assembly_thickness(
         geometry_settings.outer_core_layers_inside_shaft
@@ -91,6 +112,7 @@ def get_base_geometry(
         inner_shaft_boundary,
         disk_boundary,
         outer_empty_zone_boundary_cylinder,
+        outer_core_boundary,
     )
 
 
@@ -176,16 +198,11 @@ def define_geometry(
         inner_shaft_boundary,
         disk_boundary,
         outer_empty_zone_boundary_cylinder,
+        outer_core_boundary,
     ) = get_base_geometry(geometry_settings)
     check_assembly_thickness_equal(
         geometry_settings.assembly_section_core,
         geometry_settings.photovoltaic_assembly,
-    )
-
-    outer_core_boundary = create_cylinder(
-        geometry_settings.rotary_assembly_desc,
-        geometry_settings.core_desc.outer_core_radius,
-        geometry_settings.core_desc.core_height,
     )
 
     core_height_with_margin = (

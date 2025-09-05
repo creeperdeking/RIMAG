@@ -63,6 +63,7 @@ def define_disks_geometry(
         _,
         disk_boundary,
         _,
+        _,
     ) = get_base_geometry(
         geometry_settings,
     )

@@ -37,14 +37,16 @@ def compute_core_desc(
 def define_photovoltaic_boundary_large(
     core_desc: CoreDesc,
     rotary_assembly_desc: RotaryAssemblyDesc,
+    outer_core_boundary: openmc.Region,
 ) -> openmc.Intersection:
-    boundary_shape = create_cylinder(
-        rotary_assembly_desc,
-        rotary_assembly_desc.rotary_assembly_radius,
-        core_desc.core_height,
-        distance_from_origin=rotary_assembly_desc.assembly_core_distance,
-    ) & +openmc.ZCylinder(
-        r=core_desc.outer_core_radius,
+    boundary_shape = (
+        create_cylinder(
+            rotary_assembly_desc,
+            rotary_assembly_desc.rotary_assembly_radius,
+            core_desc.core_height,
+            distance_from_origin=rotary_assembly_desc.assembly_core_distance,
+        )
+        & ~outer_core_boundary
     )
     return boundary_shape
 
