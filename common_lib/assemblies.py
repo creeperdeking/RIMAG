@@ -10,8 +10,11 @@ from common_lib.assemblies_types import (
 )
 from common_lib.geometry_types import GeometrySettings
 from common_lib.geometry_utils import (
+    CoreBoundaryPlanesPoints,
     create_cylinder,
     get_z_scaling,
+    make_boundary_planes,
+    offset_core_boundary_planes_points,
 )
 from common_lib.rotary_assembly import RotaryAssemblyDesc
 
@@ -92,32 +95,55 @@ def make_outer_core_layers(
     core_desc: CoreDesc,
     materials_dict: Dict[str, openmc.Material],
     boundary_shape: openmc.Region,
+    core_boundary_planes_points: CoreBoundaryPlanesPoints,
 ) -> List[openmc.Cell]:
     cells = []
     outer_core_radius_delta = (
         geometry_settings.outer_core_thickness
         - calculate_assembly_thickness(outer_core_layers)
     ) / 2
-    current_layer_radius = core_desc.core_radius + outer_core_radius_delta
-    previous_layer_radius = current_layer_radius
+    inner_layer_radius = core_desc.core_radius + outer_core_radius_delta
+    current_boundary_planes_points = offset_core_boundary_planes_points(
+        core_boundary_planes_points,
+        geometry_settings,
+        outer_core_radius_delta,
+    )
     for i, layer in enumerate(outer_core_layers.parts):
-        current_layer_radius = current_layer_radius + layer.thickness
-        core_cylinder = -openmc.ZCylinder(
-            r=previous_layer_radius,
+        offset_boundary_planes_points = offset_core_boundary_planes_points(
+            current_boundary_planes_points,
+            geometry_settings,
+            layer.thickness,
         )
-        cylinder = (
-            create_cylinder(
-                rotary_assembly_desc,
-                current_layer_radius,
-                core_desc.core_height,
-            )
-            & ~core_cylinder
+        inner_boundary_planes = make_boundary_planes(
+            current_boundary_planes_points,
         )
+        inner_boundary = +openmc.ZCylinder(r=inner_layer_radius, x0=0, y0=0) & (
+            +inner_boundary_planes.positive_y_plane
+            | -inner_boundary_planes.negative_y_plane
+            | +inner_boundary_planes.upper_boundary_plane
+        )
+        outer_boundary_planes = make_boundary_planes(
+            offset_boundary_planes_points,
+        )
+        outer_boundary = -openmc.ZCylinder(
+            r=inner_layer_radius + layer.thickness, x0=0, y0=0
+        ) | (
+            -outer_boundary_planes.positive_y_plane
+            & +outer_boundary_planes.negative_y_plane
+            & -outer_boundary_planes.upper_boundary_plane
+        )
+        layer_boundary = None
+        if i == 0:
+            layer_boundary = outer_boundary
+        else:
+            layer_boundary = inner_boundary & outer_boundary
+
         cell = openmc.Cell(name=f"outer_core_layer_{layer.material}_{i}")
-        cell.region = cylinder & boundary_shape
+        cell.region = layer_boundary & boundary_shape
         cell.fill = materials_dict[layer.material]
         cells.append(cell)
-        previous_layer_radius = current_layer_radius
+        inner_layer_radius = inner_layer_radius + layer.thickness
+        current_boundary_planes_points = offset_boundary_planes_points
     return cells
 
 

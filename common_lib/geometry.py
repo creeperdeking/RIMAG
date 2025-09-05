@@ -17,6 +17,8 @@ from common_lib.assemblies import (
 from common_lib.geometry_utils import (
     create_cylinder,
     get_vertical_core_height_with_margin,
+    make_boundary_planes,
+    make_core_boundary_planes_points,
     make_surface_plane,
     SPACING_CONSTANT,
     get_outer_empty_zone_parameters,
@@ -29,19 +31,33 @@ from common_lib.geometry_types import GeometrySettings
 def get_base_geometry(
     geometry_settings: GeometrySettings,
 ):
+    core_boundary_planes_points = make_core_boundary_planes_points(geometry_settings)
+    boundary_planes = make_boundary_planes(
+        core_boundary_planes_points,
+    )
+
     assembly_thickness = calculate_assembly_thickness(
         geometry_settings.assembly_section_core
     )
-    core_boundary = create_cylinder(
-        geometry_settings.rotary_assembly_desc,
-        geometry_settings.core_desc.core_radius,
-        geometry_settings.core_desc.core_height,
-    )
+
     disk_boundary = create_cylinder(
         geometry_settings.rotary_assembly_desc,
         geometry_settings.rotary_assembly_desc.rotary_assembly_radius,
         geometry_settings.core_desc.core_height,
         distance_from_origin=geometry_settings.rotary_assembly_desc.assembly_core_distance,
+    )
+    core_boundary = (
+        create_cylinder(
+            geometry_settings.rotary_assembly_desc,
+            geometry_settings.core_desc.core_radius,
+            geometry_settings.core_desc.core_height,
+        )
+        | (
+            -boundary_planes.positive_y_plane
+            & +boundary_planes.negative_y_plane
+            & -boundary_planes.upper_boundary_plane
+        )
+        & disk_boundary
     )
     photovoltaic_boundary = define_photovoltaic_boundary_large(
         geometry_settings.core_desc,
@@ -69,6 +85,7 @@ def get_base_geometry(
     return (
         assembly_thickness,
         core_boundary,
+        core_boundary_planes_points,
         photovoltaic_boundary,
         shaft_boundary,
         inner_shaft_boundary,
@@ -153,6 +170,7 @@ def define_geometry(
     (
         _,
         _,
+        core_boundary_planes_points,
         photovoltaic_boundary,
         shaft_boundary,
         inner_shaft_boundary,
@@ -235,6 +253,7 @@ def define_geometry(
         geometry_settings.core_desc,
         materials_dict,
         inner_shaft_boundary,
+        core_boundary_planes_points,
     )
 
     shaft_cell = openmc.Cell(
@@ -250,6 +269,7 @@ def define_geometry(
         geometry_settings.core_desc,
         materials_dict,
         outer_empty_zone_boundary & ~disk_boundary,
+        core_boundary_planes_points,
     )
 
     outer_empty_zone = (

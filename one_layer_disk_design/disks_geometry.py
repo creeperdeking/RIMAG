@@ -8,6 +8,10 @@ from common_lib.assemblies import (
     make_emitter_only_assembly,
 )
 from common_lib.geometry import GeometrySettings, define_geometry, get_base_geometry
+from common_lib.geometry_utils import (
+    make_boundary_planes,
+    offset_core_boundary_planes_points,
+)
 from one_layer_disk_design.disks_assemblies import (
     define_discs_emitter_boundary,
     make_disks_cells,
@@ -53,6 +57,7 @@ def define_disks_geometry(
     (
         assembly_thickness,
         core_boundary,
+        core_boundary_planes_points,
         photovoltaic_boundary,
         shaft_boundary,
         _,
@@ -103,13 +108,33 @@ def define_disks_geometry(
 
     between_disks_shielding_cells = []
     previous_radius = geometry_settings.core_desc.core_radius
+    current_boundary_planes_points = core_boundary_planes_points
     for outer_core_layer in geometry_settings.outer_core_layers_between_disks:
-        inner_boundary = openmc.ZCylinder(r=previous_radius, x0=0, y0=0)
-        outer_boundary = openmc.ZCylinder(
+        offset_boundary_planes_points = offset_core_boundary_planes_points(
+            current_boundary_planes_points,
+            geometry_settings,
+            outer_core_layer.layer_thickness,
+        )
+        inner_boundary_planes = make_boundary_planes(
+            current_boundary_planes_points,
+        )
+        inner_boundary = +openmc.ZCylinder(r=previous_radius, x0=0, y0=0) & (
+            +inner_boundary_planes.positive_y_plane
+            | -inner_boundary_planes.negative_y_plane
+            | +inner_boundary_planes.upper_boundary_plane
+        )
+        outer_boundary_planes = make_boundary_planes(
+            offset_boundary_planes_points,
+        )
+        outer_boundary = -openmc.ZCylinder(
             r=previous_radius + outer_core_layer.layer_thickness, x0=0, y0=0
+        ) | (
+            -outer_boundary_planes.positive_y_plane
+            & +outer_boundary_planes.negative_y_plane
+            & -outer_boundary_planes.upper_boundary_plane
         )
 
-        layer_boundary = +inner_boundary & -outer_boundary
+        layer_boundary = inner_boundary & outer_boundary
 
         between_disks_shielding_cells.append(
             make_disks_cells(
@@ -122,6 +147,7 @@ def define_disks_geometry(
         )
 
         previous_radius += outer_core_layer.layer_thickness
+        current_boundary_planes_points = offset_boundary_planes_points
 
     emitter_assembly_cells = make_disks_cells(
         assembly_section=make_emitter_only_assembly(

@@ -1,5 +1,7 @@
 import math
+from typing import Tuple
 
+import numpy as np
 import openmc
 from pydantic import BaseModel
 
@@ -118,6 +120,112 @@ def get_geometry_bounding_box(
     )
 
     return lower_left_corner, upper_right_corner
+
+
+class CoreBoundaryPlanesPoints(BaseModel):
+    negative_y_point: Tuple[float, float, float]
+    positive_y_point: Tuple[float, float, float]
+    negative_y_reference_point: Tuple[float, float, float]
+    positive_y_reference_point: Tuple[float, float, float]
+    negative_y_reference_point_vertical: Tuple[float, float, float]
+    positive_y_reference_point_vertical: Tuple[float, float, float]
+
+
+def calculate_alpha_boundary_planes(
+    geometry_settings: GeometrySettings,
+):
+    assembly_core_distance = (
+        geometry_settings.rotary_assembly_desc.assembly_core_distance
+    )
+    core_radius = geometry_settings.core_desc.core_radius
+    alpha = math.acos(core_radius / assembly_core_distance)
+    return alpha
+
+
+def offset_core_boundary_planes_points(
+    core_boundary_planes_points: CoreBoundaryPlanesPoints,
+    geometry_settings: GeometrySettings,
+    offset: float,
+):
+    alpha = calculate_alpha_boundary_planes(geometry_settings)
+    x_offset = offset * math.cos(alpha)
+    y_offset = offset * math.sin(alpha)
+    positive_offset = np.array((x_offset, y_offset, 0))
+    negative_offset = np.array((x_offset, -y_offset, 0))
+    return CoreBoundaryPlanesPoints(
+        negative_y_point=tuple(
+            np.array(core_boundary_planes_points.negative_y_point) + negative_offset
+        ),
+        positive_y_point=tuple(
+            np.array(core_boundary_planes_points.positive_y_point) + positive_offset
+        ),
+        negative_y_reference_point=tuple(
+            np.array(core_boundary_planes_points.negative_y_reference_point)
+            + negative_offset
+        ),
+        positive_y_reference_point=tuple(
+            np.array(core_boundary_planes_points.positive_y_reference_point)
+            + positive_offset
+        ),
+        negative_y_reference_point_vertical=tuple(
+            np.array(core_boundary_planes_points.negative_y_reference_point_vertical)
+            + negative_offset
+        ),
+        positive_y_reference_point_vertical=tuple(
+            np.array(core_boundary_planes_points.positive_y_reference_point_vertical)
+            + positive_offset
+        ),
+    )
+
+
+def make_core_boundary_planes_points(
+    geometry_settings: GeometrySettings,
+):
+    assembly_core_distance = (
+        geometry_settings.rotary_assembly_desc.assembly_core_distance
+    )
+    core_radius = geometry_settings.core_desc.core_radius
+    alpha = math.acos(core_radius / assembly_core_distance)
+    x_coord = core_radius * math.cos(alpha)
+    y_coord = x_coord * math.tan(alpha)
+
+    return CoreBoundaryPlanesPoints(
+        positive_y_point=(x_coord, y_coord, 0),
+        negative_y_point=(x_coord, -y_coord, 0),
+        positive_y_reference_point=(assembly_core_distance, 0, 0),
+        positive_y_reference_point_vertical=(assembly_core_distance, 0, 1),
+        negative_y_reference_point=(assembly_core_distance, 0, 0),
+        negative_y_reference_point_vertical=(assembly_core_distance, 0, 1),
+    )
+
+
+class BoundaryPlanes(BaseModel, arbitrary_types_allowed=True):
+    positive_y_plane: openmc.Plane
+    negative_y_plane: openmc.Plane
+    upper_boundary_plane: openmc.XPlane
+
+
+def make_boundary_planes(
+    core_boundary_planes_points: CoreBoundaryPlanesPoints,
+):
+    positive_y_plane = openmc.Plane.from_points(
+        core_boundary_planes_points.positive_y_reference_point,
+        core_boundary_planes_points.positive_y_point,
+        core_boundary_planes_points.positive_y_reference_point_vertical,
+    )
+    negative_y_plane = openmc.Plane.from_points(
+        core_boundary_planes_points.negative_y_reference_point,
+        core_boundary_planes_points.negative_y_point,
+        core_boundary_planes_points.negative_y_reference_point_vertical,
+    )
+    upper_boundary_plane = openmc.XPlane(
+        x0=core_boundary_planes_points.positive_y_point[0]
+    )
+    return BoundaryPlanes(
+        positive_y_plane=positive_y_plane,
+        negative_y_plane=negative_y_plane,
+        upper_boundary_plane=upper_boundary_plane,
+    )
 
 
 def make_surface_plane(
