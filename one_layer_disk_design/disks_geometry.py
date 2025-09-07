@@ -26,6 +26,7 @@ from one_layer_disk_design.disks_core_characteristics import (
 class DiskGeometryParams(BaseModel):
     core_diameter: float
     moderator_cladding_thickness: float
+    shield_moderator_cladding_thickness: float
     fuel_thickness: float
     fuel_cladding_thickness: float
     moderator_thickness: float

@@ -220,9 +220,14 @@ def make_simulation_geometry(
     half_shield_moderator_part = AssemblySections(
         parts=[
             Assembly(
+                material=material_choice.coolant_cladding,
+                thickness=disk_geometry_params.shield_moderator_cladding_thickness,
+            ),
+            Assembly(
                 material=material_choice.neutron_shield_moderator,
                 thickness=disk_geometry_params.fuel_cladding_thickness
-                + disk_geometry_params.fuel_thickness / 2,
+                + disk_geometry_params.fuel_thickness / 2
+                - disk_geometry_params.shield_moderator_cladding_thickness,
             ),
         ],
     )
@@ -272,7 +277,12 @@ def make_simulation_geometry(
                         Assembly(
                             material=material_choice.neutron_shield_moderator,
                             thickness=disk_geometry_params.moderator_thickness / 2
-                            + disk_geometry_params.moderator_cladding_thickness,
+                            + disk_geometry_params.moderator_cladding_thickness
+                            - disk_geometry_params.shield_moderator_cladding_thickness,
+                        ),
+                        Assembly(
+                            material=material_choice.coolant_cladding,
+                            thickness=disk_geometry_params.shield_moderator_cladding_thickness,
                         ),
                         emitter_assembly_placeholder,
                         *shield_moderator_part.parts,
@@ -289,13 +299,11 @@ def make_simulation_geometry(
             parts=mirror_assembly(
                 AssemblySections(
                     parts=[
-                        ### Shield Moderator
                         Assembly(
                             material=material_choice.neutron_absorber,
                             thickness=disk_geometry_params.moderator_thickness / 2
                             + disk_geometry_params.moderator_cladding_thickness,
                         ),
-                        ### Emitter Assembly
                         emitter_assembly_placeholder,
                         *shield_absorber_part.parts,
                         emitter_assembly_placeholder,
