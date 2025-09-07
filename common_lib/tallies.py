@@ -51,6 +51,20 @@ def create_B10_tritium_production_tally(
     return tally
 
 
+def create_O16_activation_tally(
+    cells: List[openmc.Cell],
+    suffix: str = "",
+):
+    tally = openmc.Tally(name=f"O16_activation{suffix}")
+    tally.filters = [
+        openmc.CellFilter(cells),
+        openmc.ParticleFilter("neutron"),
+    ]
+    tally.nuclides = ["O16"]
+    tally.scores = ["(n,p)"]
+    return tally
+
+
 def create_photovoltaic_flux_tally(
     photovoltaic_cells: List[openmc.Cell],
     particle_type: Literal["neutron", "photon"],
@@ -341,7 +355,10 @@ def deposition_percentages(sp: openmc.StatePoint, tally_prefix: str = "dep_"):
 def calculate_tritium_production(
     sp: openmc.StatePoint, source_strength, electric_power, tally_name: str
 ):
-    curie_per_mol_tritium = 3.4e-5  # mol/Ci
+    """
+    Calculate tritium production in Ci/year/GWe.
+    """
+    curie_per_mol_tritium = 2.9e4  # Ci/mol
     t_tritium_production = sp.get_tally(name=tally_name)
     # Get mean and std_dev for the tally
     mean_val = t_tritium_production.get_values(scores=["(n,Xt)"], value="mean").sum()
@@ -356,11 +373,27 @@ def calculate_tritium_production(
         * 60
         * 60
         * 1e9
-        / curie_per_mol_tritium
+        * curie_per_mol_tritium
     )
     tritium_production = mean_val * factor
     tritium_production_sd = std_val * factor
     return tritium_production, tritium_production_sd
+
+
+def calculate_N16_production(
+    sp: openmc.StatePoint, source_strength, electric_power, tally_name: str
+):
+    """
+    Calculate N16 production in MBq/s/GWe.
+    """
+    mbq_per_mol_N16 = 5.85e16  # MBq/mol
+    N16_production = sp.get_tally(name=tally_name)
+    mean_val = N16_production.get_values(scores=["(n,p)"], value="mean").sum()
+    std_val = N16_production.get_values(scores=["(n,p)"], value="std_dev").sum()
+    factor = source_strength / electric_power / cst.Avogadro * 1e9 * mbq_per_mol_N16
+    N16_production = mean_val * factor
+    N16_production_sd = std_val * factor
+    return N16_production, N16_production_sd
 
 
 def print_tritium_production(sp: openmc.StatePoint, source_strength, electric_power):
@@ -397,6 +430,30 @@ def print_tritium_production(sp: openmc.StatePoint, source_strength, electric_po
     )
 
 
+def print_N16_production(sp: openmc.StatePoint, source_strength, electric_power):
+    """
+    Print N16 production in MBq/s/GWe.
+    """
+    N16_production_moderator, N16_production_moderator_sd = calculate_N16_production(
+        sp, source_strength, electric_power, "O16_activation_moderator"
+    )
+    N16_production_shield, N16_production_shield_sd = calculate_N16_production(
+        sp, source_strength, electric_power, "O16_activation_shield_moderator"
+    )
+    N16_production_coolant, N16_production_coolant_sd = calculate_N16_production(
+        sp, source_strength, electric_power, "O16_activation_coolant"
+    )
+    print(
+        f"N16 production moderator: {N16_production_moderator:.2e} MBq/s/GWe ± {N16_production_moderator_sd:.2e} MBq/s/GWe"
+    )
+    print(
+        f"N16 production shield: {N16_production_shield:.2e} MBq/s/GWe ± {N16_production_shield_sd:.2e} MBq/s/GWe"
+    )
+    print(
+        f"N16 production coolant: {N16_production_coolant:.2e} MBq/s/GWe ± {N16_production_coolant_sd:.2e} MBq/s/GWe"
+    )
+
+
 def print_tallies(
     source_strength,
     emitter_cells,
@@ -423,6 +480,7 @@ def print_tallies(
     )
 
     print_tritium_production(sp, source_strength, electric_power)
+    print_N16_production(sp, source_strength, electric_power)
 
     ###### Compute energy distribution in the fuel ######
 
@@ -467,26 +525,20 @@ def print_tallies(
     normalized_ddd_photovoltaic = float(
         ddd_photovoltaic.get_values(scores=["flux"], value="mean")
     )
-    normalized_ddd_photovoltaic_old = ddd_photovoltaic.mean[0][0][0]
 
     # Get absorption in photovoltaic
     normalized_absorption_photovoltaic = float(
         photovolatic.get_values(scores=["(n,gamma)"], value="mean")
     )
-    # normalized_absorption_photovoltaic_old = photovolatic.mean[0][0][0]
     # Get absorption in emitter
     normalized_absorption_emitter = float(
         fluence_emitter.get_values(scores=["(n,gamma)"], value="mean")
     )
-    # normalized_absorption_emitter = fluence_emitter.mean[0][0][0]
 
     # Get heating in photovoltaic
     heating_photovoltaic = float(
         photovolatic.get_values(scores=["heating"], value="mean")
         / cst.value("joule-electron volt relationship")
-    )  # J/particle
-    heating_photovoltaic_old = photovolatic.mean[0][0][1] / cst.value(
-        "joule-electron volt relationship"
     )  # J/particle
 
     mass_photovoltaic = photovoltaic_slice_volume * photovoltaic_density  # g

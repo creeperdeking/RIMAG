@@ -16,6 +16,7 @@ from common_lib.geometry_utils import get_geometry_bounding_box
 from common_lib.geometry_types import GeometrySettings
 from common_lib.tallies import (
     create_B10_tritium_production_tally,
+    create_O16_activation_tally,
     create_dpa_tally,
     create_emitter_tally,
     create_energy_deposition_tallies,
@@ -544,6 +545,15 @@ def run_sim_with_tallies(
     tally_B10_tritium_production_coolant = create_B10_tritium_production_tally(
         coolant_cells, suffix="_coolant"
     )
+    tally_O16_activation = create_O16_activation_tally(
+        moderator_cells, suffix="_moderator"
+    )
+    tally_O16_activation_shield = create_O16_activation_tally(
+        shield_moderator_cells, suffix="_shield_moderator"
+    )
+    tally_O16_activation_coolant = create_O16_activation_tally(
+        coolant_cells, suffix="_coolant"
+    )
     t_flux, t_nufi, t_Enufi = create_fission_energy_weighted_flux_tally(fuel_cells)
     tally_emitter = create_emitter_tally(
         emitter_cells, materials_dict, particle_type, monitored_nuclide
@@ -585,6 +595,9 @@ def run_sim_with_tallies(
             tally_B10_tritium_production,
             tally_B10_tritium_production_shield,
             tally_B10_tritium_production_coolant,
+            tally_O16_activation,
+            tally_O16_activation_shield,
+            tally_O16_activation_coolant,
             dpa_emitter,
         ]
     )
