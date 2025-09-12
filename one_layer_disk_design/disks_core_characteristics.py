@@ -84,8 +84,8 @@ def calculate_disk_core_characteristics(
     cold_temp = calc_T2_radiative_heat_flux_between_plates(
         hot_temp,
         photovoltaic_power_per_m2_fuel_area,
-        0.95,
-        0.95,
+        0.90,
+        0.90,
     )
     assert cold_temp > 0 and cold_temp < hot_temp
     if cold_temp < min_cold_temp:
