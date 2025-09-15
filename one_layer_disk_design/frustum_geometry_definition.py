@@ -84,19 +84,45 @@ def make_simulation_geometry(
     )
     fuel_element = mirror_assembly(half_fuel_element)
 
+    half_mini_fuel_element = AssemblySections(
+        parts=[
+            Assembly(
+                material=material_choice.fuel_cladding,
+                thickness=disk_geometry_params.fuel_cladding_thickness / 2,
+            ),
+            Assembly(
+                material=material_choice.fuel,
+                thickness=disk_geometry_params.fuel_thickness / 4,
+            ),
+        ]
+    )
+    mini_fuel_element = mirror_assembly(half_mini_fuel_element)
+    intermediary_section_core = AssemblySections(
+        parts=[
+            ### Moderator
+            Assembly(
+                material=material_choice.moderator,
+                thickness=disk_geometry_params.moderator_thickness / 2,
+            ),
+            ### Cladding
+            Assembly(
+                material=material_choice.moderator_cladding,
+                thickness=disk_geometry_params.moderator_cladding_thickness,
+            ),
+            Assembly(
+                material=material_choice.void,
+                thickness=disk_geometry_params.fuel_emitter_gap * 2,
+            ),
+            *mini_fuel_element.parts,
+        ]
+    )
+    intermediary_section_core_thickness = calculate_assembly_thickness(
+        intermediary_section_core
+    )
     assembly_section_core = mirror_assembly(
         AssemblySections(
             parts=[
-                ### Moderator
-                Assembly(
-                    material=material_choice.moderator,
-                    thickness=disk_geometry_params.moderator_thickness / 2,
-                ),
-                ### Cladding
-                Assembly(
-                    material=material_choice.moderator_cladding,
-                    thickness=disk_geometry_params.moderator_cladding_thickness,
-                ),
+                *intermediary_section_core.parts,
                 emitter_assembly_placeholder,
                 *fuel_element.parts,
                 emitter_assembly_placeholder,
@@ -134,9 +160,14 @@ def make_simulation_geometry(
         AssemblySections(
             parts=[
                 Assembly(
-                    material=material_choice.void,
-                    thickness=disk_geometry_params.moderator_thickness / 2
-                    + disk_geometry_params.moderator_cladding_thickness,
+                    material=material_choice.coolant,
+                    thickness=intermediary_section_core_thickness
+                    - disk_geometry_params.thickness_photovoltaic,
+                ),
+                Assembly(
+                    material=material_choice.photovoltaic,
+                    thickness=disk_geometry_params.thickness_photovoltaic,
+                    is_photovoltaic=True,
                 ),
                 ### Emitter Assembly
                 emitter_assembly_placeholder,
@@ -169,7 +200,7 @@ def make_simulation_geometry(
                 - disk_geometry_params.neutron_shield_absorber_thickness,
             ),
             Assembly(
-                material=material_choice.neutron_shield_moderator,
+                material=material_choice.shaft_shield_moderator,
                 thickness=disk_geometry_params.neutron_shield_moderator_thickness,
             ),
             # Assembly(
@@ -220,14 +251,14 @@ def make_simulation_geometry(
     half_shield_moderator_part = AssemblySections(
         parts=[
             Assembly(
-                material=material_choice.coolant_cladding,
-                thickness=disk_geometry_params.shield_moderator_cladding_thickness,
+                material=material_choice.shield_moderator_cladding,
+                thickness=disk_geometry_params.neutron_shield_moderator_cladding_thickness,
             ),
             Assembly(
                 material=material_choice.neutron_shield_moderator,
                 thickness=disk_geometry_params.fuel_cladding_thickness
                 + disk_geometry_params.fuel_thickness / 2
-                - disk_geometry_params.shield_moderator_cladding_thickness,
+                - disk_geometry_params.neutron_shield_moderator_cladding_thickness,
             ),
         ],
     )
@@ -244,6 +275,17 @@ def make_simulation_geometry(
     )
     shield_absorber_part = mirror_assembly(half_shield_absorber_part)
 
+    intermediary_section_shield_moderator_cladding_thickness = (
+        disk_geometry_params.neutron_shield_moderator_cladding_thickness
+        * (
+            intermediary_section_core_thickness
+            / (
+                disk_geometry_params.fuel_thickness
+                + disk_geometry_params.fuel_cladding_thickness * 2
+            )
+        )
+    )
+
     outer_core_layers_between_disks = [
         OuterCoreAssemblySections(
             parts=mirror_assembly(
@@ -251,13 +293,7 @@ def make_simulation_geometry(
                     parts=[
                         Assembly(
                             material=material_choice.neutron_reflector,
-                            thickness=(
-                                disk_geometry_params.moderator_thickness
-                                - disk_geometry_params.thickness_photovoltaic * 2
-                                + disk_geometry_params.moderator_cladding_thickness * 2
-                            )
-                            / 2
-                            + disk_geometry_params.thickness_photovoltaic,
+                            thickness=intermediary_section_core_thickness,
                         ),
                         emitter_assembly_placeholder,
                         *reflector_part.parts,
@@ -276,13 +312,12 @@ def make_simulation_geometry(
                     parts=[
                         Assembly(
                             material=material_choice.neutron_shield_moderator,
-                            thickness=disk_geometry_params.moderator_thickness / 2
-                            + disk_geometry_params.moderator_cladding_thickness
-                            - disk_geometry_params.shield_moderator_cladding_thickness,
+                            thickness=intermediary_section_core_thickness
+                            - intermediary_section_shield_moderator_cladding_thickness,
                         ),
                         Assembly(
-                            material=material_choice.coolant_cladding,
-                            thickness=disk_geometry_params.shield_moderator_cladding_thickness,
+                            material=material_choice.shield_moderator_cladding,
+                            thickness=intermediary_section_shield_moderator_cladding_thickness,
                         ),
                         emitter_assembly_placeholder,
                         *shield_moderator_part.parts,
@@ -301,8 +336,7 @@ def make_simulation_geometry(
                     parts=[
                         Assembly(
                             material=material_choice.neutron_absorber,
-                            thickness=disk_geometry_params.moderator_thickness / 2
-                            + disk_geometry_params.moderator_cladding_thickness,
+                            thickness=intermediary_section_core_thickness,
                         ),
                         emitter_assembly_placeholder,
                         *shield_absorber_part.parts,

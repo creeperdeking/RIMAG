@@ -45,6 +45,8 @@ class MaterialChoice(BaseModel):
     fuel: str
     moderator_cladding: str
     coolant_cladding: str
+    shield_moderator_cladding: str
+    shaft_shield_moderator: str
     emitter: str
     fuel_cladding: str
     void: str
@@ -93,6 +95,7 @@ atoms: Dict[str, Atom] = {
     "Ni": Atom(name="Ni", atomic_weight=58.6934),
     "Mn": Atom(name="Mn", atomic_weight=54.938045),
     "S": Atom(name="S", atomic_weight=32.065),
+    "Ti": Atom(name="Ti", atomic_weight=47.867),
 }
 
 
@@ -481,6 +484,16 @@ def make_materials(
             density=5.9,
             color="gray",
         ),
+        "TZM": Material(
+            composition=[
+                AtomProportion(atom=atoms["Mo"], proportion=0.99),
+                AtomProportion(atom=atoms["Ti"], proportion=0.5),
+                AtomProportion(atom=atoms["Zr"], proportion=0.08),
+                AtomProportion(atom=atoms["C"], proportion=0.02),
+            ],
+            density=6.2,
+            color="gray",
+        ),
         "Zirconium Hydride Boron": Material(
             composition=[
                 AtomProportion(atom=atoms["Zr"], proportion=1),
@@ -488,6 +501,22 @@ def make_materials(
                 AtomProportion(atom=atoms["B"], proportion=1),
             ],
             density=6.2,
+            color="gray",
+        ),
+        "Aluminium Hydride": Material(
+            composition=[
+                AtomProportion(atom=atoms["Al"], proportion=1),
+                AtomProportion(atom=atoms["H"], proportion=3),
+            ],
+            density=1.477,
+            color="lightblue",
+        ),
+        "Titanium Hydride": Material(
+            composition=[
+                AtomProportion(atom=atoms["Ti"], proportion=1),
+                AtomProportion(atom=atoms["H"], proportion=2),
+            ],
+            density=3.75,
             color="gray",
         ),
         "Silicon": Material(
