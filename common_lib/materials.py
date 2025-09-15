@@ -96,6 +96,7 @@ atoms: Dict[str, Atom] = {
     "Mn": Atom(name="Mn", atomic_weight=54.938045),
     "S": Atom(name="S", atomic_weight=32.065),
     "Ti": Atom(name="Ti", atomic_weight=47.867),
+    "Cl": Atom(name="Cl", atomic_weight=35.453),
 }
 
 
@@ -483,6 +484,20 @@ def make_materials(
             ],
             density=5.9,
             color="gray",
+        ),
+        "Salt Water": Material(
+            composition=[
+                AtomProportion(atom=atoms["H"], proportion=2000),
+                AtomProportion(atom=atoms["O"], proportion=1002),
+                AtomProportion(atom=atoms["Na"], proportion=8.68),
+                AtomProportion(atom=atoms["Cl"], proportion=10.10),
+                AtomProportion(atom=atoms["Mg"], proportion=0.977),
+                AtomProportion(atom=atoms["S"], proportion=0.522),
+                AtomProportion(atom=atoms["Ca"], proportion=0.190),
+                AtomProportion(atom=atoms["K"], proportion=0.189),
+            ],
+            density=1.023,
+            color="darkblue",
         ),
         "TZM": Material(
             composition=[
