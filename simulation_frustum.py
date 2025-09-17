@@ -14,7 +14,7 @@ from one_layer_disk_design.frustum_geometry_definition import make_simulation_ge
 
 run_mode: RunMode = "keff"
 print_core_characteristics = True
-batches = 1200  # 2500  # 1250
+batches = 300  # 2500  # 1250
 weight_windows: UseWeightWindows = "no"
 particle_type: ParticleType = "neutron"
 # Tally absoption only for this particular nuclide:
@@ -27,7 +27,7 @@ emitter_gamma_rate_per_cm3 = 3.35e6  # photons/cm3/s
 ### Geometry parameters
 
 fuel_thickness = 0.12
-total_fuel_thickness = 0.5
+total_fuel_thickness = 0.7
 thickness_photovoltaic = 0.02
 disk_geometry_params = make_disk_geometry_params(
     DiskGeometryParams(
@@ -36,13 +36,13 @@ disk_geometry_params = make_disk_geometry_params(
         shield_moderator_cladding_thickness=0.05,
         fuel_thickness=fuel_thickness,
         fuel_cladding_thickness=(total_fuel_thickness - fuel_thickness) / 2,
-        moderator_thickness=1 * 5 / 4,
+        moderator_thickness=1 * 4.5 / 4,
         fuel_emitter_gap=0.1,
-        emitter_thickness=0.5,
+        emitter_thickness=0.1,
         thickness_photovoltaic=thickness_photovoltaic,
         rotary_axle_thickness=10,
         reflector_thickness=20,
-        neutron_shield_moderator_thickness=50,  # 175
+        neutron_shield_moderator_thickness=75,  # 175
         neutron_shield_moderator_cladding_thickness=0.05,
         neutron_shield_absorber_thickness=10,
         gamma_shield_thickness=10,
@@ -61,7 +61,7 @@ photovoltaic_power_density = 0.89  # 0.61  # W/cm2
 
 u235_enrichment = 9.5
 gadolinium_oxide_in_fuel_proportion = 0.0005 * 0
-fuel_burnup = 75  # MWd/kgHM
+fuel_burnup = 50  # MWd/kgHM
 borated_moderator_ppm = 3000 * 0
 moderator_density = 1.016
 add_xe135 = False
@@ -79,14 +79,14 @@ material_choice = MaterialChoice(
     fuel="Uranium Oxy-Carbide with Gadolinium Oxide",
     moderator_cladding="Zirconium",
     coolant_cladding="Stainless Steel",
-    emitter="Graphite",
+    emitter="TZM",
     fuel_cladding="Graphite",
     void="Void",
     photovoltaic="InGaAsP",
     coolant="Borated Water",
-    neutron_shield_moderator="Titanium Hydride",
     shaft_shield_moderator="Borated Water",
-    shield_moderator_cladding="TZM",
+    neutron_shield_moderator="Graphite",
+    shield_moderator_cladding="Graphite",
     gamma_shield="Tungsten",
 )
 
