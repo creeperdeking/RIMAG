@@ -14,7 +14,7 @@ from one_layer_disk_design.frustum_geometry_definition import make_simulation_ge
 
 run_mode: RunMode = "keff"
 print_core_characteristics = True
-batches = 300  # 2500  # 1250
+batches = 50  # 2500  # 1250
 weight_windows: UseWeightWindows = "no"
 particle_type: ParticleType = "neutron"
 # Tally absoption only for this particular nuclide:
@@ -26,23 +26,23 @@ emitter_gamma_rate_per_cm3 = 3.35e6  # photons/cm3/s
 
 ### Geometry parameters
 
-fuel_thickness = 0.12
-total_fuel_thickness = 0.7
+fuel_thickness = 0.01
+total_fuel_thickness = 0.5
 thickness_photovoltaic = 0.02
 disk_geometry_params = make_disk_geometry_params(
     DiskGeometryParams(
-        core_diameter=125,
+        core_diameter=130,
         moderator_cladding_thickness=0.05,
         shield_moderator_cladding_thickness=0.05,
         fuel_thickness=fuel_thickness,
         fuel_cladding_thickness=(total_fuel_thickness - fuel_thickness) / 2,
         moderator_thickness=1 * 4.5 / 4,
         fuel_emitter_gap=0.1,
-        emitter_thickness=0.1,
+        emitter_thickness=0.05,
         thickness_photovoltaic=thickness_photovoltaic,
-        rotary_axle_thickness=10,
-        reflector_thickness=20,
-        neutron_shield_moderator_thickness=75,  # 175
+        rotary_axle_thickness=5,
+        reflector_thickness=15,
+        neutron_shield_moderator_thickness=130,  # 175
         neutron_shield_moderator_cladding_thickness=0.05,
         neutron_shield_absorber_thickness=10,
         gamma_shield_thickness=10,
@@ -54,16 +54,16 @@ disk_geometry_params = make_disk_geometry_params(
 
 hot_temp = 1250 + 273  # K
 min_cold_temp = 1100 + 273  # K
-photovoltaic_efficiency = 0.33
-photovoltaic_power_density = 0.89  # 0.61  # W/cm2
+photovoltaic_efficiency = 0.33 * 0.95  # 0.33
+photovoltaic_power_density = 0.89 * 0.95  # 0.59  # W/cm2
 
 ### Nuclear parameters
 
-u235_enrichment = 9.5
+u235_enrichment = 19.5
 gadolinium_oxide_in_fuel_proportion = 0.0005 * 0
-fuel_burnup = 50  # MWd/kgHM
+fuel_burnup = 160  # MWd/kgHM
 borated_moderator_ppm = 3000 * 0
-moderator_density = 1.016
+moderator_density = 1.016 * 1
 add_xe135 = False
 
 ### Material definition
@@ -85,7 +85,7 @@ material_choice = MaterialChoice(
     photovoltaic="InGaAsP",
     coolant="Borated Water",
     shaft_shield_moderator="Borated Water",
-    neutron_shield_moderator="Graphite",
+    neutron_shield_moderator="Borated Water",
     shield_moderator_cladding="Graphite",
     gamma_shield="Tungsten",
 )

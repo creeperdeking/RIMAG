@@ -589,6 +589,14 @@ def make_materials(
             density=8.57,
             color="gray",
         ),
+        "Niobium 1-Zirconium": Material(
+            composition=[
+                AtomProportion(atom=atoms["Nb"], proportion=0.99),
+                AtomProportion(atom=atoms["Zr"], proportion=0.01),
+            ],
+            density=8.57,
+            color="gray",
+        ),
         "Uranium Carbide": Material(
             composition=enriched_uranium.composition
             + [AtomProportion(atom=atoms["C"], proportion=1)],

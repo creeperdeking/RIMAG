@@ -106,9 +106,9 @@ def calculate_disk_core_characteristics(
         / 1000
     )
 
-    energy_in_fuel = heavy_metal_mass * fuel_burnup * 24  # MWd
+    energy_in_fuel = heavy_metal_mass * fuel_burnup * 24  # MWh
 
-    fuel_lifetime = energy_in_fuel / (core_power / 1e6 * 3600 * 24)
+    fuel_lifetime = energy_in_fuel / (core_power / 1e6 * 3600)
 
     return CoreCharacteristics(
         heavy_metal_mass=heavy_metal_mass,

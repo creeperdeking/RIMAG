@@ -88,11 +88,11 @@ def make_simulation_geometry(
         parts=[
             Assembly(
                 material=material_choice.fuel_cladding,
-                thickness=disk_geometry_params.fuel_cladding_thickness,
+                thickness=disk_geometry_params.fuel_cladding_thickness / 2,
             ),
             Assembly(
                 material=material_choice.fuel,
-                thickness=disk_geometry_params.fuel_thickness / 4,
+                thickness=disk_geometry_params.fuel_thickness / 2 / 2,
             ),
         ]
     )

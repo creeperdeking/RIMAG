@@ -66,6 +66,19 @@ def start_program(
 
         core_characteristics = calculate_core_characteristics()
 
+        print("Tracked cells mass:")
+        for name, cells in tracked_cells.items():
+            slice_volume = sum(cell.volume for cell in cells)
+            density = materials_dict[name].density
+            volume = slice_volume  # cm3 / slice
+            mass = density * volume  # g / slice
+
+            mass_per_kW = mass / core_characteristics.core_power_electric  # g/W, kg/kW
+
+            print(
+                f"'{name} ({', '.join([cell.name for cell in cells])})': mass per kW = {mass_per_kW:.2f} kg/kW"
+            )
+
     if add_xe135 and core_characteristics is not None:
         add_xe135_to_geometry(
             geometry,

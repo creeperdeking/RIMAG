@@ -183,9 +183,35 @@ def calculate_dpa(
     cells: List[openmc.Cell],
 ):
     t_dam = sp.get_tally(name=tally_name)
-    T_eV_per_source = t_dam.get_values(scores=["damage-energy"], value="sum").ravel()
+    T_eV_per_source = t_dam.get_values(scores=["damage-energy"], value="mean").ravel()
     T_eV = T_eV_per_source * source_strength
-    Ed_eV = {"Fe56": 40.0, "Cr52": 40.0, "Ni58": 40.0, "C0": 33}
+    Ed_eV = {
+        "Fe56": 40.0,
+        "Cr52": 40.0,
+        "Ni58": 40.0,
+        "C0": 24,
+        "W182": 90.0,
+        "W183": 90.0,
+        "W184": 90.0,
+        "W186": 90.0,
+        "Mo92": 68.0,
+        "Mo94": 68.0,
+        "Mo95": 68.0,
+        "Mo96": 68.0,
+        "Mo97": 68.0,
+        "Mo98": 68.0,
+        "Mo100": 68.0,
+        "Zr90": 40.0,
+        "Zr91": 40.0,
+        "Zr92": 40.0,
+        "Zr94": 40.0,
+        "Zr96": 40.0,
+        "Ti46": 30.0,
+        "Ti47": 30.0,
+        "Ti48": 30.0,
+        "Ti49": 30.0,
+        "Ti50": 30.0,
+    }
     nucs = t_dam.nuclides
 
     # Get number of atoms of each nuclide in the cell’s material (or number density × volume)
@@ -199,6 +225,9 @@ def calculate_dpa(
             dpa_rate_by_nuc[nuc] = (
                 0.8 * Tdot / (2.0 * Ed_eV[nuc]) / atoms[nuc]
             )  # [1/s]'
+        else:
+            print(f"❌ Nuclide {nuc} not found in Ed_eV, aborting DPA calculation")
+            return 0.0
 
     N_tot = sum(atoms.get(n, 0.0) for n in nucs if n in Ed_eV)
     dpa_rate_cell = (
