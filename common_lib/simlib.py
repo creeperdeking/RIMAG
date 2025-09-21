@@ -754,9 +754,4 @@ def print_core_characteristics(
         "m2",
     )
 
-    print(
-        "heavy metal mass",
-        core_characteristics.heavy_metal_mass,
-        "kg",
-    )
     print("fuel lifetime", core_characteristics.fuel_lifetime, "years")
