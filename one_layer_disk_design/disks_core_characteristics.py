@@ -43,6 +43,7 @@ class CoreCharacteristics(BaseModel):
     photovoltaic_power_density: float
     photovoltaic_power_per_m: float
     rotary_axle_radius: float
+    vertical_core_height: float
 
 
 def calculate_disk_core_characteristics(
@@ -123,4 +124,5 @@ def calculate_disk_core_characteristics(
         photovoltaic_power_density=photovoltaic_power_density,
         photovoltaic_power_per_m=photovoltaic_power_per_m,
         rotary_axle_radius=rotary_axle_radius,
+        vertical_core_height=vertical_core_height,
     )

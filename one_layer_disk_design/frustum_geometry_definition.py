@@ -42,6 +42,7 @@ def make_simulation_geometry(
     disk_geometry_params: DiskGeometryParams,
     materials_dict: Dict[str, openmc.Material],
 ) -> MakeSimulationGeometryResult:
+    central_section_multiplicator = 4
     emitter_assembly = AssemblySections(
         parts=[
             ### Void
@@ -58,6 +59,7 @@ def make_simulation_geometry(
             ),
             ### Void
             Assembly(
+                
                 material=material_choice.void,
                 thickness=disk_geometry_params.fuel_emitter_gap,
                 is_emitter_placeholder=True,
@@ -88,11 +90,11 @@ def make_simulation_geometry(
         parts=[
             Assembly(
                 material=material_choice.fuel_cladding,
-                thickness=disk_geometry_params.fuel_cladding_thickness / 2,
+                thickness=disk_geometry_params.fuel_cladding_thickness,
             ),
             Assembly(
                 material=material_choice.fuel,
-                thickness=disk_geometry_params.fuel_thickness / 2 / 2,
+                thickness=disk_geometry_params.fuel_thickness / 2,
             ),
         ]
     )
@@ -124,8 +126,8 @@ def make_simulation_geometry(
             parts=[
                 *intermediary_section_core.parts,
                 emitter_assembly_placeholder,
-                *fuel_element.parts,
-                emitter_assembly_placeholder,
+                *[*fuel_element.parts, emitter_assembly_placeholder]
+                * central_section_multiplicator,
                 *half_fuel_element.parts,
             ],
         )
@@ -169,8 +171,8 @@ def make_simulation_geometry(
                 ),
                 ### Emitter Assembly
                 emitter_assembly_placeholder,
-                *photovoltaic_element.parts,
-                emitter_assembly_placeholder,
+                *[*photovoltaic_element.parts, emitter_assembly_placeholder]
+                * central_section_multiplicator,
                 *half_photovoltaic_element.parts,
             ]
         )
@@ -292,8 +294,8 @@ def make_simulation_geometry(
                             thickness=intermediary_section_core_thickness,
                         ),
                         emitter_assembly_placeholder,
-                        *reflector_part.parts,
-                        emitter_assembly_placeholder,
+                        *[*reflector_part.parts, emitter_assembly_placeholder]
+                        * central_section_multiplicator,
                         *half_reflector_part.parts,
                     ],
                 ),
@@ -314,8 +316,8 @@ def make_simulation_geometry(
                             thickness=intermediary_section_shield_moderator_cladding_thickness,
                         ),
                         emitter_assembly_placeholder,
-                        *shield_moderator_part.parts,
-                        emitter_assembly_placeholder,
+                        *[*shield_moderator_part.parts, emitter_assembly_placeholder]
+                        * central_section_multiplicator,
                         *half_shield_moderator_part.parts,
                     ],
                 ),
@@ -331,8 +333,8 @@ def make_simulation_geometry(
                             thickness=intermediary_section_core_thickness,
                         ),
                         emitter_assembly_placeholder,
-                        *shield_absorber_part.parts,
-                        emitter_assembly_placeholder,
+                        *[*shield_absorber_part.parts, emitter_assembly_placeholder]
+                        * central_section_multiplicator,
                         *half_shield_absorber_part.parts,
                     ],
                 ),

@@ -709,6 +709,11 @@ def print_core_characteristics(
         "cm",
     )
     print(
+        "vertical core height",
+        round(core_characteristics.vertical_core_height, 2),
+        "cm",
+    )
+    print(
         "cold temp",
         round(core_characteristics.cold_temp - 273),
         "°C",

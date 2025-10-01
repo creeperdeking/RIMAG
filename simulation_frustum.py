@@ -12,9 +12,9 @@ from one_layer_disk_design.frustum_geometry_definition import make_simulation_ge
 
 ### Simulation parameters
 
-run_mode: RunMode = "keff_notallies"
+run_mode: RunMode = "keff_"
 print_core_characteristics = True
-batches = 50  # 2500  # 1250
+batches = 30  # 2500  # 1250
 weight_windows: UseWeightWindows = "no"
 particle_type: ParticleType = "neutron"
 # Tally absoption only for this particular nuclide:
@@ -26,7 +26,9 @@ emitter_gamma_rate_per_cm3 = 3.35e6  # photons/cm3/s
 
 ### Geometry parameters
 
-fuel_thickness = 0.012
+enrichment_multiplicator = 0.5
+
+fuel_thickness = 0.006 / enrichment_multiplicator
 total_fuel_thickness = 0.5
 thickness_photovoltaic = 0.02
 disk_geometry_params = make_disk_geometry_params(
@@ -36,9 +38,9 @@ disk_geometry_params = make_disk_geometry_params(
         shield_moderator_cladding_thickness=0.05,
         fuel_thickness=fuel_thickness,
         fuel_cladding_thickness=(total_fuel_thickness - fuel_thickness) / 2,
-        moderator_thickness=1 * 4.5 / 4,
-        fuel_emitter_gap=0.2,
-        emitter_thickness=0.05,
+        moderator_thickness=1,
+        fuel_emitter_gap=0.12,
+        emitter_thickness=0.01,
         thickness_photovoltaic=thickness_photovoltaic,
         rotary_axle_thickness=5,
         reflector_thickness=15,
@@ -54,14 +56,14 @@ disk_geometry_params = make_disk_geometry_params(
 
 hot_temp = 1250 + 273  # K
 min_cold_temp = 1100 + 273  # K
-photovoltaic_efficiency = 0.33 * 0.95  # 0.33
-photovoltaic_power_density = 0.89 * 0.95  # 0.59  # W/cm2
+photovoltaic_efficiency = 0.4 * 0.95  # 0.33
+photovoltaic_power_density = 0.59 * 0.95  # 0.59 0.89  # W/cm2
 
 ### Nuclear parameters
 
-u235_enrichment = 19.5
+u235_enrichment = 19.5 * enrichment_multiplicator
 gadolinium_oxide_in_fuel_proportion = 0.0005 * 0
-fuel_burnup = 160  # MWd/kgHM
+fuel_burnup = 180 * enrichment_multiplicator  # MWd/kgHM
 borated_moderator_ppm = 3000 * 0
 moderator_density = 1.016 * 1
 add_xe135 = False
@@ -79,13 +81,13 @@ material_choice = MaterialChoice(
     fuel="Uranium Oxy-Carbide with Gadolinium Oxide",
     moderator_cladding="Zirconium",
     coolant_cladding="Stainless Steel",
-    emitter="Molybdenum",
+    emitter="TZM",
     fuel_cladding="Graphite",
     void="Void",
     photovoltaic="InGaAsP",
     coolant="Borated Water",
     shaft_shield_moderator="Borated Water",
-    neutron_shield_moderator="Borated Water",
+    neutron_shield_moderator="Titanium Hydride",
     shield_moderator_cladding="Graphite",
     gamma_shield="Tungsten",
 )
