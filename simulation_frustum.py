@@ -12,9 +12,9 @@ from one_layer_disk_design.frustum_geometry_definition import make_simulation_ge
 
 ### Simulation parameters
 
-run_mode: RunMode = "keff_"
+run_mode: RunMode = "keff_notallies_"
 print_core_characteristics = True
-batches = 30  # 2500  # 1250
+batches = 400  # 2500  # 1250
 weight_windows: UseWeightWindows = "no"
 particle_type: ParticleType = "neutron"
 # Tally absoption only for this particular nuclide:
@@ -26,9 +26,9 @@ emitter_gamma_rate_per_cm3 = 3.35e6  # photons/cm3/s
 
 ### Geometry parameters
 
-enrichment_multiplicator = 0.5
+enrichment_multiplicator = 0.5 *1
 
-fuel_thickness = 0.006 / enrichment_multiplicator
+fuel_thickness = 0.006 / enrichment_multiplicator *1.2
 total_fuel_thickness = 0.5
 thickness_photovoltaic = 0.02
 disk_geometry_params = make_disk_geometry_params(
@@ -38,17 +38,18 @@ disk_geometry_params = make_disk_geometry_params(
         shield_moderator_cladding_thickness=0.05,
         fuel_thickness=fuel_thickness,
         fuel_cladding_thickness=(total_fuel_thickness - fuel_thickness) / 2,
-        moderator_thickness=1,
-        fuel_emitter_gap=0.12,
-        emitter_thickness=0.01,
+        moderator_thickness=1.5,
+        fuel_emitter_gap=0.15,
+        emitter_thickness=0.2,
         thickness_photovoltaic=thickness_photovoltaic,
         rotary_axle_thickness=5,
-        reflector_thickness=15,
+        reflector_thickness=10,
         neutron_shield_moderator_thickness=110,  # 175
         neutron_shield_moderator_cladding_thickness=0.05,
         neutron_shield_absorber_thickness=10,
         gamma_shield_thickness=10,
-        frustum_pitch=2,
+        frustum_pitch=5,
+        number_of_reactor_columns=1,
     )
 )
 
@@ -57,7 +58,7 @@ disk_geometry_params = make_disk_geometry_params(
 hot_temp = 1250 + 273  # K
 min_cold_temp = 1100 + 273  # K
 photovoltaic_efficiency = 0.4 * 0.95  # 0.33
-photovoltaic_power_density = 0.59 * 0.95  # 0.59 0.89  # W/cm2
+photovoltaic_power_density = 1.1   # 0.59 0.89  # W/cm2
 
 ### Nuclear parameters
 
@@ -77,17 +78,17 @@ material_choice = MaterialChoice(
     neutron_absorber="Boron Carbide",
     neutron_reflector="Graphite",
     bottom_reflector="Graphite",
-    rotary_axle="Graphite",
+    rotary_axle="TZM",
     fuel="Uranium Oxy-Carbide with Gadolinium Oxide",
     moderator_cladding="Zirconium",
     coolant_cladding="Stainless Steel",
-    emitter="TZM",
+    emitter="Graphite",
     fuel_cladding="Graphite",
     void="Void",
     photovoltaic="InGaAsP",
     coolant="Borated Water",
-    shaft_shield_moderator="Borated Water",
-    neutron_shield_moderator="Titanium Hydride",
+    shaft_shield_moderator="Titanium Hydride", # low temperature
+    neutron_shield_moderator="Titanium Hydride", # high temperature
     shield_moderator_cladding="Graphite",
     gamma_shield="Tungsten",
 )

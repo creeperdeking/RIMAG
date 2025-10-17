@@ -42,7 +42,7 @@ def make_simulation_geometry(
     disk_geometry_params: DiskGeometryParams,
     materials_dict: Dict[str, openmc.Material],
 ) -> MakeSimulationGeometryResult:
-    central_section_multiplicator = 4
+    central_section_multiplicator = 3
     emitter_assembly = AssemblySections(
         parts=[
             ### Void
@@ -113,7 +113,7 @@ def make_simulation_geometry(
             ),
             Assembly(
                 material=material_choice.void,
-                thickness=disk_geometry_params.fuel_emitter_gap * 2,
+                thickness=disk_geometry_params.fuel_emitter_gap,
             ),
             *mini_fuel_element.parts,
         ]
@@ -187,7 +187,7 @@ def make_simulation_geometry(
     assert (
         disk_geometry_params.reflector_thickness
         - disk_geometry_params.neutron_shield_absorber_thickness
-        > 0
+        >= 0
     )
 
     outer_core_layers_inside_shaft = AssemblySections(
@@ -215,7 +215,7 @@ def make_simulation_geometry(
                 thickness=disk_geometry_params.reflector_thickness,
             ),
             Assembly(
-                material=material_choice.neutron_shield_moderator,
+                material=material_choice.shaft_shield_moderator,
                 thickness=disk_geometry_params.neutron_shield_moderator_thickness,
             ),
             # Assembly(
@@ -377,12 +377,12 @@ def make_simulation_geometry(
     )
     rotary_assembly_desc = RotaryAssemblyDesc(
         assembly_core_distance=assembly_core_distance,
-        assembly_core_margin=1,
         rotary_assembly_radius=get_disks_radius(
             assembly_core_distance, core_desc.core_radius
         ),
         frustum_pitch=disk_geometry_params.frustum_pitch,
         rotary_axle_thickness=disk_geometry_params.rotary_axle_thickness,
+        number_of_reactor_columns=disk_geometry_params.number_of_reactor_columns,
     )
 
     geometry_settings = GeometrySettings(

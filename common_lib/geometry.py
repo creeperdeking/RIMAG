@@ -279,7 +279,7 @@ def define_geometry(
         name="shaft",
     )
 
-    outer_core_layers_bottom_cells = make_outer_core_layers(
+    outer_core_layers_bottom_cells = [] if geometry_settings.rotary_assembly_desc.number_of_reactor_columns != 1 else make_outer_core_layers(
         geometry_settings,
         geometry_settings.rotary_assembly_desc,
         geometry_settings.outer_core_layers_bottom,
@@ -331,7 +331,6 @@ def define_geometry(
         )
         layer_cells.append(c)
 
-    reactor_universe = openmc.Universe(cells=layer_cells)
     z_bot = openmc.ZPlane(
         z0=-vertical_core_height_with_margin / 2, boundary_type="periodic"
     )

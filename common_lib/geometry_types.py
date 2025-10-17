@@ -19,6 +19,5 @@ class GeometrySettings(BaseModel):
     outer_core_thickness: float
     outer_core_layers_between_disks: List[OuterCoreAssemblySections]
     outer_core_layers_bottom: AssemblySections
-    double_assembly: bool = False
     emitter_assembly: AssemblySections
     photovoltaic_assembly: AssemblySections

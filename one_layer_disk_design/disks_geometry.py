@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Literal
 
 import openmc
 from pydantic import BaseModel
@@ -41,6 +41,7 @@ class DiskGeometryParams(BaseModel):
     gamma_shield_thickness: float
 
     frustum_pitch: float  # degrees
+    number_of_reactor_columns: Literal[1, 2, 3]
 
 
 def make_disk_geometry_params(disk_geometry_params: DiskGeometryParams):
@@ -48,6 +49,8 @@ def make_disk_geometry_params(disk_geometry_params: DiskGeometryParams):
         disk_geometry_params.fuel_thickness,
         disk_geometry_params.fuel_cladding_thickness * 2,
     )
+    if disk_geometry_params.number_of_reactor_columns != 1 and disk_geometry_params.number_of_reactor_columns != 3:
+        raise ValueError(f"{disk_geometry_params.number_of_reactor_columns} reactor columns are not supported")
     return disk_geometry_params
 
 
