@@ -97,39 +97,55 @@ atoms: Dict[str, Atom] = {
     "S": Atom(name="S", atomic_weight=32.065),
     "Ti": Atom(name="Ti", atomic_weight=47.867),
     "Cl": Atom(name="Cl", atomic_weight=35.453),
+    "Ar": Atom(name="Ar", atomic_weight=39.948),
 }
 
 
 def borated_water_atom_proportions_from_boron_ppm(
     boron_ppm: float,
+    include_dissolved_air: bool = True,
 ) -> List[AtomProportion]:
     """
     Create atom proportions for a water solution containing boron (as boric acid, H3BO3)
-    at a specified elemental boron concentration in ppm by mass.
+    at a specified elemental boron concentration in ppm by mass, and (optionally) the
+    typical dissolved-air species for aerated, purified freshwater at ~25 °C, 1 atm.
 
-    The output is a "chemical-like" formula expressed as atom proportions for H, O, and B.
+    Returns a "chemical-like" atomic formula for H, O, B, and (if enabled) C, N, Ar.
 
-    Definitions:
-    - ppm is parts-per-million by mass of elemental boron (B), i.e. mass fraction of B = ppm / 1e6
-    - Boron is present solely as boric acid (H3BO3)
-
-    Let y be the number of water molecules (H2O) and x the number of boric acid molecules (H3BO3).
-    Mass fraction constraint on B:
-        w_B = (x * M_B) / (y * M_H2O + x * M_H3BO3)
-    Solving for r = x / y gives:
-        r = (w_B * M_H2O) / (M_B - w_B * M_H3BO3)
-
-    We set y = 1 and compute r, then return atom counts proportional to:
-        H: 2*y + 3*x = 2 + 3*r
-        O: 1*y + 3*x = 1 + 3*r
-        B: x = r
+    Notes
+    -----
+    - ppm is parts-per-million by mass of elemental B: mass fraction w_B = ppm / 1e6
+    - Boron is present solely as H3BO3
+    - We take y = 1 for H2O and x = r for H3BO3, with:
+          r = (w_B * M_H2O) / (M_B - w_B * M_H3BO3)
+    - Dissolved-air adders are expressed as atoms per ~1 H2O molecule and assumed
+      independent of trace boron (good approximation for typical ppm B).
     """
+    # --- Dissolved-air atom adders per ~1 H2O molecule (25 °C, 1 atm, freshwater)
+    # Extra oxygen from dissolved O2 and CO2:
+    O_EXTRA = 8.79e-06
+
+    # Dissolved inorganic carbon from air CO2 (atoms of C per H2O):
+    C_PER_H2O = 2.46712e-07
+
+    # Dissolved nitrogen and argon (atoms per H2O):
+    N_PER_H2O = 1.968756e-05
+    AR_PER_H2O = 1.803825e-07
+
+    # Handle non-positive boron quickly (still include dissolved air if requested)
     if boron_ppm <= 0:
-        return [
-            AtomProportion(atom=atoms["H"], proportion=2.0),
-            AtomProportion(atom=atoms["O"], proportion=1.0),
-            AtomProportion(atom=atoms["B"], proportion=0.0),
+        props = [
+            AtomProportion(atom=atoms["H"],  proportion=2.0),
+            AtomProportion(atom=atoms["O"],  proportion=1.0 + (O_EXTRA if include_dissolved_air else 0.0)),
+            AtomProportion(atom=atoms["B"],  proportion=0.0),
         ]
+        if include_dissolved_air:
+            props += [
+                AtomProportion(atom=atoms["C"],  proportion=C_PER_H2O),
+                AtomProportion(atom=atoms["N"],  proportion=N_PER_H2O),
+                AtomProportion(atom=atoms["Ar"], proportion=AR_PER_H2O),
+            ]
+        return props
 
     # Convert ppm to mass fraction
     w_B = boron_ppm / 1_000_000.0
@@ -151,10 +167,29 @@ def borated_water_atom_proportions_from_boron_ppm(
 
     r = (w_B * mass_H2O) / (mass_B - w_B * mass_H3BO3)
 
+    # Base H2O + boric acid contributions
+    H = 2.0 + 3.0 * r
+    O = 1.0 + 3.0 * r
+    B = r
+
+    # Add dissolved-air contributions
+    if include_dissolved_air:
+        O += O_EXTRA
+        C = C_PER_H2O
+        N = N_PER_H2O
+        Ar = AR_PER_H2O
+    else:
+        C = 0.0
+        N = 0.0
+        Ar = 0.0
+
     return [
-        AtomProportion(atom=atoms["H"], proportion=2.0 + 3.0 * r),
-        AtomProportion(atom=atoms["O"], proportion=1.0 + 3.0 * r),
-        AtomProportion(atom=atoms["B"], proportion=r),
+        AtomProportion(atom=atoms["H"],  proportion=H),
+        AtomProportion(atom=atoms["O"],  proportion=O),
+        AtomProportion(atom=atoms["B"],  proportion=B),
+        AtomProportion(atom=atoms["C"],  proportion=C),
+        AtomProportion(atom=atoms["N"],  proportion=N),
+        AtomProportion(atom=atoms["Ar"], proportion=Ar),
     ]
 
 
@@ -434,10 +469,13 @@ def make_materials(
             density=7.9,
             color="gray",
         ),
-        "Light Water": Material(
+        "Light Water": Material( # Light Water from 
             composition=[
-                AtomProportion(atom=atoms["H"], proportion=2),
-                AtomProportion(atom=atoms["O"], proportion=1),
+                AtomProportion(atom=atoms["H"], proportion=2.0),
+                AtomProportion(atom=atoms["O"], proportion=1.0),
+                AtomProportion(atom=atoms["N"], proportion=2.0e-5),
+                AtomProportion(atom=atoms["Ar"], proportion=1.8e-7),
+                AtomProportion(atom=atoms["C"], proportion=2.4e-7),
             ],
             density=1,
             color="blue",

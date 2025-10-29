@@ -15,7 +15,8 @@ import sys
 from common_lib.geometry_utils import get_geometry_bounding_box
 from common_lib.geometry_types import GeometrySettings
 from common_lib.tallies import (
-    create_B10_tritium_production_tally,
+    create_C14_production_tally,
+    create_tritium_production_tally,
     create_O16_activation_tally,
     create_dpa_tally,
     create_emitter_tally,
@@ -536,16 +537,25 @@ def run_sim_with_tallies(
     photovoltaic_flux_tally = create_photovoltaic_flux_tally(
         photovoltaic_cells, particle_type
     )
-    tally_B10_tritium_production = create_B10_tritium_production_tally(
+    tally_tritium_production_moderator = create_tritium_production_tally(
         moderator_cells, suffix="_moderator"
     )
-    tally_B10_tritium_production_shield = create_B10_tritium_production_tally(
+    tally_tritium_production_shield = create_tritium_production_tally(
         shield_moderator_cells, suffix="_shield_moderator"
     )
-    tally_B10_tritium_production_coolant = create_B10_tritium_production_tally(
+    tally_tritium_production_coolant = create_tritium_production_tally(
         coolant_cells, suffix="_coolant"
     )
-    tally_O16_activation = create_O16_activation_tally(
+    tally_C14_production_moderator = create_C14_production_tally(
+        moderator_cells, suffix="_moderator"
+    )
+    tally_C14_production_shield = create_C14_production_tally(
+        shield_moderator_cells, suffix="_shield_moderator"
+    )
+    tally_C14_production_coolant = create_C14_production_tally(
+        coolant_cells, suffix="_coolant"
+    )
+    tally_O16_activation_moderator = create_O16_activation_tally(
         moderator_cells, suffix="_moderator"
     )
     tally_O16_activation_shield = create_O16_activation_tally(
@@ -592,10 +602,13 @@ def run_sim_with_tallies(
             t_heat_moderator_cells,
             t_heat_moderator_total,
             t_kapf_moderator_total,
-            tally_B10_tritium_production,
-            tally_B10_tritium_production_shield,
-            tally_B10_tritium_production_coolant,
-            tally_O16_activation,
+            tally_tritium_production_moderator,
+            tally_tritium_production_shield,
+            tally_tritium_production_coolant,
+            tally_C14_production_moderator,
+            tally_C14_production_shield,
+            tally_C14_production_coolant,
+            tally_O16_activation_moderator,
             tally_O16_activation_shield,
             tally_O16_activation_coolant,
             dpa_emitter,

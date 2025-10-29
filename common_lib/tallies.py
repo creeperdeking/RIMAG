@@ -37,17 +37,29 @@ def create_photovoltaic_heating_absorption_tally(
     return tally
 
 
-def create_B10_tritium_production_tally(
+def create_tritium_production_tally(
     cells: List[openmc.Cell],
     suffix: str = "",
 ):
-    tally = openmc.Tally(name=f"B10_tritium_production{suffix}")
+    tally = openmc.Tally(name=f"tritium_production{suffix}")
     tally.filters = [
         openmc.CellFilter(cells),
         openmc.ParticleFilter("neutron"),
     ]
-    tally.nuclides = ["B10"]
     tally.scores = ["H3-production"]
+    return tally
+
+def create_C14_production_tally(
+    cells: List[openmc.Cell],
+    suffix: str = "",
+):
+    tally = openmc.Tally(name=f"C14_production{suffix}")
+    tally.filters = [
+        openmc.CellFilter(cells),
+        openmc.ParticleFilter("neutron"),
+    ]
+    tally.nuclides = ["N14", "O17", "N15", "O16"] # could not add C13 because not in library
+    tally.scores   = ["(n,p)", "(n,a)", "(n,d)", "(n,3He)"]
     return tally
 
 
@@ -408,6 +420,51 @@ def calculate_tritium_production(
     tritium_production_sd = std_val * factor
     return tritium_production, tritium_production_sd
 
+def calculate_C14_production(
+    sp: openmc.StatePoint, source_strength, electric_power, tally_name: str
+):
+    """
+    Calculate C14 production in Ci/year/GWe by summing all pathways that yield 14C.
+    Assumes `tally_name` contains bins for the listed (nuclide, score) pairs.
+    """
+
+    # Specific activity of pure C-14 (Ci/mol):  lambda * N_A / 3.7e10
+    # Using T_1/2 = 5730 y gives ~62.43 Ci/mol
+    curie_per_mol_c14 = 62.432885931801984
+
+    # Get the tally
+    t = sp.get_tally(name=tally_name)
+
+    # Pull results as a DataFrame so we can mask on (nuclide, score) pairs
+    df = t.get_pandas_dataframe()
+
+    # Valid parent/reaction pairs that produce 14C
+    valid_pairs = {
+        ("N14", "(n,p)"),      # 14N(n,p)14C
+        ("O17", "(n,alpha)"),  # 17O(n,α)14C
+        ("N15", "(n,d)"),      # 15N(n,d)14C   (usually small)
+        ("O16", "(n,He3)"),    # 16O(n,3He)14C (usually small)
+    }  # could not add C13 because not in library
+
+    mask = df.apply(lambda r: (r["nuclide"], r["score"]) in valid_pairs, axis=1)
+
+    mean_val = df.loc[mask, "mean"].to_numpy().sum()
+    std_val  = df.loc[mask, "std. dev."].to_numpy().sum()
+
+    # Convert reactions/source → (Ci/year)/GWe, matching your tritium normalization
+    factor = (
+        source_strength        # source particles per second
+        / electric_power       # per GWe (will multiply by 1e9 below)
+        / cst.Avogadro
+        * 365 * 24 * 60 * 60   # seconds/year
+        * 1e9                  # W per GWe (keeps your existing convention)
+        * curie_per_mol_c14    # Ci/mol for C-14
+    )
+
+    c14_production    = mean_val * factor
+    c14_production_sd = std_val * factor
+    return c14_production, c14_production_sd
+
 
 def calculate_N16_production(
     sp: openmc.StatePoint, source_strength, electric_power, tally_name: str
@@ -434,28 +491,61 @@ def print_tritium_production(sp: openmc.StatePoint, source_strength, electric_po
             sp,
             source_strength,
             electric_power,
-            "B10_tritium_production_shield_moderator",
+            "tritium_production_shield_moderator",
         )
     )
     tritium_production_moderator, tritium_production_moderator_sd = (
         calculate_tritium_production(
-            sp, source_strength, electric_power, "B10_tritium_production_moderator"
+            sp, source_strength, electric_power, "tritium_production_moderator"
         )
     )
     tritium_production_coolant, tritium_production_coolant_sd = (
         calculate_tritium_production(
-            sp, source_strength, electric_power, "B10_tritium_production_coolant"
+            sp, source_strength, electric_power, "tritium_production_coolant"
         )
     )
 
     print(
-        f"tritium production: {tritium_production_moderator:.2e} Ci/year/GWe ± {tritium_production_moderator_sd:.2e} Ci/year/GWe"
+        f"tritium production moderator: {tritium_production_moderator:.2e} Ci/year/GWe ± {tritium_production_moderator_sd:.2e} Ci/year/GWe"
     )
     print(
         f"tritium production shield: {tritium_production_shield:.2e} Ci/year/GWe ± {tritium_production_shield_sd:.2e} Ci/year/GWe"
     )
     print(
         f"tritium production coolant: {tritium_production_coolant:.2e} Ci/year/GWe ± {tritium_production_coolant_sd:.2e} Ci/year/GWe"
+    )
+
+def print_C14_production(sp: openmc.StatePoint, source_strength, electric_power):
+    """
+    Print C14 production in Ci/year/GWe.
+    """
+    C14_production_shield, C14_production_shield_sd = (
+        calculate_C14_production(
+            sp,
+            source_strength,
+            electric_power,
+            "C14_production_shield_moderator",
+        )
+    )
+    C14_production_moderator, C14_production_moderator_sd = (
+        calculate_C14_production(
+            sp, source_strength, electric_power, "C14_production_moderator"
+        )
+    )
+    C14_production_coolant, C14_production_coolant_sd = (
+        calculate_C14_production(
+            sp, source_strength, electric_power, "C14_production_coolant"
+        )
+    )
+
+    print(
+        f"C14 production moderator: {C14_production_moderator:.2e} Ci/year/GWe ± {C14_production_moderator_sd:.2e} Ci/year/GWe"
+    )
+    print(
+        f"C14 production shield: {C14_production_shield:.2e} Ci/year/GWe ± {C14_production_shield_sd:.2e} Ci/year/GWe"
+    )
+    print(
+        f"C14 production coolant: {C14_production_coolant:.2e} Ci/year/GWe ± {C14_production_coolant_sd:.2e} Ci/year/GWe"
     )
 
 
@@ -509,6 +599,7 @@ def print_tallies(
     )
 
     print_tritium_production(sp, source_strength, electric_power)
+    print_C14_production(sp, source_strength, electric_power)
     print_N16_production(sp, source_strength, electric_power)
 
     ###### Compute energy distribution in the fuel ######

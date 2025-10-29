@@ -12,9 +12,9 @@ from one_layer_disk_design.frustum_geometry_definition import make_simulation_ge
 
 ### Simulation parameters
 
-run_mode: RunMode = "keff_notallies_"
+run_mode: RunMode = "keff"
 print_core_characteristics = True
-batches = 400  # 2500  # 1250
+batches = 20  # 2500  # 1250
 weight_windows: UseWeightWindows = "no"
 particle_type: ParticleType = "neutron"
 # Tally absoption only for this particular nuclide:
@@ -28,7 +28,7 @@ emitter_gamma_rate_per_cm3 = 3.35e6  # photons/cm3/s
 
 enrichment_multiplicator = 0.5 *1
 
-fuel_thickness = 0.006 / enrichment_multiplicator *1.2
+fuel_thickness = 0.006 / enrichment_multiplicator * 1.2
 total_fuel_thickness = 0.5
 thickness_photovoltaic = 0.02
 disk_geometry_params = make_disk_geometry_params(
@@ -58,7 +58,7 @@ disk_geometry_params = make_disk_geometry_params(
 hot_temp = 1250 + 273  # K
 min_cold_temp = 1100 + 273  # K
 photovoltaic_efficiency = 0.4 * 0.95  # 0.33
-photovoltaic_power_density = 1.1   # 0.59 0.89  # W/cm2
+photovoltaic_power_density = 1.5   #1.1 0.59 0.89  # W/cm2
 
 ### Nuclear parameters
 
@@ -88,7 +88,7 @@ material_choice = MaterialChoice(
     photovoltaic="InGaAsP",
     coolant="Borated Water",
     shaft_shield_moderator="Titanium Hydride", # low temperature
-    neutron_shield_moderator="Titanium Hydride", # high temperature
+    neutron_shield_moderator="Graphite", # high temperature
     shield_moderator_cladding="Graphite",
     gamma_shield="Tungsten",
 )
