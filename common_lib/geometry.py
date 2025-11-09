@@ -16,7 +16,7 @@ from common_lib.assemblies import (
 from common_lib.geometry_utils import (
     create_cylinder,
     get_outer_empty_zone_parameters,
-    get_vertical_core_height_with_margin,
+    get_vertical_core_height,
     make_boundary_planes,
     make_core_boundary_planes_points,
     make_surface_plane,
@@ -214,11 +214,7 @@ def define_geometry(
         geometry_settings.photovoltaic_assembly,
     )
 
-    core_height_with_margin = (
-        geometry_settings.core_desc.core_height
-    )
-
-    vertical_core_height_with_margin = get_vertical_core_height_with_margin(
+    vertical_core_height = get_vertical_core_height(
         geometry_settings
     )
 
@@ -227,10 +223,10 @@ def define_geometry(
     )
 
     number_of_layers_above = math.ceil(
-        0.5 - lower_left_corner[2] / vertical_core_height_with_margin
+        0.5 - lower_left_corner[2] / vertical_core_height
     )
     number_of_layers_below = math.ceil(
-        0.5 + upper_right_corner[2] / vertical_core_height_with_margin
+        0.5 + upper_right_corner[2] / vertical_core_height
     )
 
     number_of_layers = number_of_layers_above + number_of_layers_below + 1
@@ -239,7 +235,7 @@ def define_geometry(
     surfaces = [
         make_surface_plane(
             geometry_settings.rotary_assembly_desc,
-            z0=-core_height_with_margin / 2,
+            z0=-geometry_settings.core_desc.core_height / 2,
             boundary_type="transmission",
         )
     ]
@@ -248,8 +244,8 @@ def define_geometry(
         surfaces.append(
             make_surface_plane(
                 geometry_settings.rotary_assembly_desc,
-                z0=core_height_with_margin / 2
-                + core_height_with_margin * (i - start_index),
+                z0=geometry_settings.core_desc.core_height / 2
+                + geometry_settings.core_desc.core_height * (i - start_index),
                 boundary_type="transmission",
             )
         )
@@ -360,15 +356,15 @@ def define_geometry(
         c.translation = (
             0,
             0,
-            (vertical_core_height_with_margin) * (k - start_index),
+            (vertical_core_height) * (k - start_index),
         )
         layer_cells.append(c)
 
     z_bot = openmc.ZPlane(
-        z0=-vertical_core_height_with_margin / 2, boundary_type="periodic"
+        z0=-vertical_core_height / 2, boundary_type="periodic"
     )
     z_top = openmc.ZPlane(
-        z0=vertical_core_height_with_margin / 2, boundary_type="periodic"
+        z0=vertical_core_height / 2, boundary_type="periodic"
     )
     z_bot.periodic_surface = z_top
 

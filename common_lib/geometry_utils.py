@@ -89,7 +89,7 @@ def get_geometry_bounding_box_one_full_layer(
         geometry_settings,
     )
 
-    vertical_core_height_with_margin = get_vertical_core_height_with_margin(
+    vertical_core_height = get_vertical_core_height(
         geometry_settings
     )
 
@@ -98,7 +98,7 @@ def get_geometry_bounding_box_one_full_layer(
         - get_height_from_length(
             geometry_settings.outer_core_layers_between_disks[0].layer_thickness, angle
         )
-        - vertical_core_height_with_margin / 2
+        - vertical_core_height / 2
     )
 
     lower_left_corner = (
@@ -115,12 +115,9 @@ def get_geometry_bounding_box_one_full_layer(
     return lower_left_corner, upper_right_corner
 
 
-def get_vertical_core_height_with_margin(geometry_settings: GeometrySettings):
-    core_height_with_margin = (
-        geometry_settings.core_desc.core_height
-    )
+def get_vertical_core_height(geometry_settings: GeometrySettings):
     z_scaling = get_z_scaling(geometry_settings.rotary_assembly_desc.frustum_pitch)
-    return core_height_with_margin * z_scaling
+    return geometry_settings.core_desc.core_height * z_scaling
 
 
 def get_geometry_bounding_box(
@@ -130,19 +127,19 @@ def get_geometry_bounding_box(
         geometry_settings,
     )
 
-    vertical_core_height_with_margin = get_vertical_core_height_with_margin(
+    vertical_core_height = get_vertical_core_height(
         geometry_settings
     )
 
     lower_left_corner = (
         lower_left_corner[0],
         lower_left_corner[1],
-        -vertical_core_height_with_margin / 2,
+        -vertical_core_height / 2,
     )
     upper_right_corner = (
         upper_right_corner[0],
         upper_right_corner[1],
-        +vertical_core_height_with_margin / 2,
+        +vertical_core_height / 2,
     )
 
     return lower_left_corner, upper_right_corner
