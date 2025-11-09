@@ -15,8 +15,8 @@ from common_lib.materials import (
 
 def sanity_check_triso_fuel_volume(hm_volume: float, graphite_volume: float):
     actual_volume_ratio = hm_volume / (hm_volume + graphite_volume)
-    TRISO_HM_VOLUME_FRACTION = 0.5
-    MAX_TRISO_PACKING_FRACTION = 0.5
+    TRISO_HM_VOLUME_FRACTION = 0.3
+    MAX_TRISO_PACKING_FRACTION = 0.3
     PACKED_TRISO_VOLUME_RATIO = (
         TRISO_HM_VOLUME_FRACTION * MAX_TRISO_PACKING_FRACTION
     )  # cm3 / cm3
