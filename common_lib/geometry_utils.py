@@ -16,9 +16,15 @@ class OuterEmptyZoneParameters(BaseModel):
     x0: float
 
 
-def get_outer_empty_zone_parameters(
+def get_outer_zone_parameters(
     geometry_settings: GeometrySettings,
 ) -> OuterEmptyZoneParameters:
+    if geometry_settings.rotary_assembly_desc.number_of_reactor_columns != 1:
+        return OuterEmptyZoneParameters(
+            radius=geometry_settings.rotary_assembly_desc.rotary_assembly_radius
+            + 1,
+            x0=geometry_settings.rotary_assembly_desc.assembly_core_distance,
+        )
     return OuterEmptyZoneParameters(
         radius=geometry_settings.rotary_assembly_desc.rotary_assembly_radius
         + geometry_settings.outer_core_layers_between_disks[0].layer_thickness / 2,
@@ -26,6 +32,12 @@ def get_outer_empty_zone_parameters(
         - geometry_settings.outer_core_layers_between_disks[0].layer_thickness / 2,
     )
 
+def get_space_between_reactor_columns(geometry_settings: GeometrySettings):
+    outer_zone_parameters = get_outer_zone_parameters(geometry_settings)
+    return OuterEmptyZoneParameters(
+        radius=outer_zone_parameters.radius + 0.1,
+        x0=outer_zone_parameters.x0,
+    )
 
 def get_z_scaling(angle: float):
     complementary_angle = 90 - angle
@@ -56,7 +68,7 @@ def get_geometry_base_height(angle: float, geometry_settings: GeometrySettings):
 def get_geometry_bounding_box_one_full_layer(
     geometry_settings: GeometrySettings,
 ):
-    outer_empty_zone_parameters = get_outer_empty_zone_parameters(geometry_settings)
+    outer_zone_parameters = get_outer_zone_parameters(geometry_settings)
     angle = geometry_settings.rotary_assembly_desc.frustum_pitch
     base_height = get_geometry_base_height(
         angle,
@@ -76,13 +88,13 @@ def get_geometry_bounding_box_one_full_layer(
     )
 
     lower_left_corner = (
-        -outer_empty_zone_parameters.radius + outer_empty_zone_parameters.x0,
-        -outer_empty_zone_parameters.radius,
+        -outer_zone_parameters.radius + outer_zone_parameters.x0,
+        -outer_zone_parameters.radius,
         lower_z,
     )
     upper_right_corner = (
-        outer_empty_zone_parameters.radius + outer_empty_zone_parameters.x0,
-        outer_empty_zone_parameters.radius,
+        outer_zone_parameters.radius + outer_zone_parameters.x0,
+        outer_zone_parameters.radius,
         lower_z + base_height,
     )
 
