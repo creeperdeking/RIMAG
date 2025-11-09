@@ -12,7 +12,7 @@ from one_layer_disk_design.frustum_geometry_definition import make_simulation_ge
 
 ### Simulation parameters
 
-run_mode: RunMode = "keff"
+run_mode: RunMode = "keff_notallies"
 print_core_characteristics = True
 batches = 20  # 2500  # 1250
 weight_windows: UseWeightWindows = "no"
@@ -26,10 +26,10 @@ emitter_gamma_rate_per_cm3 = 3.35e6  # photons/cm3/s
 
 ### Geometry parameters
 
-enrichment_multiplicator = 0.5 *1
+enrichment_multiplicator = 1/2 
 
-fuel_thickness = 0.006 / enrichment_multiplicator * 1.2
-total_fuel_thickness = 0.5
+fuel_thickness = 0.015 / enrichment_multiplicator
+total_fuel_thickness = 0.7
 thickness_photovoltaic = 0.02
 disk_geometry_params = make_disk_geometry_params(
     DiskGeometryParams(
@@ -49,7 +49,7 @@ disk_geometry_params = make_disk_geometry_params(
         neutron_shield_absorber_thickness=10,
         gamma_shield_thickness=10,
         frustum_pitch=5,
-        number_of_reactor_columns=1,
+        number_of_reactor_columns=3,
     )
 )
 

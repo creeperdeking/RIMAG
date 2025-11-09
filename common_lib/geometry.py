@@ -16,6 +16,7 @@ from common_lib.assemblies import (
 )
 from common_lib.geometry_utils import (
     create_cylinder,
+    get_outer_empty_zone_parameters,
     get_vertical_core_height_with_margin,
     make_boundary_planes,
     make_core_boundary_planes_points,
@@ -101,6 +102,12 @@ def get_base_geometry(
     outer_zone_boundary_cylinder = -openmc.ZCylinder(
         r=outer_zone_parameters.radius,
         x0=outer_zone_parameters.x0,
+        boundary_type="transmission",
+    )
+    outer_empty_zone_parameters = get_outer_empty_zone_parameters(geometry_settings)
+    outer_empty_zone_boundary_cylinder = -openmc.ZCylinder(
+        r=outer_empty_zone_parameters.radius,
+        x0=outer_empty_zone_parameters.x0,
         boundary_type="vacuum",
     )
     
@@ -114,6 +121,7 @@ def get_base_geometry(
         disk_boundary,
         outer_zone_boundary_cylinder,
         outer_core_boundary,
+        outer_empty_zone_boundary_cylinder,
     )
 
 
@@ -200,6 +208,7 @@ def define_geometry(
         disk_boundary,
         outer_zone_boundary_cylinder,
         outer_core_boundary,
+        outer_empty_zone_boundary_cylinder,
     ) = get_base_geometry(geometry_settings)
     check_assembly_thickness_equal(
         geometry_settings.assembly_section_core,
@@ -250,7 +259,21 @@ def define_geometry(
         outer_zone_boundary_cylinder
         & -make_surface_plane(
             geometry_settings.rotary_assembly_desc,
-            z0=geometry_settings.core_desc.core_height / 2 + SPACING_CONSTANT,
+            z0=geometry_settings.core_desc.core_height / 2 + SPACING_CONSTANT, # todo: see if you can remove the SPACING_CONSTANT
+            boundary_type="transmission",
+        )
+        & +make_surface_plane(
+            geometry_settings.rotary_assembly_desc,
+            z0=-geometry_settings.core_desc.core_height / 2 - SPACING_CONSTANT,
+            boundary_type="transmission",
+        )
+    )
+
+    outer_empty_zone_boundary = (
+        outer_empty_zone_boundary_cylinder
+        & -make_surface_plane(
+            geometry_settings.rotary_assembly_desc,
+            z0=geometry_settings.core_desc.core_height / 2 + SPACING_CONSTANT, # todo: this might need to be 2*SPACING_CONSTANT
             boundary_type="transmission",
         )
         & +make_surface_plane(
@@ -301,6 +324,15 @@ def define_geometry(
     outer_zone_cell.region = outer_zone
     outer_zone_cell.fill = materials_dict[geometry_settings.material_choice.void]
 
+    outer_empty_zone = (
+        outer_empty_zone_boundary
+        & ~outer_zone_boundary
+    )
+
+    outer_empty_zone_cell = openmc.Cell(name="outer_empty_zone")
+    outer_empty_zone_cell.region = outer_empty_zone
+    outer_empty_zone_cell.fill = materials_dict[geometry_settings.material_choice.void]
+
     flattenned_between_disks_shielding_cells = []
     for shielding_layer in outer_core_layers_between_disks_scells:
         flattenned_between_disks_shielding_cells.extend(shielding_layer.values())
@@ -313,6 +345,7 @@ def define_geometry(
         *photovoltaic_assembly_cells.values(),
         *emitter_assembly_cells.values(),
         outer_zone_cell,
+        outer_empty_zone_cell,
         shaft_cell,
     ]
 
@@ -323,7 +356,7 @@ def define_geometry(
     layer_cells = []
     layers_universes = [layer_universe] * number_of_layers
     for k, u in enumerate(layers_universes):
-        region = outer_zone_boundary_cylinder & +surfaces[k] & -surfaces[k + 1]
+        region = outer_empty_zone_boundary_cylinder & +surfaces[k] & -surfaces[k + 1]
         c = openmc.Cell(region=region, fill=u, name=f"boundary_layer_{k}")
         c.translation = (
             0,
@@ -343,7 +376,7 @@ def define_geometry(
     reactor_universe = openmc.Universe(cells=layer_cells)
 
     reactor_slice_cell = openmc.Cell(
-        region=outer_zone_boundary_cylinder & +z_bot & -z_top,
+        region=outer_empty_zone_boundary_cylinder & +z_bot & -z_top,
         fill=reactor_universe,
     )
     reactor_slice_universe = openmc.Universe(cells=[reactor_slice_cell])

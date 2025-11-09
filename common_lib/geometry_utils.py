@@ -15,19 +15,36 @@ class OuterEmptyZoneParameters(BaseModel):
     radius: float
     x0: float
 
-
+OUTER_ZONE_OFFSET = 1
 def get_outer_zone_parameters(
     geometry_settings: GeometrySettings,
 ) -> OuterEmptyZoneParameters:
     if geometry_settings.rotary_assembly_desc.number_of_reactor_columns != 1:
         return OuterEmptyZoneParameters(
             radius=geometry_settings.rotary_assembly_desc.rotary_assembly_radius
-            + 1,
+            + OUTER_ZONE_OFFSET,
             x0=geometry_settings.rotary_assembly_desc.assembly_core_distance,
         )
     return OuterEmptyZoneParameters(
         radius=geometry_settings.rotary_assembly_desc.rotary_assembly_radius
         + geometry_settings.outer_core_layers_between_disks[0].layer_thickness / 2,
+        x0=geometry_settings.rotary_assembly_desc.assembly_core_distance
+        - geometry_settings.outer_core_layers_between_disks[0].layer_thickness / 2,
+    )
+
+OUTER_EMPTY_ZONE_OFFSET = OUTER_ZONE_OFFSET + 10
+def get_outer_empty_zone_parameters(
+    geometry_settings: GeometrySettings,
+) -> OuterEmptyZoneParameters:
+    if geometry_settings.rotary_assembly_desc.number_of_reactor_columns != 1:
+        return OuterEmptyZoneParameters(
+            radius=geometry_settings.rotary_assembly_desc.rotary_assembly_radius
+            + OUTER_EMPTY_ZONE_OFFSET,
+            x0=geometry_settings.rotary_assembly_desc.assembly_core_distance,
+        )
+    return OuterEmptyZoneParameters(
+        radius=geometry_settings.rotary_assembly_desc.rotary_assembly_radius
+        + geometry_settings.outer_core_layers_between_disks[0].layer_thickness / 2 + OUTER_EMPTY_ZONE_OFFSET - 1,
         x0=geometry_settings.rotary_assembly_desc.assembly_core_distance
         - geometry_settings.outer_core_layers_between_disks[0].layer_thickness / 2,
     )
