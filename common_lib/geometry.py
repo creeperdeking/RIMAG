@@ -2,7 +2,6 @@ import math
 from typing import Dict, List
 
 import openmc
-import openmc.model
 
 
 from common_lib import math_utils
@@ -21,13 +20,74 @@ from common_lib.geometry_utils import (
     make_boundary_planes,
     make_core_boundary_planes_points,
     make_surface_plane,
-    SPACING_CONSTANT,
     get_outer_zone_parameters,
     get_geometry_bounding_box_one_full_layer,
     offset_core_boundary_planes_points,
 )
 
 from common_lib.geometry_types import GeometrySettings
+
+def get_shaft_boundary(
+    geometry_settings: GeometrySettings,
+    outer_core_layers_thickness: float,
+    assembly_thickness: float,
+):
+    return create_cylinder(
+        geometry_settings.rotary_assembly_desc,
+        outer_core_layers_thickness / 2,
+        assembly_thickness,
+        distance_from_origin=geometry_settings.rotary_assembly_desc.assembly_core_distance,
+    )
+
+
+
+
+def check_assembly_thickness_equal(
+    assembly1: AssemblySections,
+    assembly2: AssemblySections,
+):
+    assembly1_thickness = calculate_assembly_thickness(assembly1)
+    assembly2_thickness = calculate_assembly_thickness(assembly2)
+    if not math.isclose(assembly1_thickness, assembly2_thickness):
+        raise ValueError(
+            f"Assembly thickness must be the same. Assembly1 thickness: {assembly1_thickness}, Assembly2 thickness: {assembly2_thickness}"
+        )
+
+
+def check_assembly_compatibility(
+    assembly1: AssemblySections, assembly2: AssemblySections, assembly_number=None
+):
+    check_assembly_thickness_equal(assembly1, assembly2)
+    current_thickness_assembly1 = 0
+    current_thickness_assembly2 = 0
+    current_index_assembly2 = 0
+    for i, part in enumerate(assembly1.parts):
+        if part.is_emitter or part.is_emitter_placeholder:
+            prev_thicknesses = [current_thickness_assembly2]
+            while math_utils.strict_less_than(
+                current_thickness_assembly2, current_thickness_assembly1
+            ):
+                current_thickness_assembly2 += assembly2.parts[
+                    current_index_assembly2
+                ].thickness
+                current_index_assembly2 += 1
+                prev_thicknesses.append(current_thickness_assembly2)
+            if not math.isclose(
+                current_thickness_assembly1, current_thickness_assembly2
+            ) or not math.isclose(
+                current_thickness_assembly1 + part.thickness,
+                current_thickness_assembly2
+                + assembly2.parts[current_index_assembly2].thickness,
+            ):
+                raise ValueError(
+                    f"Element {i} of assembly {assembly_number} does not have an emmitter placeholder corresponding to the one in assembly {assembly_number + 1}"
+                )
+        current_thickness_assembly1 += part.thickness
+
+
+def check_assemblies_compatibility(assemblies: List[AssemblySections]):
+    for i in range(1, len(assemblies)):
+        check_assembly_compatibility(assemblies[i - 1], assemblies[i], i - 1)
 
 
 def get_base_geometry(
@@ -125,67 +185,6 @@ def get_base_geometry(
     )
 
 
-def check_assembly_thickness_equal(
-    assembly1: AssemblySections,
-    assembly2: AssemblySections,
-):
-    assembly1_thickness = calculate_assembly_thickness(assembly1)
-    assembly2_thickness = calculate_assembly_thickness(assembly2)
-    if not math.isclose(assembly1_thickness, assembly2_thickness):
-        raise ValueError(
-            f"Assembly thickness must be the same. Assembly1 thickness: {assembly1_thickness}, Assembly2 thickness: {assembly2_thickness}"
-        )
-
-
-def check_assembly_compatibility(
-    assembly1: AssemblySections, assembly2: AssemblySections, assembly_number=None
-):
-    check_assembly_thickness_equal(assembly1, assembly2)
-    current_thickness_assembly1 = 0
-    current_thickness_assembly2 = 0
-    current_index_assembly2 = 0
-    for i, part in enumerate(assembly1.parts):
-        if part.is_emitter or part.is_emitter_placeholder:
-            prev_thicknesses = [current_thickness_assembly2]
-            while math_utils.strict_less_than(
-                current_thickness_assembly2, current_thickness_assembly1
-            ):
-                current_thickness_assembly2 += assembly2.parts[
-                    current_index_assembly2
-                ].thickness
-                current_index_assembly2 += 1
-                prev_thicknesses.append(current_thickness_assembly2)
-            if not math.isclose(
-                current_thickness_assembly1, current_thickness_assembly2
-            ) or not math.isclose(
-                current_thickness_assembly1 + part.thickness,
-                current_thickness_assembly2
-                + assembly2.parts[current_index_assembly2].thickness,
-            ):
-                raise ValueError(
-                    f"Element {i} of assembly {assembly_number} does not have an emmitter placeholder corresponding to the one in assembly {assembly_number + 1}"
-                )
-        current_thickness_assembly1 += part.thickness
-
-
-def check_assemblies_compatibility(assemblies: List[AssemblySections]):
-    for i in range(1, len(assemblies)):
-        check_assembly_compatibility(assemblies[i - 1], assemblies[i], i - 1)
-
-
-def get_shaft_boundary(
-    geometry_settings: GeometrySettings,
-    outer_core_layers_thickness: float,
-    assembly_thickness: float,
-):
-    return create_cylinder(
-        geometry_settings.rotary_assembly_desc,
-        outer_core_layers_thickness / 2,
-        assembly_thickness,
-        distance_from_origin=geometry_settings.rotary_assembly_desc.assembly_core_distance,
-    )
-
-
 def define_geometry(
     geometry_settings: GeometrySettings,
     materials_dict: Dict[str, openmc.Material],
@@ -216,7 +215,7 @@ def define_geometry(
     )
 
     core_height_with_margin = (
-        geometry_settings.core_desc.core_height + SPACING_CONSTANT * 2
+        geometry_settings.core_desc.core_height
     )
 
     vertical_core_height_with_margin = get_vertical_core_height_with_margin(
@@ -259,12 +258,12 @@ def define_geometry(
         outer_zone_boundary_cylinder
         & -make_surface_plane(
             geometry_settings.rotary_assembly_desc,
-            z0=geometry_settings.core_desc.core_height / 2 + SPACING_CONSTANT, # todo: see if you can remove the SPACING_CONSTANT
+            z0=geometry_settings.core_desc.core_height / 2 , 
             boundary_type="transmission",
         )
         & +make_surface_plane(
             geometry_settings.rotary_assembly_desc,
-            z0=-geometry_settings.core_desc.core_height / 2 - SPACING_CONSTANT,
+            z0=-geometry_settings.core_desc.core_height / 2 ,
             boundary_type="transmission",
         )
     )
@@ -273,12 +272,12 @@ def define_geometry(
         outer_empty_zone_boundary_cylinder
         & -make_surface_plane(
             geometry_settings.rotary_assembly_desc,
-            z0=geometry_settings.core_desc.core_height / 2 + SPACING_CONSTANT, # todo: this might need to be 2*SPACING_CONSTANT
+            z0=geometry_settings.core_desc.core_height / 2 , 
             boundary_type="transmission",
         )
         & +make_surface_plane(
             geometry_settings.rotary_assembly_desc,
-            z0=-geometry_settings.core_desc.core_height / 2 - SPACING_CONSTANT,
+            z0=-geometry_settings.core_desc.core_height / 2 ,
             boundary_type="transmission",
         )
     )

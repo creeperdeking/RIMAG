@@ -8,8 +8,6 @@ from pydantic import BaseModel
 from common_lib.geometry_types import GeometrySettings
 from common_lib.rotary_assembly import RotaryAssemblyDesc
 
-SPACING_CONSTANT = 0.001
-
 
 class OuterEmptyZoneParameters(BaseModel):
     radius: float
@@ -32,7 +30,7 @@ def get_outer_zone_parameters(
         - geometry_settings.outer_core_layers_between_disks[0].layer_thickness / 2,
     )
 
-OUTER_EMPTY_ZONE_OFFSET = OUTER_ZONE_OFFSET + 10
+OUTER_EMPTY_ZONE_OFFSET = OUTER_ZONE_OFFSET + 1
 def get_outer_empty_zone_parameters(
     geometry_settings: GeometrySettings,
 ) -> OuterEmptyZoneParameters:
@@ -81,7 +79,6 @@ def get_geometry_base_height(angle: float, geometry_settings: GeometrySettings):
         + geometry_settings.core_desc.core_vertical_height
     )
 
-
 def get_geometry_bounding_box_one_full_layer(
     geometry_settings: GeometrySettings,
 ):
@@ -120,7 +117,7 @@ def get_geometry_bounding_box_one_full_layer(
 
 def get_vertical_core_height_with_margin(geometry_settings: GeometrySettings):
     core_height_with_margin = (
-        geometry_settings.core_desc.core_height + SPACING_CONSTANT * 2
+        geometry_settings.core_desc.core_height
     )
     z_scaling = get_z_scaling(geometry_settings.rotary_assembly_desc.frustum_pitch)
     return core_height_with_margin * z_scaling
