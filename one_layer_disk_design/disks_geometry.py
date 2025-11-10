@@ -58,23 +58,12 @@ def define_disks_geometry(
     geometry_settings: GeometrySettings,
     materials_dict: Dict[str, openmc.Material],
 ):
-    (
-        assembly_thickness,
-        core_boundary,
-        core_boundary_planes_points,
-        photovoltaic_boundary,
-        shaft_boundary,
-        _,
-        disk_boundary,
-        _,
-        _,
-        _,
-    ) = get_base_geometry(
+    bg = get_base_geometry(
         geometry_settings,
     )
 
     disks = make_disks(
-        assembly_thickness,
+        bg.assembly_thickness,
     )
 
     emitter_boundary = define_discs_emitter_boundary(
@@ -90,7 +79,7 @@ def define_disks_geometry(
         geometry_settings.rotary_assembly_desc.rotary_assembly_radius,
         calculate_assembly_thickness(geometry_settings.outer_core_layers_inside_shaft)
         / 2,
-        assembly_thickness,
+        bg.assembly_thickness,
         disks,
     )
 
@@ -101,7 +90,7 @@ def define_disks_geometry(
         disks=disks,
         rotary_assembly_desc=geometry_settings.rotary_assembly_desc,
         materials_dict=materials_dict,
-        boundary_shape=core_boundary & disk_boundary,
+        boundary_shape=bg.core_boundary & bg.disk_boundary,
     )
 
     photovoltaic_assembly_cells = make_disks_cells(
@@ -109,12 +98,12 @@ def define_disks_geometry(
         disks=disks,
         rotary_assembly_desc=geometry_settings.rotary_assembly_desc,
         materials_dict=materials_dict,
-        boundary_shape=photovoltaic_boundary & disk_boundary,
+        boundary_shape=bg.photovoltaic_boundary & bg.disk_boundary,
     )
 
     between_disks_shielding_cells = []
     previous_radius = geometry_settings.core_desc.core_radius
-    current_boundary_planes_points = core_boundary_planes_points
+    current_boundary_planes_points = bg.core_boundary_planes_points
     for outer_core_layer in geometry_settings.outer_core_layers_between_disks:
         offset_boundary_planes_points = offset_core_boundary_planes_points(
             current_boundary_planes_points,
@@ -148,7 +137,7 @@ def define_disks_geometry(
                 disks=disks,
                 rotary_assembly_desc=geometry_settings.rotary_assembly_desc,
                 materials_dict=materials_dict,
-                boundary_shape=layer_boundary & disk_boundary & ~shaft_boundary,
+                boundary_shape=layer_boundary & bg.disk_boundary & ~bg.shaft_boundary,
             )
         )
 
@@ -163,7 +152,7 @@ def define_disks_geometry(
         disks=disks,
         rotary_assembly_desc=geometry_settings.rotary_assembly_desc,
         materials_dict=materials_dict,
-        boundary_shape=assemblies_boundary & disk_boundary,
+        boundary_shape=assemblies_boundary & bg.disk_boundary,
     )
 
     geometry, universe, tracked_cells = define_geometry(
@@ -175,8 +164,8 @@ def define_disks_geometry(
         emitter_assembly_cells=emitter_assembly_cells,
         emitter_boundary=emitter_boundary,
         assemblies_boundary=assemblies_boundary,
-        core_boundary=core_boundary,
-        photovoltaic_boundary=photovoltaic_boundary,
+        core_boundary=bg.core_boundary,
+        photovoltaic_boundary=bg.photovoltaic_boundary,
     )
 
     return (
