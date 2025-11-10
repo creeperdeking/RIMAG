@@ -192,11 +192,10 @@ def get_base_geometry(
     ])
     midpoint_distance = outer_empty_zone_parameters.radius/(math.cos(math.pi/6))
     outer_empty_zone_midpoint = (np.array([-midpoint_distance,0,0]) +np.array([outer_empty_zone_parameters.x0, 0, 0]) )
-    outer_empty_zone_boundary_transmissive_upper_plane = -openmc.Plane.from_points(outer_empty_zone_upper_contact_point, outer_empty_zone_midpoint, outer_empty_zone_upper_contact_point + np.array([0, 0, 1]), boundary_type = "vacuum")
-    outer_empty_zone_boundary_transmissive_lower_plane = +openmc.Plane.from_points(outer_empty_zone_lower_contact_point, outer_empty_zone_midpoint, outer_empty_zone_lower_contact_point + np.array([0, 0, 1]), boundary_type = "vacuum")
+    outer_empty_zone_boundary_transmissive_upper_plane = -openmc.Plane.from_points(outer_empty_zone_upper_contact_point, outer_empty_zone_midpoint, outer_empty_zone_upper_contact_point + np.array([0, 0, 1]))
+    outer_empty_zone_boundary_transmissive_lower_plane = +openmc.Plane.from_points(outer_empty_zone_lower_contact_point, outer_empty_zone_midpoint, outer_empty_zone_lower_contact_point + np.array([0, 0, 1]))
     outer_empty_zone_boundary_vacuum_plane = -openmc.XPlane(
         x0=outer_empty_zone_parameters.x0 + outer_empty_zone_parameters.radius,
-        boundary_type="vacuum",
     )
 
     multi_column_boundary = -openmc.ZCylinder(
@@ -445,13 +444,11 @@ def define_geometry(
             upper_contact_point,
             midpoint,
             upper_contact_point + np.array([0, 0, 1]),
-            boundary_type="vacuum",
         )
         lower_plane = +openmc.Plane.from_points(
             lower_contact_point,
             midpoint,
             lower_contact_point + np.array([0, 0, 1]),
-            boundary_type="vacuum",
         )
         region_col1 = upper_plane & lower_plane
 
@@ -476,15 +473,33 @@ def define_geometry(
             upper_contact_point_rot,
             midpoint,
             upper_contact_point_rot + np.array([0, 0, 1]),
-            boundary_type="vacuum",
         )
         lower_plane_rot = +openmc.Plane.from_points(
             lower_contact_point_rot,
             midpoint,
             lower_contact_point_rot + np.array([0, 0, 1]),
-            boundary_type="vacuum",
         )
         region_col2 = upper_plane_rot & lower_plane_rot
+
+        # Negative rotation utilities and planes (rotate by -angle)
+        rot_z_neg = rot_z.T
+
+        def rotate_point_around_midpoint_neg(p: np.ndarray) -> np.ndarray:
+            return rot_z_neg @ (p - midpoint) + midpoint
+
+        upper_contact_point_rot_neg = rotate_point_around_midpoint_neg(upper_contact_point)
+        lower_contact_point_rot_neg = rotate_point_around_midpoint_neg(lower_contact_point)
+        upper_plane_rot_neg = -openmc.Plane.from_points(
+            upper_contact_point_rot_neg,
+            midpoint,
+            upper_contact_point_rot_neg + np.array([0, 0, 1]),
+        )
+        lower_plane_rot_neg = +openmc.Plane.from_points(
+            lower_contact_point_rot_neg,
+            midpoint,
+            lower_contact_point_rot_neg + np.array([0, 0, 1]),
+        )
+        region_col3 = upper_plane_rot_neg & lower_plane_rot_neg
 
         # Create two cells: original column and a rotated clone around the midpoint
         col1_cell = openmc.Cell(region=region_col1, fill=reactor_column_universe_1, name="reactor_column_1")
@@ -498,7 +513,15 @@ def define_geometry(
         col2_cell.rotation = R
         col2_cell.translation = (float(translation_fix[0]), float(translation_fix[1] + 157), float(translation_fix[2]))
 
-        reactor_universe = openmc.Universe(cells=[col1_cell, col2_cell])
+        # Third cell rotated by -angle
+        col3_cell = openmc.Cell(region=region_col3, fill=reactor_column_universe_1, name="reactor_column_3_rotated_neg")
+        # For a world rotation of -angle, use the inverse (which is +angle)
+        R_neg = rot_z
+        translation_fix_neg = midpoint - R_neg @ midpoint
+        col3_cell.rotation = R_neg
+        col3_cell.translation = (float(translation_fix_neg[0]), float(translation_fix_neg[1] - 157), float(translation_fix_neg[2]))
+
+        reactor_universe = openmc.Universe(cells=[col1_cell, col2_cell, col3_cell])
 
     reactor_slice_cell = openmc.Cell(
         region=bg.multi_column_boundary & +z_bot & -z_top,
