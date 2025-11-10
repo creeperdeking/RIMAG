@@ -2,7 +2,7 @@ import math
 from typing import Dict, List
 
 import openmc
-
+import numpy as np
 
 from common_lib import math_utils
 from common_lib.assemblies_types import (
@@ -165,12 +165,39 @@ def get_base_geometry(
         boundary_type="transmission",
     )
     outer_empty_zone_parameters = get_outer_empty_zone_parameters(geometry_settings)
+    
+    outer_empty_zone_upper_contact_point = (
+        np.array([-math.cos(math.pi/4), math.sin(math.pi/4), 0]) * outer_empty_zone_parameters.radius
+    ) + np.array([outer_empty_zone_parameters.x0, 0, 0])
+    outer_empty_zone_lower_contact_point = np.array([
+        outer_empty_zone_upper_contact_point[0],
+        -outer_empty_zone_upper_contact_point[1],
+        outer_empty_zone_upper_contact_point[2]
+    ])
+    outer_empty_zone_midpoint = (np.array([-outer_empty_zone_parameters.radius/(math.cos(math.pi/4)),0,0]) +np.array([outer_empty_zone_parameters.x0, 0, 0]) )
+    outer_empty_zone_boundary_transmissive_upper_plane = -openmc.Plane.from_points(outer_empty_zone_upper_contact_point, outer_empty_zone_midpoint, outer_empty_zone_upper_contact_point + np.array([0, 0, 1]), boundary_type = "vacuum")
+    outer_empty_zone_boundary_transmissive_lower_plane = +openmc.Plane.from_points(outer_empty_zone_lower_contact_point, outer_empty_zone_midpoint, outer_empty_zone_lower_contact_point + np.array([0, 0, 1]), boundary_type = "vacuum")
+    outer_empty_zone_boundary_vacuum_plane = -openmc.XPlane(
+        x0=outer_empty_zone_parameters.x0 + outer_empty_zone_parameters.radius,
+        boundary_type="vacuum",
+    )
+
+    outer_empty_zone_boundary = (
+         outer_empty_zone_boundary_transmissive_upper_plane
+        & outer_empty_zone_boundary_transmissive_lower_plane &
+         outer_empty_zone_boundary_vacuum_plane
+    )
+
     outer_empty_zone_boundary_cylinder = -openmc.ZCylinder(
         r=outer_empty_zone_parameters.radius,
         x0=outer_empty_zone_parameters.x0,
         boundary_type="vacuum",
     )
-    
+
+    if geometry_settings.rotary_assembly_desc.number_of_reactor_columns == 1:
+        outer_empty_zone_boundary = outer_empty_zone_boundary_cylinder
+
+
     return (
         assembly_thickness,
         core_boundary,
@@ -181,43 +208,12 @@ def get_base_geometry(
         disk_boundary,
         outer_zone_boundary_cylinder,
         outer_core_boundary,
-        outer_empty_zone_boundary_cylinder,
+        outer_empty_zone_boundary,
+        #outer_empty_zone_boundary_cylinder,
     )
 
-
-def define_geometry(
-    geometry_settings: GeometrySettings,
-    materials_dict: Dict[str, openmc.Material],
-    photovoltaic_assembly_cells: Dict[str, openmc.Cell],
-    core_assembly_cells: Dict[str, openmc.Cell],
-    outer_core_layers_between_disks_scells: List[Dict[str, openmc.Cell]],
-    emitter_assembly_cells: Dict[str, openmc.Cell],
-    emitter_boundary: openmc.Region,
-    assemblies_boundary: openmc.Region,
-    core_boundary: openmc.Region,
-    photovoltaic_boundary: openmc.Region,
-):
-    (
-        _,
-        _,
-        core_boundary_planes_points,
-        photovoltaic_boundary,
-        shaft_boundary,
-        inner_shaft_boundary,
-        disk_boundary,
-        outer_zone_boundary_cylinder,
-        outer_core_boundary,
-        outer_empty_zone_boundary_cylinder,
-    ) = get_base_geometry(geometry_settings)
-    check_assembly_thickness_equal(
-        geometry_settings.assembly_section_core,
-        geometry_settings.photovoltaic_assembly,
-    )
-
-    vertical_core_height = get_vertical_core_height(
-        geometry_settings
-    )
-
+def make_module_stack_surfaces(geometry_settings: GeometrySettings):
+    vertical_core_height = get_vertical_core_height(geometry_settings)
     lower_left_corner, upper_right_corner = get_geometry_bounding_box_one_full_layer(
         geometry_settings,
     )
@@ -249,6 +245,39 @@ def define_geometry(
                 boundary_type="transmission",
             )
         )
+    return surfaces, number_of_layers, start_index
+
+def define_geometry(
+    geometry_settings: GeometrySettings,
+    materials_dict: Dict[str, openmc.Material],
+    photovoltaic_assembly_cells: Dict[str, openmc.Cell],
+    core_assembly_cells: Dict[str, openmc.Cell],
+    outer_core_layers_between_disks_scells: List[Dict[str, openmc.Cell]],
+    emitter_assembly_cells: Dict[str, openmc.Cell],
+    emitter_boundary: openmc.Region,
+    assemblies_boundary: openmc.Region,
+    core_boundary: openmc.Region,
+    photovoltaic_boundary: openmc.Region,
+):
+    (
+        _,
+        _,
+        core_boundary_planes_points,
+        photovoltaic_boundary,
+        shaft_boundary,
+        inner_shaft_boundary,
+        disk_boundary,
+        outer_zone_boundary_cylinder,
+        outer_core_boundary,
+        outer_empty_zone_boundary,
+    ) = get_base_geometry(geometry_settings)
+
+    check_assembly_thickness_equal(
+        geometry_settings.assembly_section_core,
+        geometry_settings.photovoltaic_assembly,
+    )
+
+    surfaces, number_of_layers, start_index = make_module_stack_surfaces(geometry_settings)
 
     outer_zone_boundary = (
         outer_zone_boundary_cylinder
@@ -264,8 +293,8 @@ def define_geometry(
         )
     )
 
-    outer_empty_zone_boundary = (
-        outer_empty_zone_boundary_cylinder
+    outer_empty_zone_bounded_boundary = (
+        outer_empty_zone_boundary
         & -make_surface_plane(
             geometry_settings.rotary_assembly_desc,
             z0=geometry_settings.core_desc.core_height / 2 , 
@@ -320,7 +349,7 @@ def define_geometry(
     outer_zone_cell.fill = materials_dict[geometry_settings.material_choice.void]
 
     outer_empty_zone = (
-        outer_empty_zone_boundary
+        outer_empty_zone_bounded_boundary
         & ~outer_zone_boundary
     )
 
@@ -348,10 +377,14 @@ def define_geometry(
 
     layer_universe = openmc.Universe(cells=cells)
 
+    vertical_core_height = get_vertical_core_height(
+        geometry_settings
+    )
+
     layer_cells = []
     layers_universes = [layer_universe] * number_of_layers
     for k, u in enumerate(layers_universes):
-        region = outer_empty_zone_boundary_cylinder & +surfaces[k] & -surfaces[k + 1]
+        region = outer_empty_zone_boundary & +surfaces[k] & -surfaces[k + 1]
         c = openmc.Cell(region=region, fill=u, name=f"boundary_layer_{k}")
         c.translation = (
             0,
@@ -371,7 +404,7 @@ def define_geometry(
     reactor_universe = openmc.Universe(cells=layer_cells)
 
     reactor_slice_cell = openmc.Cell(
-        region=outer_empty_zone_boundary_cylinder & +z_bot & -z_top,
+        region=outer_empty_zone_boundary & +z_bot & -z_top,
         fill=reactor_universe,
     )
     reactor_slice_universe = openmc.Universe(cells=[reactor_slice_cell])
