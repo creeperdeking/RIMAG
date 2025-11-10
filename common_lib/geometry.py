@@ -418,6 +418,88 @@ def define_geometry(
     reactor_column_universe_1 = openmc.Universe(cells=layer_cells)
     reactor_universe = reactor_column_universe_1
 
+    if geometry_settings.rotary_assembly_desc.number_of_reactor_columns == 1:
+        reactor_universe = reactor_column_universe_1
+    else:
+        angle = 2*math.pi/3
+        # Build parent-level regions for each column (two wedges around the same midpoint)
+        outer_empty_zone_parameters = get_outer_empty_zone_parameters(geometry_settings)
+        upper_contact_point = (
+            np.array(
+                [
+                    -math.cos(math.pi / 6),
+                    math.sin(math.pi / 6),
+                    0,
+                ]
+            )
+            * outer_empty_zone_parameters.radius
+            + np.array([outer_empty_zone_parameters.x0, 0, 0])
+        )
+        lower_contact_point = np.array(
+            [upper_contact_point[0], -upper_contact_point[1], upper_contact_point[2]]
+        )
+        midpoint = bg.outer_empty_zone_midpoint
+
+        # Unrotated wedge planes (vertical) defined by midpoint and contact points
+        upper_plane = -openmc.Plane.from_points(
+            upper_contact_point,
+            midpoint,
+            upper_contact_point + np.array([0, 0, 1]),
+            boundary_type="vacuum",
+        )
+        lower_plane = +openmc.Plane.from_points(
+            lower_contact_point,
+            midpoint,
+            lower_contact_point + np.array([0, 0, 1]),
+            boundary_type="vacuum",
+        )
+        region_col1 = upper_plane & lower_plane
+
+        # Rotation utilities (about z-axis around the wedge midpoint)
+        cos_a = math.cos(angle)
+        sin_a = math.sin(angle)
+        rot_z = np.array(
+            [
+                [cos_a, -sin_a, 0.0],
+                [sin_a, cos_a, 0.0],
+                [0.0, 0.0, 1.0],
+            ]
+        )
+
+        def rotate_point_around_midpoint(p: np.ndarray) -> np.ndarray:
+            return rot_z @ (p - midpoint) + midpoint
+
+        # Rotated wedge planes
+        upper_contact_point_rot = rotate_point_around_midpoint(upper_contact_point)
+        lower_contact_point_rot = rotate_point_around_midpoint(lower_contact_point)
+        upper_plane_rot = -openmc.Plane.from_points(
+            upper_contact_point_rot,
+            midpoint,
+            upper_contact_point_rot + np.array([0, 0, 1]),
+            boundary_type="vacuum",
+        )
+        lower_plane_rot = +openmc.Plane.from_points(
+            lower_contact_point_rot,
+            midpoint,
+            lower_contact_point_rot + np.array([0, 0, 1]),
+            boundary_type="vacuum",
+        )
+        region_col2 = upper_plane_rot & lower_plane_rot
+
+        # Create two cells: original column and a rotated clone around the midpoint
+        col1_cell = openmc.Cell(region=region_col1, fill=reactor_column_universe_1, name="reactor_column_1")
+
+        col2_cell = openmc.Cell(region=region_col2, fill=reactor_column_universe_1, name="reactor_column_2_rotated")
+        # Apply rotation around midpoint: x' = R x + t, choose t so that midpoint is fixed
+        # OpenMC applies transforms in a way that requires using the inverse
+        # (transpose) for the desired visual/world rotation direction.
+        R = rot_z.T
+        translation_fix = midpoint - R @ midpoint
+        col2_cell.rotation = R
+        col2_cell.translation = (float(translation_fix[0]), float(translation_fix[1] + 157), float(translation_fix[2]))
+
+        reactor_universe = openmc.Universe(cells=[col1_cell, col2_cell])
+
     reactor_slice_cell = openmc.Cell(
         region=bg.multi_column_boundary & +z_bot & -z_top,
         fill=reactor_universe,
