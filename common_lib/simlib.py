@@ -6,6 +6,7 @@ import os
 import time
 from typing import List, Dict, Literal
 from tabulate import tabulate
+import json
 import scipy.constants as cst
 from common_lib.materials import MonitoredNuclide
 import numpy as np
@@ -79,10 +80,31 @@ def generate_XML(geometry, settings, tallies, materials_dict):
         tallies.export_to_xml()
 
 
+def _get_threads_from_settings(default_threads: int = 20) -> int:
+    """
+    Read the number of threads from simsettings.json located in the current
+    working directory (where Python was executed).
+    Falls back to default_threads if the file or value is unavailable/invalid.
+    """
+    try:
+        settings_path = "simsettings.json"
+        if not os.path.exists(settings_path):
+            return default_threads
+        with open(settings_path, "r") as f:
+            data = json.load(f)
+        threads = int(data.get("threads", default_threads))
+        if threads <= 0:
+            return default_threads
+        return threads
+    except Exception:
+        return default_threads
+
+
 def run_sim(geometry, settings, materials_dict, tallies=None, quiet=False):
     generate_XML(geometry, settings, tallies, materials_dict)
     if settings.run_mode == "volume":
         print("[OpenMC] Running stochastic volume calculations...")
+    threads = _get_threads_from_settings(default_threads=20)
     if quiet:
         # Redirect stdout and stderr to suppress OpenMC output
         with open(os.devnull, "w") as devnull:
@@ -91,12 +113,12 @@ def run_sim(geometry, settings, materials_dict, tallies=None, quiet=False):
             sys.stdout = devnull
             sys.stderr = devnull
             try:
-                openmc.run(threads=20, geometry_debug=True)
+                openmc.run(threads=threads, geometry_debug=True)
             finally:
                 sys.stdout = old_stdout
                 sys.stderr = old_stderr
     else:
-        openmc.run(threads=20, geometry_debug=False)
+        openmc.run(threads=threads, geometry_debug=False)
     # clean_directory()
 
 
@@ -146,6 +168,7 @@ def make_sim_settings(
     upper_right_corner: tuple = (0, 0, 0),
     geometry: openmc.Geometry = None,
     particle_type: Literal["neutron", "photon"] = "neutron",
+    survival_biasing: bool = True,
 ):
     # Define neutron source
     source = openmc.IndependentSource(space=openmc.stats.Point((0, 0, 0)))
@@ -169,9 +192,20 @@ def make_sim_settings(
     settings.particles = 10000
     settings.generations_per_batch = 10
     settings.seed = 42
+    settings.survival_biasing = survival_biasing
+    if survival_biasing:
+        settings.cutoff = {
+            "weight": 0.25,                  # w_c: roulette threshold
+            "weight_avg": 1.0,               # w_s: post-survival weight
+            # If you want cutoffs relative to starting weight instead of current weight:
+            # "survival_normalization": True
+        }
 
     settings.rel_max_lost_particles = 0.01
     settings.confidence_intervals = True
+
+    if 1/(settings.particles * settings.generations_per_batch) >= 1/(math.sqrt(settings.batches)):
+        raise ValueError("The number of particles per generation per batch is too low to achieve the desired confidence interval. Increase the number of particles per generation per batch or increase the number of batches.")
 
     if not deterministic:
         settings.seed = int(time.time())

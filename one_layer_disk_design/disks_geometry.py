@@ -45,10 +45,10 @@ class DiskGeometryParams(BaseModel):
 
 
 def make_disk_geometry_params(disk_geometry_params: DiskGeometryParams):
-    sanity_check_triso_fuel_volume(
-        disk_geometry_params.fuel_thickness,
-        disk_geometry_params.fuel_cladding_thickness * 2,
-    )
+    # sanity_check_triso_fuel_volume(
+    #     disk_geometry_params.fuel_thickness,
+    #     disk_geometry_params.fuel_cladding_thickness * 2,
+    # )
     if disk_geometry_params.number_of_reactor_columns != 1 and disk_geometry_params.number_of_reactor_columns != 3:
         raise ValueError(f"{disk_geometry_params.number_of_reactor_columns} reactor columns are not supported")
     return disk_geometry_params

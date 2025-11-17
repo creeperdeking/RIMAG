@@ -112,6 +112,21 @@ def get_geometry_bounding_box_one_full_layer(
         lower_z + base_height,
     )
 
+    if geometry_settings.rotary_assembly_desc.number_of_reactor_columns != 1:
+        tri_reactor_x_width = 2*outer_zone_parameters.radius * math.cos(math.pi/6) + 2*outer_zone_parameters.radius
+        tri_reactor_y_width = 2*2*outer_zone_parameters.radius
+        x_offset = tri_reactor_x_width/2 -outer_zone_parameters.radius - geometry_settings.rotary_assembly_desc.assembly_core_distance
+        lower_left_corner = (
+            -tri_reactor_x_width/2 - x_offset,
+            -tri_reactor_y_width/2,
+            lower_z,
+        )
+        upper_right_corner = (
+            tri_reactor_x_width/2 - x_offset,
+            tri_reactor_y_width/2,
+            lower_z + base_height,
+        )
+
     return lower_left_corner, upper_right_corner
 
 
