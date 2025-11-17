@@ -48,8 +48,8 @@ disk_geometry_params = make_disk_geometry_params(
         neutron_shield_moderator_cladding_thickness=0.05,
         neutron_shield_absorber_thickness=10,
         gamma_shield_thickness=10,
-        frustum_pitch=5,
-        number_of_reactor_columns=1,
+        frustum_pitch=15,
+        number_of_reactor_columns=3,
     )
 )
 

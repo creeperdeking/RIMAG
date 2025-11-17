@@ -250,6 +250,7 @@ def make_module_stack_surfaces(geometry_settings: GeometrySettings):
     )
 
     number_of_layers = number_of_layers_above + number_of_layers_below + 1
+    number_of_layers *= 2 # bandaid fix for preventing particle leak for 3 column reactor with steep pitch
     start_index = number_of_layers_below
 
     surfaces = [
