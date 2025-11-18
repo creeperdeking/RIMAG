@@ -12,9 +12,9 @@ from one_layer_disk_design.frustum_geometry_definition import make_simulation_ge
 
 ### Simulation parameters
 
-run_mode: RunMode = "keff_notallies"
+run_mode: RunMode = "keff"
 print_core_characteristics = True
-batches = 20  # 2500  # 1250
+batches = 200  # 2500  # 1250
 weight_windows: UseWeightWindows = "no"
 particle_type: ParticleType = "neutron"
 # Tally absoption only for this particular nuclide:
