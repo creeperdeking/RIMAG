@@ -16,6 +16,7 @@ from common_lib.assemblies import (
 )
 from common_lib.geometry_utils import (
     CoreBoundaryPlanesPoints,
+    OuterEmptyZoneParameters,
     create_cylinder,
     get_outer_empty_zone_parameters,
     get_vertical_core_height,
@@ -104,7 +105,8 @@ class BaseGeometry(BaseModel, arbitrary_types_allowed=True):
     outer_empty_zone_boundary: openmc.Region
     outer_empty_zone_midpoint: np.array
     multi_column_boundary: openmc.Region
-
+    outer_empty_zone_parameters: OuterEmptyZoneParameters
+    
 def get_base_geometry(
     geometry_settings: GeometrySettings,
 ):
@@ -234,6 +236,7 @@ def get_base_geometry(
         outer_empty_zone_boundary=outer_empty_zone_boundary,
         outer_empty_zone_midpoint=outer_empty_zone_midpoint,
         multi_column_boundary=multi_column_boundary,
+        outer_empty_zone_parameters=outer_empty_zone_parameters,
     )
 
 def make_module_stack_surfaces(geometry_settings: GeometrySettings):
@@ -505,6 +508,8 @@ def define_geometry(
         # Create two cells: original column and a rotated clone around the midpoint
         col1_cell = openmc.Cell(region=region_col1, fill=reactor_column_universe_1, name="reactor_column_1")
 
+        offset_y = 104 + bg.outer_empty_zone_parameters.radius*(8.5/30) # 157
+
         col2_cell = openmc.Cell(region=region_col2, fill=reactor_column_universe_1, name="reactor_column_2_rotated")
         # Apply rotation around midpoint: x' = R x + t, choose t so that midpoint is fixed
         # OpenMC applies transforms in a way that requires using the inverse
@@ -512,7 +517,7 @@ def define_geometry(
         R = rot_z.T
         translation_fix = midpoint - R @ midpoint
         col2_cell.rotation = R
-        col2_cell.translation = (float(translation_fix[0]), float(translation_fix[1] + 157), float(translation_fix[2]))
+        col2_cell.translation = (float(translation_fix[0]), float(translation_fix[1] + offset_y), float(translation_fix[2]))
 
         # Third cell rotated by -angle
         col3_cell = openmc.Cell(region=region_col3, fill=reactor_column_universe_1, name="reactor_column_3_rotated_neg")
@@ -520,7 +525,7 @@ def define_geometry(
         R_neg = rot_z
         translation_fix_neg = midpoint - R_neg @ midpoint
         col3_cell.rotation = R_neg
-        col3_cell.translation = (float(translation_fix_neg[0]), float(translation_fix_neg[1] - 157), float(translation_fix_neg[2]))
+        col3_cell.translation = (float(translation_fix_neg[0]), float(translation_fix_neg[1] - offset_y), float(translation_fix_neg[2]))
 
         reactor_universe = openmc.Universe(cells=[col1_cell, col2_cell, col3_cell])
 
