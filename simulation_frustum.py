@@ -44,7 +44,7 @@ disk_geometry_params = make_disk_geometry_params(
         thickness_photovoltaic=thickness_photovoltaic,
         rotary_axle_thickness=5,
         reflector_thickness=10,
-        neutron_shield_moderator_thickness=110,  # 175
+        neutron_shield_moderator_thickness=50,  # 175
         neutron_shield_moderator_cladding_thickness=0.05,
         neutron_shield_absorber_thickness=10,
         gamma_shield_thickness=10,
@@ -88,7 +88,7 @@ material_choice = MaterialChoice(
     photovoltaic="InGaAsP",
     coolant="Borated Water",
     shaft_shield_moderator="Titanium Hydride", # low temperature
-    neutron_shield_moderator="Graphite", # high temperature
+    neutron_shield_moderator="Lithium Oxide", # high temperature
     shield_moderator_cladding="Graphite",
     gamma_shield="Tungsten",
 )

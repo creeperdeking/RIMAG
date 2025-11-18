@@ -98,6 +98,7 @@ atoms: Dict[str, Atom] = {
     "Ti": Atom(name="Ti", atomic_weight=47.867),
     "Cl": Atom(name="Cl", atomic_weight=35.453),
     "Ar": Atom(name="Ar", atomic_weight=39.948),
+    "Li": Atom(name="Li", atomic_weight=6.941),
 }
 
 
@@ -505,6 +506,14 @@ def make_materials(
             ],
             density=8.0,
             color="gray",
+        ),
+        "Lithium Oxide": Material(
+            composition=[
+                AtomProportion(atom=atoms["Li"], proportion=2),
+                AtomProportion(atom=atoms["O"], proportion=1),
+            ],
+            density=2.01,
+            color="lightblue",
         ),
         "Beryllium Oxide": Material(
             composition=[
