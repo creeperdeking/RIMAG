@@ -88,7 +88,7 @@ material_choice = MaterialChoice(
     photovoltaic="InGaAsP",
     coolant="Borated Water",
     shaft_shield_moderator="Borated Water", # low temperature
-    neutron_shield_moderator="Lithium Oxide", # high temperature
+    neutron_shield_moderator="Graphite", # high temperature
     shield_moderator_cladding="Graphite",
     gamma_shield="Tungsten",
 )
