@@ -12,7 +12,7 @@ from one_layer_disk_design.frustum_geometry_definition import make_simulation_ge
 
 ### Simulation parameters
 
-run_mode: RunMode = "keff"
+run_mode: RunMode = "keff_notallies"
 print_core_characteristics = True
 batches = 200  # 2500  # 1250
 weight_windows: UseWeightWindows = "no"
@@ -49,6 +49,7 @@ disk_geometry_params = make_disk_geometry_params(
         neutron_shield_absorber_thickness=10,
         gamma_shield_thickness=10,
         frustum_pitch=15,
+        additional_module_spacing=1,
         number_of_reactor_columns=3,
     )
 )
@@ -91,6 +92,7 @@ material_choice = MaterialChoice(
     neutron_shield_moderator="Graphite", # high temperature
     shield_moderator_cladding="Graphite",
     gamma_shield="Tungsten",
+    moduler_spacer="Graphite",
 )
 
 materials_dict, colors, updated_material_choice = make_materials(

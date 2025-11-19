@@ -42,7 +42,7 @@ def make_simulation_geometry(
     disk_geometry_params: DiskGeometryParams,
     materials_dict: Dict[str, openmc.Material],
 ) -> MakeSimulationGeometryResult:
-    central_section_multiplicator = 2
+    central_section_multiplicator = 3
     emitter_assembly = AssemblySections(
         parts=[
             ### Void
@@ -70,6 +70,8 @@ def make_simulation_geometry(
     emitter_assembly_placeholder = EmitterPlaceholder(
         thickness=calculate_assembly_thickness(emitter_assembly),
     )
+
+    ### Fuel section
 
     half_fuel_element = AssemblySections(
         parts=[
@@ -101,6 +103,11 @@ def make_simulation_geometry(
     mini_fuel_element = mirror_assembly(half_mini_fuel_element)
     intermediary_section_core = AssemblySections(
         parts=[
+            ### Moduler spacer
+            Assembly(
+                material=material_choice.moduler_spacer,
+                thickness=disk_geometry_params.additional_module_spacing / 2,
+            ),
             ### Moderator
             Assembly(
                 material=material_choice.moderator,
@@ -132,6 +139,8 @@ def make_simulation_geometry(
             ],
         )
     )
+
+    ### Photovoltaic section
 
     half_photovoltaic_element = AssemblySections(
         parts=[
@@ -190,6 +199,8 @@ def make_simulation_geometry(
         >= 0
     )
 
+    ### Outer core layers inside shaft
+
     outer_core_layers_inside_shaft = AssemblySections(
         parts=[
             Assembly(
@@ -228,6 +239,8 @@ def make_simulation_geometry(
             ),
         ],
     )
+
+    ### Outer core layers between disks
 
     half_reflector_part = AssemblySections(
         parts=[

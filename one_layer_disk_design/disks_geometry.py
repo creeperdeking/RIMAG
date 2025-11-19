@@ -35,6 +35,11 @@ class DiskGeometryParams(BaseModel):
     thickness_photovoltaic: float
     rotary_axle_thickness: float
 
+    # Additional spacing between modules to increase the size of the cold side shield moderator
+    # To prevent also increasing the reactor moderator thickness, a layer of graphite is added
+    # between the modules on the reactor side
+    additional_module_spacing: float 
+
     reflector_thickness: float
     neutron_shield_moderator_thickness: float
     neutron_shield_absorber_thickness: float

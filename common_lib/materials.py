@@ -54,6 +54,7 @@ class MaterialChoice(BaseModel):
     coolant: str
     gamma_shield: str
     rotary_axle: str
+    moduler_spacer: str
 
 
 atoms: Dict[str, Atom] = {
