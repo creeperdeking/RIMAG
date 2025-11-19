@@ -1,2 +1,5 @@
 # RIMAEL
-aaaa
+Add simsettings.json with one value:
+{
+    "threads": 20
+}
