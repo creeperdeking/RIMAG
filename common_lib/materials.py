@@ -574,6 +574,14 @@ def make_materials(
             density=1.477,
             color="lightblue",
         ),
+        "Calcium Hydride": Material(
+            composition=[
+                AtomProportion(atom=atoms["Ca"], proportion=1),
+                AtomProportion(atom=atoms["H"], proportion=2),
+            ],
+            density=1.477,
+            color="lightblue",
+        ),
         "Titanium Hydride": Material(
             composition=[
                 AtomProportion(atom=atoms["Ti"], proportion=1),
