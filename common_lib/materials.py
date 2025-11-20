@@ -579,7 +579,7 @@ def make_materials(
                 AtomProportion(atom=atoms["Ti"], proportion=1),
                 AtomProportion(atom=atoms["H"], proportion=2),
             ],
-            density=3.75,
+            density=3.9,
             color="gray",
         ),
         "Silicon": Material(
