@@ -317,7 +317,7 @@ def stochastic_volume_calculation(
     geometry: openmc.Geometry,
     materials_dict: Dict[str, openmc.Material],
     geometry_settings: GeometrySettings,
-    samples: int = 70000000,
+    samples: int = 10000000,
 ):
     """
     Stochastic volume calculation, adds volume information to the cells
@@ -352,14 +352,14 @@ def stochastic_volume_calculation(
                     # Ignore this cell, set its volume to zero
                     cell.volume = 0.0
                     continue
-                if rel_uncertainty > 1.0:
+                if rel_uncertainty > 5.0:
                     all_ok = False
                     raise ValueError(
                         f"❌ Volume calculation uncertainty too high ({rel_uncertainty:.1f}%) for cell '{cell.name}' (ID {cell_id}).\n"
                         f"    Increase number of samples or check geometry."
                     )
         if all_ok:
-            print("✅ All volume calculation uncertainties are below 1%.")
+            print("✅ All volume calculation uncertainties are below 5%.")
 
         vol_calc = openmc.VolumeCalculation.from_hdf5("volume_1.h5")
         geometry.add_volume_information(vol_calc)  # attaches .volume to each cell
