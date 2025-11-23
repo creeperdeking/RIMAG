@@ -28,13 +28,13 @@ emitter_gamma_rate_per_cm3 = 3.35e6  # photons/cm3/s
 
 enrichment_multiplicator = 1/6
 
-fuel_thickness = 0.015 / enrichment_multiplicator
+fuel_thickness = 0.010 / enrichment_multiplicator
 total_fuel_thickness = 0.6
 thickness_photovoltaic = 0.02
 disk_geometry_params = make_disk_geometry_params(
     DiskGeometryParams(
-        core_diameter=120,
-        moderator_cladding_thickness=0.05,
+        core_diameter=130,
+        moderator_cladding_thickness=0.2,
         shield_moderator_cladding_thickness=0.05,
         fuel_thickness=fuel_thickness,
         fuel_cladding_thickness=(total_fuel_thickness - fuel_thickness) / 2,
@@ -44,19 +44,19 @@ disk_geometry_params = make_disk_geometry_params(
         thickness_photovoltaic=thickness_photovoltaic,
         rotary_axle_thickness=5,
         reflector_thickness=10,
-        neutron_shield_moderator_thickness=50,  # 175
-        neutron_shield_moderator_cladding_thickness=0.05,
+        neutron_shield_moderator_thickness=100,  # 175
+        neutron_shield_moderator_cladding_thickness=0.1,
         neutron_shield_absorber_thickness=10,
         gamma_shield_thickness=10,
         frustum_pitch=15,
-        additional_module_spacing=1,
+        additional_module_spacing=2,
         number_of_reactor_columns=3,
     )
 )
 
 ### Thermodynamic parameters
 
-hot_temp = 1250 + 273  # K
+hot_temp = 1300 + 273  # K
 min_cold_temp = 1100 + 273  # K
 photovoltaic_efficiency = 0.35 * 0.95  # 0.33
 photovoltaic_power_density = 1.5   #1.1 0.59 0.89  # W/cm2
@@ -65,7 +65,7 @@ photovoltaic_power_density = 1.5   #1.1 0.59 0.89  # W/cm2
 
 u235_enrichment = 19.5 * enrichment_multiplicator
 gadolinium_oxide_in_fuel_proportion = 0.0005 * 0
-fuel_burnup = 180 * enrichment_multiplicator  # MWd/kgHM
+fuel_burnup = u235_enrichment * 12  # MWd/kgHM
 borated_moderator_ppm = 3000 * 0
 moderator_density = 1.016 * 1
 add_xe135 = False
@@ -75,23 +75,23 @@ add_xe135 = False
 # TODO: current bug with the implementation: in order to tally regions of the reactor properly,
 # we need to have a unique material for each cell.
 material_choice = MaterialChoice(
-    moderator="Borated Water Moderator",
+    moderator="Light Water",
     neutron_absorber="Boron Carbide",
     neutron_reflector="Graphite",
     bottom_reflector="Graphite",
-    rotary_axle="TZM",
-    fuel="Uranium Oxy-Carbide with Gadolinium Oxide",
-    moderator_cladding="Zirconium",
-    coolant_cladding="Stainless Steel",
+    rotary_axle="Graphite",
+    fuel="Uranium Dioxide",
+    moderator_cladding="Aluminum",
+    coolant_cladding="Aluminum",
     emitter="Graphite",
     fuel_cladding="Graphite",
     void="Void",
     photovoltaic="InGaAsP",
-    coolant="Borated Water",
-    shaft_shield_moderator="Borated Water", # low temperature
-    neutron_shield_moderator="Graphite", # high temperature
+    coolant="Light Water",
+    shaft_shield_moderator="Light Water", # low temperature
+    neutron_shield_moderator="Lithium Oxide", # high temperature
     shield_moderator_cladding="Graphite",
-    gamma_shield="Tungsten",
+    gamma_shield="Tungsten", # not used
     moduler_spacer="Graphite",
 )
 
