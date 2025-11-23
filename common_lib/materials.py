@@ -100,6 +100,8 @@ atoms: Dict[str, Atom] = {
     "Cl": Atom(name="Cl", atomic_weight=35.453),
     "Ar": Atom(name="Ar", atomic_weight=39.948),
     "Li": Atom(name="Li", atomic_weight=6.941),
+    "V": Atom(name="V", atomic_weight=50.9415),
+    "Ta": Atom(name="Ta", atomic_weight=180.94788),
 }
 
 
@@ -508,6 +510,23 @@ def make_materials(
             density=8.0,
             color="gray",
         ),
+        "EUROFER97": Material(
+            composition=[
+                AtomProportion(atom=atoms["Fe"], proportion=88.8298),
+                AtomProportion(atom=atoms["Cr"], proportion=9.3),
+                AtomProportion(atom=atoms["W"], proportion=1.0),
+                AtomProportion(atom=atoms["Mn"], proportion=0.40),
+                AtomProportion(atom=atoms["V"], proportion=0.22),
+                AtomProportion(atom=atoms["C"], proportion=0.11),
+                AtomProportion(atom=atoms["Ta"], proportion=0.086),
+                AtomProportion(atom=atoms["Si"], proportion=0.038),
+                AtomProportion(atom=atoms["N"], proportion=0.011),
+                AtomProportion(atom=atoms["P"], proportion=0.0023),
+                AtomProportion(atom=atoms["S"], proportion=0.0029),
+            ],
+            density=7.8,
+            color="gray",
+        ),
         "Lithium Oxide": Material(
             composition=[
                 AtomProportion(atom=atoms["Li"], proportion=2),
@@ -616,7 +635,7 @@ def make_materials(
         "Uranium Dioxide": Material(
             composition=enriched_uranium.composition
             + [AtomProportion(atom=atoms["O"], proportion=2)],
-            density=10.97,
+            density=10.97 * 0.95,
             color="green",
         ),
         "Concrete": Material(
