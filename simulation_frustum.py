@@ -12,7 +12,7 @@ from one_layer_disk_design.frustum_geometry_definition import make_simulation_ge
 
 ### Simulation parameters
 
-run_mode: RunMode = "keff_notallies"
+run_mode: RunMode = "keff"
 print_core_characteristics = True
 batches = 200  # 2500  # 1250
 weight_windows: UseWeightWindows = "no"
@@ -44,7 +44,7 @@ disk_geometry_params = make_disk_geometry_params(
         thickness_photovoltaic=thickness_photovoltaic,
         rotary_axle_thickness=5,
         reflector_thickness=10,
-        neutron_shield_moderator_thickness=100,  # 175
+        neutron_shield_moderator_thickness=50,  # 175
         neutron_shield_moderator_cladding_thickness=0.1,
         neutron_shield_absorber_thickness=10,
         gamma_shield_thickness=10,
@@ -89,9 +89,9 @@ material_choice = MaterialChoice(
     photovoltaic="InGaAsP",
     coolant="Light Water",
     shaft_shield_moderator="Light Water", # low temperature
-    neutron_shield_moderator="Lithium Oxide", # high temperature
-    shield_moderator_cladding="Graphite",
-    gamma_shield="Tungsten", # not used
+    neutron_shield_moderator="Light Water", # high temperature
+    shield_moderator_cladding="Aluminum",
+    gamma_shield="", # not used
     moduler_spacer="Graphite",
 )
 
