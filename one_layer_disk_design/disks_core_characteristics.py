@@ -33,6 +33,7 @@ def sanity_check_triso_fuel_volume(hm_volume: float, graphite_volume: float):
 class CoreCharacteristics(BaseModel):
     heavy_metal_mass: float
     fuel_emissive_area: float
+    fuel_thickness: float
     core_power: float
     core_power_electric: float
     cold_temp: float
@@ -114,6 +115,7 @@ def calculate_disk_core_characteristics(
     return CoreCharacteristics(
         heavy_metal_mass=heavy_metal_mass,
         fuel_emissive_area=fuel_emissive_area,
+        fuel_thickness=fuel_thickness,
         core_power=core_power,
         core_power_electric=core_power_electric,
         cold_temp=cold_temp,

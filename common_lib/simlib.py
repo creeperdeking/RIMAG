@@ -807,3 +807,4 @@ def print_core_characteristics(
     )
 
     print("fuel lifetime", core_characteristics.fuel_lifetime, "years")
+    print("fuel thickness", round(core_characteristics.fuel_thickness /10, 2), "mm")
