@@ -103,11 +103,6 @@ def make_simulation_geometry(
     mini_fuel_element = mirror_assembly(half_mini_fuel_element)
     intermediary_section_core = AssemblySections(
         parts=[
-            ### Moduler spacer
-            Assembly(
-                material=material_choice.moduler_spacer,
-                thickness=disk_geometry_params.additional_module_spacing / 2,
-            ),
             ### Moderator
             Assembly(
                 material=material_choice.moderator,

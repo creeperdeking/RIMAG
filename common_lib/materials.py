@@ -485,6 +485,14 @@ def make_materials(
             color="blue",
             scattering="c_H_in_H2O",
         ),
+        "Ammonia": Material(
+            composition=[
+                AtomProportion(atom=atoms["H"], proportion=3),
+                AtomProportion(atom=atoms["N"], proportion=1),
+            ],
+            density=0.771,
+            color="lightblue",
+        ),
         "Zirconium": Material(
             composition=[AtomProportion(atom=atoms["Zr"])],
             density=6.52,
