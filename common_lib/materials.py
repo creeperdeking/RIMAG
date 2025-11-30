@@ -102,6 +102,7 @@ atoms: Dict[str, Atom] = {
     "Li": Atom(name="Li", atomic_weight=6.941),
     "V": Atom(name="V", atomic_weight=50.9415),
     "Ta": Atom(name="Ta", atomic_weight=180.94788),
+    "F": Atom(name="F", atomic_weight=18.9984032),
 }
 
 
@@ -574,6 +575,27 @@ def make_materials(
             density=1.023,
             color="darkblue",
         ),
+        "Cooling Tower Water": Material(
+            composition=[
+                AtomProportion(atom=atoms["H"],  proportion=2000.0),
+                AtomProportion(atom=atoms["O"],  proportion=1000.87),
+
+                # Major cations from hardness / TDS
+                AtomProportion(atom=atoms["Na"], proportion=0.588),
+                AtomProportion(atom=atoms["Ca"], proportion=0.135),
+                AtomProportion(atom=atoms["Mg"], proportion=0.015),
+                AtomProportion(atom=atoms["K"],  proportion=0.005),
+
+                # Major anions & trace species
+                AtomProportion(atom=atoms["Cl"], proportion=0.407),
+                AtomProportion(atom=atoms["S"],  proportion=0.131),  # from SO4
+                AtomProportion(atom=atoms["C"],  proportion=0.118),  # from HCO3
+                AtomProportion(atom=atoms["Si"], proportion=0.024),  # from SiO2
+                AtomProportion(atom=atoms["F"],  proportion=0.005),
+            ],
+            density=1.002,
+            color="lightblue",
+        ),
         "TZM": Material(
             composition=[
                 AtomProportion(atom=atoms["Mo"], proportion=0.99),
@@ -614,7 +636,7 @@ def make_materials(
                 AtomProportion(atom=atoms["Ti"], proportion=1),
                 AtomProportion(atom=atoms["H"], proportion=2),
             ],
-            density=3.9,
+            density=3.9 * 0.9,
             color="gray",
         ),
         "Silicon": Material(
@@ -700,6 +722,12 @@ def make_materials(
         #     color="green",
         # ),
         "Graphite": graphite,
+        "Low Density Graphite": Material(
+            composition=[AtomProportion(atom=atoms["C"])],
+            density=2.26*0.1,
+            color="lightgray",
+            scattering="c_Graphite",
+        ),
         "Graphite NO Scattering": Material(
             composition=[AtomProportion(atom=atoms["C"])],
             density=2.26,

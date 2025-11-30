@@ -12,7 +12,7 @@ from one_layer_disk_design.frustum_geometry_definition import make_simulation_ge
 
 ### Simulation parameters
 
-run_mode: RunMode = "keff_notallies"
+run_mode: RunMode = "keff"
 print_core_characteristics = True
 batches = 200  # 2500  # 1250
 weight_windows: UseWeightWindows = "no"
@@ -26,15 +26,16 @@ emitter_gamma_rate_per_cm3 = 3.35e6  # photons/cm3/s
 
 ### Geometry parameters
 
-enrichment_multiplicator = 1/6
+reload_fraction = 1/4
+enrichment_multiplicator = 1/5
 
 fuel_thickness = 0.012 / enrichment_multiplicator
 total_fuel_thickness = 1
 thickness_photovoltaic = 0.02
 disk_geometry_params = make_disk_geometry_params(
     DiskGeometryParams(
-        core_diameter=130,
-        moderator_cladding_thickness=0.2,
+        core_diameter=140,
+        moderator_cladding_thickness=0.3,
         shield_moderator_cladding_thickness=0.05,
         fuel_thickness=fuel_thickness,
         fuel_cladding_thickness=(total_fuel_thickness - fuel_thickness) / 2,
@@ -43,8 +44,8 @@ disk_geometry_params = make_disk_geometry_params(
         emitter_thickness=0.2,
         thickness_photovoltaic=thickness_photovoltaic,
         rotary_axle_thickness=5,
-        reflector_thickness=10,
-        neutron_shield_moderator_thickness=130,  # 175
+        reflector_thickness=20,
+        neutron_shield_moderator_thickness=110,  # 175
         neutron_shield_moderator_cladding_thickness=0.1,
         neutron_shield_absorber_thickness=10,
         gamma_shield_thickness=10,
@@ -62,9 +63,11 @@ photovoltaic_power_density = 1.5   #1.1 0.59 0.89  # W/cm2
 
 ### Nuclear parameters
 
-u235_enrichment = 19.5 * enrichment_multiplicator
+equivalent_enrichment = (reload_fraction**2)*(1/reload_fraction)*(1/reload_fraction+1)/2
+u235_fresh_enrichment = 19.5 * enrichment_multiplicator
+u235_enrichment = u235_fresh_enrichment * equivalent_enrichment
 gadolinium_oxide_in_fuel_proportion = 0.0005 * 0
-fuel_burnup = u235_enrichment * 12  # MWd/kgHM
+fuel_burnup = u235_fresh_enrichment * 12  # MWd/kgHM
 borated_moderator_ppm = 3000 * 0
 moderator_density = 1.016 * 1
 add_xe135 = False
@@ -80,15 +83,15 @@ material_choice = MaterialChoice(
     bottom_reflector="Graphite",
     rotary_axle="Graphite",
     fuel="Uranium Dioxide",
-    moderator_cladding="Aluminum",
+    moderator_cladding="Zirconium",
     coolant_cladding="Aluminum",
     emitter="Graphite",
-    fuel_cladding="Graphite",
+    fuel_cladding="Low Density Graphite",
     void="Void",
     photovoltaic="InGaAsP",
     coolant="Light Water",
-    shaft_shield_moderator="Light Water", # low temperature
-    neutron_shield_moderator="Light Water", # high temperature
+    shaft_shield_moderator="Titanium Hydride", # low temperature
+    neutron_shield_moderator="Titanium Hydride", # high temperature
     shield_moderator_cladding="Aluminum",
     gamma_shield="", # not used
     moduler_spacer="Graphite",
