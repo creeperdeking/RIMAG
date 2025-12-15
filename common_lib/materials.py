@@ -50,6 +50,7 @@ class MaterialChoice(BaseModel):
     emitter: str
     fuel_cladding: str
     void: str
+    outer_empty_zone: str
     photovoltaic: str
     coolant: str
     gamma_shield: str
@@ -460,7 +461,7 @@ def make_materials(
             AtomProportion(atom=atoms["C"], proportion=2),
             AtomProportion(atom=atoms["H"], proportion=4),
         ],
-        density=0.96,
+        density=0.96 * 0.95, # the lower density is to account for the presence of structural elements, heat pipes, etc.
         color="lightgray",
     )
 
@@ -541,8 +542,16 @@ def make_materials(
                 AtomProportion(atom=atoms["Li"], proportion=2),
                 AtomProportion(atom=atoms["O"], proportion=1),
             ],
-            density=2.01,
+            density=1.78,
             color="lightblue",
+        ),
+        "Molten Lithium Fluoride": Material(
+            composition=[
+                AtomProportion(atom=atoms["Li"], proportion=1),
+                AtomProportion(atom=atoms["F"], proportion=1),
+            ],
+            density=1.69,
+            color="yellow",
         ),
         "Beryllium Oxide": Material(
             composition=[
@@ -636,7 +645,7 @@ def make_materials(
                 AtomProportion(atom=atoms["Ti"], proportion=1),
                 AtomProportion(atom=atoms["H"], proportion=2),
             ],
-            density=3.9 * 0.85, # the lower density is to account for the presence of structural elements, heat pipes, etc.
+            density=3.9 * 0.92, # the lower density is to account for the presence of structural elements, heat pipes, etc.
             color="gray",
         ),
         "Silicon": Material(
