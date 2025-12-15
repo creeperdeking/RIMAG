@@ -35,7 +35,7 @@ thickness_photovoltaic = 0.02
 disk_geometry_params = make_disk_geometry_params(
     DiskGeometryParams(
         core_diameter=140,
-        moderator_cladding_thickness=0.3,
+        moderator_cladding_thickness=0.4,
         shield_moderator_cladding_thickness=0.05,
         fuel_thickness=fuel_thickness,
         fuel_cladding_thickness=(total_fuel_thickness - fuel_thickness) / 2,
@@ -45,12 +45,12 @@ disk_geometry_params = make_disk_geometry_params(
         thickness_photovoltaic=thickness_photovoltaic,
         rotary_axle_thickness=5,
         reflector_thickness=20,
-        neutron_shield_moderator_thickness=110,  # 175
+        neutron_shield_moderator_thickness=175,  # 175
         neutron_shield_moderator_cladding_thickness=0.1,
         neutron_shield_absorber_thickness=10,
         gamma_shield_thickness=10,
         frustum_pitch=5,
-        number_of_reactor_columns=3,
+        number_of_reactor_columns=1,
     )
 )
 
@@ -88,10 +88,11 @@ material_choice = MaterialChoice(
     emitter="Graphite",
     fuel_cladding="Low Density Graphite",
     void="Void",
+    outer_empty_zone="Void",
     photovoltaic="InGaAsP",
     coolant="Light Water",
-    shaft_shield_moderator="Titanium Hydride", # low temperature
-    neutron_shield_moderator="Titanium Hydride", # high temperature
+    shaft_shield_moderator="Light Water", # low temperature
+    neutron_shield_moderator="Lithium Oxide", # high temperature
     shield_moderator_cladding="Aluminum",
     gamma_shield="", # not used
     moduler_spacer="Graphite",
