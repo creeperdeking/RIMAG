@@ -27,7 +27,7 @@ emitter_gamma_rate_per_cm3 = 3.35e6  # photons/cm3/s
 ### Geometry parameters
 
 reload_fraction = 1/4
-enrichment_multiplicator = 1/5
+enrichment_multiplicator = 1/4
 
 fuel_thickness = 0.012 / enrichment_multiplicator
 total_fuel_thickness = 1
@@ -50,7 +50,7 @@ disk_geometry_params = make_disk_geometry_params(
         neutron_shield_absorber_thickness=10,
         gamma_shield_thickness=10,
         frustum_pitch=5,
-        number_of_reactor_columns=1,
+        number_of_reactor_columns=3,
     )
 )
 
