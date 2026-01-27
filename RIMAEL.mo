@@ -26,26 +26,31 @@ package RIMAEL
       Diagram(coordinateSystem(extent = {{-100, -100}, {100, 100}})));
   end FracRadiation;
 
-  model Reactor
-    inner parameter Real rotRPS_common = 1 "rev/s";
-    inner parameter Real Gr_fuel = 0.822;
-    inner parameter Real Gr_shield = 0.0;
-    inner parameter Real Gr_tpv = 0.12;
-    inner parameter Real P0 = 312785 "Original stationary power (W)";
-    inner parameter Real tShutdown = 700 "s";
-    inner parameter Real eps = 1e-6 "Avoid singularity at tau=0 (hours)";
-    Modelica.Thermal.HeatTransfer.Components.HeatCapacitor FuelPlate(C = 24328) annotation(
-      Placement(transformation(origin = {0, 46}, extent = {{-14, -14}, {14, 14}})));
-    Modelica.Thermal.HeatTransfer.Sources.FixedTemperature fixedTemperature(T = 333.15) annotation(
-      Placement(transformation(origin = {2, -38}, extent = {{-10, -10}, {10, 10}})));
-    Modelica.Thermal.HeatTransfer.Components.HeatCapacitor ShieldPlate1(C = 41009) annotation(
-      Placement(transformation(origin = {-1, 1}, extent = {{-14, -14}, {14, 14}})));
-    Modelica.Thermal.HeatTransfer.Components.HeatCapacitor ShieldPlate2(C = 41009) annotation(
-      Placement(transformation(origin = {76, -27}, extent = {{-14, -14}, {14, 14}})));
+model Reactor
+  
+  inner parameter Real Gr_fuel = 0.822;
+  inner parameter Real Gr_shield = 0.0;
+  inner parameter Real Gr_tpv = 0.12;
+  inner parameter Real P0 = 312785 "Original stationary power (W)";
+  inner parameter Real tShutdown = 700 "s";
+  inner parameter Real eps = 1e-6 "Avoid singularity at tau=0 (hours)";
+  replaceable package Medium = Modelica.Media.Air.DryAirNasa;
+  
+  inner Real rotRPS_common "rev/s";
+  
+  
+  Modelica.Thermal.HeatTransfer.Components.HeatCapacitor FuelPlate(C = 24328) annotation(
+    Placement(transformation(origin = {0, 46}, extent = {{-14, -14}, {14, 14}})));
+  Modelica.Thermal.HeatTransfer.Sources.FixedTemperature fixedTemperature(T = 333.15) annotation(
+    Placement(transformation(origin = {2, -38}, extent = {{-10, -10}, {10, 10}})));
+  Modelica.Thermal.HeatTransfer.Components.HeatCapacitor ShieldPlate1(C = 41009) annotation(
+    Placement(transformation(origin = {-1, 1}, extent = {{-14, -14}, {14, 14}})));
+  Modelica.Thermal.HeatTransfer.Components.HeatCapacitor ShieldPlate2(C = 41009) annotation(
+    Placement(transformation(origin = {76, -27}, extent = {{-14, -14}, {14, 14}})));
   Disk disk(heat_capacity_section = 7240)  annotation(
       Placement(transformation(origin = {60, 14}, extent = {{-10, -10}, {10, 10}})));
   Modelica.Thermal.HeatTransfer.Sources.PrescribedHeatFlow prescribedHeatFlow annotation(
-      Placement(transformation(origin = {-62, -16}, extent = {{-10, -10}, {10, 10}})));
+      Placement(transformation(origin = {-64, 32}, extent = {{-10, -10}, {10, 10}})));
   Modelica.Blocks.Sources.RealExpression Qexpr(
       y =
         if time < tShutdown then
@@ -56,8 +61,17 @@ package RIMAEL
           - (7200 + max((time - tShutdown)/3600, eps))^(-0.2)
           )
   ) annotation(
-      Placement(transformation(origin = {-114, 18}, extent = {{-10, -10}, {10, 10}})));
-  equation
+      Placement(transformation(origin = {-102, 32}, extent = {{-10, -10}, {10, 10}})));
+  Modelica.Blocks.Sources.RealExpression rotationSpeed(
+    y = if time < tShutdown then 1 else 0) annotation(
+  
+  
+    Placement(transformation(origin = {-104, 8}, extent = {{-10, -10}, {10, 10}})));
+  GapAtmosphere AtmosphereFuelDisk(tSwitch = tShutdown) annotation(
+      Placement(transformation(origin = {70, 54}, extent = {{-10, -10}, {10, 10}})));
+
+equation
+    rotRPS_common = rotationSpeed.y;
     connect(FuelPlate.port, disk.fuel_port1) annotation(
       Line(points = {{0, 32}, {0, 20}, {50, 20}}, color = {191, 0, 0}));
     connect(ShieldPlate1.port, disk.shield1_port1) annotation(
@@ -75,13 +89,15 @@ package RIMAEL
     connect(FuelPlate.port, disk.fuel_port2) annotation(
       Line(points = {{0, 32}, {70, 32}, {70, 20}}, color = {191, 0, 0}));
     connect(prescribedHeatFlow.port, FuelPlate.port) annotation(
-      Line(points = {{-52, -16}, {-46, -16}, {-46, 32}, {0, 32}}, color = {191, 0, 0}));
+      Line(points = {{-54, 32}, {0, 32}}, color = {191, 0, 0}));
     connect(Qexpr.y, prescribedHeatFlow.Q_flow) annotation(
-      Line(points = {{-102, 18}, {-94, 18}, {-94, -16}, {-72, -16}}, color = {0, 0, 127}));
+      Line(points = {{-91, 32}, {-74, 32}}, color = {0, 0, 127}));
+  connect(FuelPlate.port, AtmosphereFuelDisk.port_a) annotation(
+      Line(points = {{0, 32}, {36, 32}, {36, 54}, {60, 54}}, color = {191, 0, 0}));
     annotation(
-      Diagram(coordinateSystem(extent = {{-80, 40}, {140, -40}})),
-      experiment(StartTime = 0, StopTime = 750, Tolerance = 1e-06, Interval = 0.2));
-  end Reactor;
+    Diagram(coordinateSystem(extent = {{-120, 100}, {180, -60}})),
+    experiment(StartTime = 0, StopTime = 1400, Tolerance = 1e-06, Interval = 0.2));
+end Reactor;
 
   /* --- block: overlap fraction of the MOBILE segment --------------------- */
   /* --- Block: overlap fraction using degrees ------------------------------ */
@@ -96,7 +112,7 @@ package RIMAEL
     parameter Real ms1a_deg = 30 "Mobile segment start (deg)";
     parameter Real ms1b_deg = 150 "Mobile segment end   (deg)";
     // Mobile rotation speed (rotations per second; can be negative)
-    parameter Real rotRPS = 0.1 "Mobile rotation speed (rev/s)";
+    input Real rotRPS = 0.1 "Mobile rotation speed (rev/s)";
     // Outputs
     Modelica.Blocks.Interfaces.RealOutput frac "Overlap as a fraction of the MOBILE segment length (0..1)" annotation(
       Placement(transformation(extent = {{90, -10}, {110, 10}}), iconTransformation(extent = {{90, -10}, {110, 10}})));
@@ -220,7 +236,7 @@ package RIMAEL
     parameter Integer Ls1(min = 1) = 2 "Static segment length in sections (0..N)";
     parameter Integer sM(min = 1) = 2 "Mobile segment start section index (1..N)";
     parameter Integer Lm(min = 1) = 3 "Mobile segment length in sections (0..N)";
-    parameter Real rotRPS = 0.10 "Mobile rotation speed (rev/s; can be negative)";
+    input Real rotRPS = 0.10 "Mobile rotation speed (rev/s; can be negative)";
     // --- Outputs ---
     Modelica.Blocks.Interfaces.RealOutput frac "Overlap as a fraction of the MOBILE segment length (0..1)" annotation(
       Placement(transformation(extent = {{90, -10}, {110, 10}}), iconTransformation(extent = {{90, -10}, {110, 10}})));
@@ -240,7 +256,7 @@ package RIMAEL
       Placement(transformation(origin = {-16, -8}, extent = {{-36, -18}, {36, 18}})));
   equation
     connect(ovl.frac, frac);
-// Basic range checks (evaluated at runtime)
+  // Basic range checks (evaluated at runtime)
     assert(sS1 >= 1 and sS1 <= N, "sS1 out of range 1..N");
     assert(sM >= 1 and sM <= N, "sM out of range 1..N");
     assert(Ls1 >= 1 and Ls1 <= N, "Ls1 must be 0..N");
@@ -390,255 +406,433 @@ package RIMAEL
       Diagram(coordinateSystem(extent = {{-120, 160}, {120, -100}}), graphics = {Text(origin = {4, 56}, extent = {{-98, 84}, {98, 98}}, textString = "Two sided disk section")}));
   end TwoFaceDiskSection;
 
-  model Disk
-    import Modelica.Units.SI;
-    // Parameters
-    parameter SI.HeatCapacity heat_capacity_section = 6758 "Heat capacity (J/K)";
-    parameter SI.Temperature T_start = 293.15 "Start temperature";
-    // External port (environment side) + fraction input
-    // Internals
-    Modelica.Thermal.HeatTransfer.Interfaces.HeatPort_a fuel_port1 annotation(
-      Placement(transformation(origin = {-120, 118}, extent = {{-10, -10}, {10, 10}}), iconTransformation(origin = {-100, 52}, extent = {{-10, -10}, {10, 10}})));
-    Modelica.Thermal.HeatTransfer.Interfaces.HeatPort_a shield1_port1 annotation(
-      Placement(transformation(origin = {-120, 100}, extent = {{-10, -10}, {10, 10}}), iconTransformation(origin = {-100, 24}, extent = {{-10, -10}, {10, 10}})));
-    Modelica.Thermal.HeatTransfer.Interfaces.HeatPort_a TPV_port1 annotation(
-      Placement(transformation(origin = {-120, 82}, extent = {{-10, -10}, {10, 10}}), iconTransformation(origin = {-100, -6}, extent = {{-10, -10}, {10, 10}})));
-    Modelica.Thermal.HeatTransfer.Interfaces.HeatPort_a shield2_port1 annotation(
-      Placement(transformation(origin = {-120, 64}, extent = {{-10, -10}, {10, 10}}), iconTransformation(origin = {-100, -36}, extent = {{-10, -10}, {10, 10}})));
-    Modelica.Thermal.HeatTransfer.Interfaces.HeatPort_b fuel_port2 annotation(
-      Placement(transformation(origin = {120, 120}, extent = {{-10, -10}, {10, 10}}), iconTransformation(origin = {100, 52}, extent = {{-10, -10}, {10, 10}})));
-    Modelica.Thermal.HeatTransfer.Interfaces.HeatPort_b shield1_port2 annotation(
-      Placement(transformation(origin = {120, 102}, extent = {{-10, -10}, {10, 10}}), iconTransformation(origin = {100, 24}, extent = {{-10, -10}, {10, 10}})));
-    Modelica.Thermal.HeatTransfer.Interfaces.HeatPort_b TPV_port2 annotation(
-      Placement(transformation(origin = {120, 84}, extent = {{-10, -10}, {10, 10}}), iconTransformation(origin = {100, -6}, extent = {{-10, -10}, {10, 10}})));
-    Modelica.Thermal.HeatTransfer.Interfaces.HeatPort_b shield2_port2 annotation(
-      Placement(transformation(origin = {120, 66}, extent = {{-10, -10}, {10, 10}}), iconTransformation(origin = {100, -36}, extent = {{-10, -10}, {10, 10}})));
-    TwoFaceDiskSection twoFaceDiskSection1(C = heat_capacity_section, T_start = T_start, section_num = 1)  annotation(
-      Placement(transformation(origin = {-8, 106}, extent = {{-24, -24}, {24, 24}})));
-  TwoFaceDiskSection twoFaceDiskSection2(C = heat_capacity_section, T_start = T_start, section_num = 2)  annotation(
-      Placement(transformation(origin = {-8, 72}, extent = {{-24, -24}, {24, 24}})));
-  TwoFaceDiskSection twoFaceDiskSection3(C = heat_capacity_section, T_start = T_start, section_num = 3)  annotation(
-      Placement(transformation(origin = {-8, 38}, extent = {{-24, -24}, {24, 24}})));
-  TwoFaceDiskSection twoFaceDiskSection4(C = heat_capacity_section, T_start = T_start, section_num = 4)  annotation(
-      Placement(transformation(origin = {-8, 2}, extent = {{-24, -24}, {24, 24}})));
-  TwoFaceDiskSection twoFaceDiskSection5(C = heat_capacity_section, T_start = T_start, section_num = 5)  annotation(
-      Placement(transformation(origin = {-8, -34}, extent = {{-24, -24}, {24, 24}})));
-  TwoFaceDiskSection twoFaceDiskSection6(C = heat_capacity_section, T_start = T_start, section_num = 6)  annotation(
-      Placement(transformation(origin = {-8, -70}, extent = {{-24, -24}, {24, 24}})));
-  TwoFaceDiskSection twoFaceDiskSection7(C = heat_capacity_section, T_start = T_start, section_num = 7)  annotation(
-      Placement(transformation(origin = {-8, -106}, extent = {{-24, -24}, {24, 24}})));
-  TwoFaceDiskSection twoFaceDiskSection8(C = heat_capacity_section, T_start = T_start, section_num = 8)  annotation(
-      Placement(transformation(origin = {-8, -146}, extent = {{-24, -24}, {24, 24}})));
-  TwoFaceDiskSection twoFaceDiskSection9(C = heat_capacity_section, T_start = T_start, section_num = 9)  annotation(
-      Placement(transformation(origin = {-8, -186}, extent = {{-24, -24}, {24, 24}})));
-  TwoFaceDiskSection twoFaceDiskSection10(C = heat_capacity_section, T_start = T_start, section_num = 10)  annotation(
-      Placement(transformation(origin = {-8, -224}, extent = {{-24, -24}, {24, 24}})));
-  TwoFaceDiskSection twoFaceDiskSection11(C = heat_capacity_section, T_start = T_start, section_num = 11)  annotation(
-      Placement(transformation(origin = {-8, -260}, extent = {{-24, -24}, {24, 24}})));
-  TwoFaceDiskSection twoFaceDiskSection12(C = heat_capacity_section, T_start = T_start, section_num = 12)  annotation(
-      Placement(transformation(origin = {-8, -300}, extent = {{-24, -24}, {24, 24}})));
-  Modelica.Thermal.HeatTransfer.Sensors.TemperatureSensor temperatureSensor annotation(
-      Placement(transformation(origin = {103, -19}, extent = {{-29, -29}, {29, 29}})));
-  equation
+model Disk
+  import Modelica.Units.SI;
+  // Parameters
+  parameter SI.HeatCapacity heat_capacity_section = 6758 "Heat capacity (J/K)";
+  parameter SI.Temperature T_start = 293.15 "Start temperature";
+  // External port (environment side) + fraction input
+  // Internals
+  Modelica.Thermal.HeatTransfer.Interfaces.HeatPort_a fuel_port1 annotation(
+    Placement(transformation(origin = {-120, 118}, extent = {{-10, -10}, {10, 10}}), iconTransformation(origin = {-100, 52}, extent = {{-10, -10}, {10, 10}})));
+  Modelica.Thermal.HeatTransfer.Interfaces.HeatPort_a shield1_port1 annotation(
+    Placement(transformation(origin = {-120, 100}, extent = {{-10, -10}, {10, 10}}), iconTransformation(origin = {-100, 24}, extent = {{-10, -10}, {10, 10}})));
+  Modelica.Thermal.HeatTransfer.Interfaces.HeatPort_a TPV_port1 annotation(
+    Placement(transformation(origin = {-120, 82}, extent = {{-10, -10}, {10, 10}}), iconTransformation(origin = {-100, -6}, extent = {{-10, -10}, {10, 10}})));
+  Modelica.Thermal.HeatTransfer.Interfaces.HeatPort_a shield2_port1 annotation(
+    Placement(transformation(origin = {-120, 64}, extent = {{-10, -10}, {10, 10}}), iconTransformation(origin = {-100, -36}, extent = {{-10, -10}, {10, 10}})));
+  Modelica.Thermal.HeatTransfer.Interfaces.HeatPort_b fuel_port2 annotation(
+    Placement(transformation(origin = {120, 218}, extent = {{-10, -10}, {10, 10}}), iconTransformation(origin = {100, 52}, extent = {{-10, -10}, {10, 10}})));
+  Modelica.Thermal.HeatTransfer.Interfaces.HeatPort_b shield1_port2 annotation(
+    Placement(transformation(origin = {120, 200}, extent = {{-10, -10}, {10, 10}}), iconTransformation(origin = {100, 24}, extent = {{-10, -10}, {10, 10}})));
+  Modelica.Thermal.HeatTransfer.Interfaces.HeatPort_b TPV_port2 annotation(
+    Placement(transformation(origin = {120, 182}, extent = {{-10, -10}, {10, 10}}), iconTransformation(origin = {100, -6}, extent = {{-10, -10}, {10, 10}})));
+  Modelica.Thermal.HeatTransfer.Interfaces.HeatPort_b shield2_port2 annotation(
+    Placement(transformation(origin = {120, 164}, extent = {{-10, -10}, {10, 10}}), iconTransformation(origin = {100, -36}, extent = {{-10, -10}, {10, 10}})));
+  TwoFaceDiskSection twoFaceDiskSection1(C = heat_capacity_section, T_start = T_start, section_num = 1)  annotation(
+    Placement(transformation(origin = {-8, 106}, extent = {{-24, -24}, {24, 24}})));
+TwoFaceDiskSection twoFaceDiskSection2(C = heat_capacity_section, T_start = T_start, section_num = 2)  annotation(
+    Placement(transformation(origin = {-8, 72}, extent = {{-24, -24}, {24, 24}})));
+TwoFaceDiskSection twoFaceDiskSection3(C = heat_capacity_section, T_start = T_start, section_num = 3)  annotation(
+    Placement(transformation(origin = {-8, 38}, extent = {{-24, -24}, {24, 24}})));
+TwoFaceDiskSection twoFaceDiskSection4(C = heat_capacity_section, T_start = T_start, section_num = 4)  annotation(
+    Placement(transformation(origin = {-8, 2}, extent = {{-24, -24}, {24, 24}})));
+TwoFaceDiskSection twoFaceDiskSection5(C = heat_capacity_section, T_start = T_start, section_num = 5)  annotation(
+    Placement(transformation(origin = {-8, -34}, extent = {{-24, -24}, {24, 24}})));
+TwoFaceDiskSection twoFaceDiskSection6(C = heat_capacity_section, T_start = T_start, section_num = 6)  annotation(
+    Placement(transformation(origin = {-8, -70}, extent = {{-24, -24}, {24, 24}})));
+TwoFaceDiskSection twoFaceDiskSection7(C = heat_capacity_section, T_start = T_start, section_num = 7)  annotation(
+    Placement(transformation(origin = {-8, -106}, extent = {{-24, -24}, {24, 24}})));
+TwoFaceDiskSection twoFaceDiskSection8(C = heat_capacity_section, T_start = T_start, section_num = 8)  annotation(
+    Placement(transformation(origin = {-8, -146}, extent = {{-24, -24}, {24, 24}})));
+TwoFaceDiskSection twoFaceDiskSection9(C = heat_capacity_section, T_start = T_start, section_num = 9)  annotation(
+    Placement(transformation(origin = {-8, -186}, extent = {{-24, -24}, {24, 24}})));
+TwoFaceDiskSection twoFaceDiskSection10(C = heat_capacity_section, T_start = T_start, section_num = 10)  annotation(
+    Placement(transformation(origin = {-8, -224}, extent = {{-24, -24}, {24, 24}})));
+TwoFaceDiskSection twoFaceDiskSection11(C = heat_capacity_section, T_start = T_start, section_num = 11)  annotation(
+    Placement(transformation(origin = {-8, -260}, extent = {{-24, -24}, {24, 24}})));
+TwoFaceDiskSection twoFaceDiskSection12(C = heat_capacity_section, T_start = T_start, section_num = 12)  annotation(
+    Placement(transformation(origin = {-8, -300}, extent = {{-24, -24}, {24, 24}})));
+Modelica.Thermal.HeatTransfer.Sensors.TemperatureSensor tSens1 annotation(
+    Placement(transformation(origin = {78, 88}, extent = {{-14, -14}, {14, 14}})));
+Modelica.Thermal.HeatTransfer.Sensors.TemperatureSensor tSens2 annotation(
+    Placement(transformation(origin = {78, 54}, extent = {{-14, -14}, {14, 14}})));
+Modelica.Thermal.HeatTransfer.Sensors.TemperatureSensor tSens3 annotation(
+    Placement(transformation(origin = {78, 20}, extent = {{-14, -14}, {14, 14}})));
+Modelica.Thermal.HeatTransfer.Sensors.TemperatureSensor tSens4 annotation(
+    Placement(transformation(origin = {78, -14}, extent = {{-14, -14}, {14, 14}})));
+Modelica.Thermal.HeatTransfer.Sensors.TemperatureSensor tSens5 annotation(
+    Placement(transformation(origin = {78, -52}, extent = {{-14, -14}, {14, 14}})));
+Modelica.Thermal.HeatTransfer.Sensors.TemperatureSensor tSens6 annotation(
+    Placement(transformation(origin = {78, -88}, extent = {{-14, -14}, {14, 14}})));    
+Modelica.Thermal.HeatTransfer.Sensors.TemperatureSensor tSens7 annotation(
+    Placement(transformation(origin = {78, -124}, extent = {{-14, -14}, {14, 14}})));
+Modelica.Thermal.HeatTransfer.Sensors.TemperatureSensor tSens8 annotation(
+    Placement(transformation(origin = {78, -164}, extent = {{-14, -14}, {14, 14}})));
+Modelica.Thermal.HeatTransfer.Sensors.TemperatureSensor tSens9 annotation(
+    Placement(transformation(origin = {78, -204}, extent = {{-14, -14}, {14, 14}})));
+Modelica.Thermal.HeatTransfer.Sensors.TemperatureSensor tSens10 annotation(
+    Placement(transformation(origin = {78, -240}, extent = {{-14, -14}, {14, 14}})));
+Modelica.Thermal.HeatTransfer.Sensors.TemperatureSensor tSens11 annotation(
+    Placement(transformation(origin = {78, -278}, extent = {{-14, -14}, {14, 14}})));
+Modelica.Thermal.HeatTransfer.Sensors.TemperatureSensor tSens12 annotation(
+    Placement(transformation(origin = {78, -318}, extent = {{-14, -14}, {14, 14}})));       
+equation
 // EXACTLY ONE thermal path: p --(port_a)-> rad --(port_b)-> cap
-    connect(fuel_port1, twoFaceDiskSection1.fuel_port1) annotation(
-      Line(points = {{-120, 118}, {-32, 118}, {-32, 119}}, color = {191, 0, 0}));
-  connect(shield1_port1, twoFaceDiskSection1.shield1_port1) annotation(
-      Line(points = {{-120, 100}, {-44, 100}, {-44, 112}, {-32, 112}}, color = {191, 0, 0}));
-  connect(TPV_port1, twoFaceDiskSection1.TPV_port1) annotation(
-      Line(points = {{-120, 82}, {-48, 82}, {-48, 105}, {-32, 105}}, color = {191, 0, 0}));
-  connect(shield2_port1, twoFaceDiskSection1.shield2_port1) annotation(
-      Line(points = {{-120, 64}, {-52, 64}, {-52, 97}, {-32, 97}}, color = {191, 0, 0}));
-  connect(fuel_port1, twoFaceDiskSection2.fuel_port1) annotation(
-      Line(points = {{-120, 118}, {-40, 118}, {-40, 85}, {-32, 85}}, color = {191, 0, 0}));
-  connect(shield1_port1, twoFaceDiskSection2.shield1_port1) annotation(
-      Line(points = {{-120, 100}, {-44, 100}, {-44, 78}, {-32, 78}}, color = {191, 0, 0}));
-  connect(TPV_port1, twoFaceDiskSection2.TPV_port1) annotation(
-      Line(points = {{-120, 82}, {-48, 82}, {-48, 71}, {-32, 71}}, color = {191, 0, 0}));
-  connect(fuel_port1, twoFaceDiskSection3.fuel_port1) annotation(
-      Line(points = {{-120, 118}, {-40, 118}, {-40, 51}, {-32, 51}}, color = {191, 0, 0}));
-  connect(shield1_port1, twoFaceDiskSection3.shield1_port1) annotation(
-      Line(points = {{-120, 100}, {-44, 100}, {-44, 44}, {-32, 44}}, color = {191, 0, 0}));
-  connect(TPV_port1, twoFaceDiskSection3.TPV_port1) annotation(
-      Line(points = {{-120, 82}, {-48, 82}, {-48, 37}, {-32, 37}}, color = {191, 0, 0}));
-  connect(fuel_port1, twoFaceDiskSection4.fuel_port1) annotation(
-      Line(points = {{-120, 118}, {-40, 118}, {-40, 15}, {-32, 15}}, color = {191, 0, 0}));
-  connect(shield1_port1, twoFaceDiskSection4.shield1_port1) annotation(
-      Line(points = {{-120, 100}, {-44, 100}, {-44, 8}, {-32, 8}}, color = {191, 0, 0}));
-  connect(TPV_port1, twoFaceDiskSection4.TPV_port1) annotation(
-      Line(points = {{-120, 82}, {-48, 82}, {-48, 1}, {-32, 1}}, color = {191, 0, 0}));
-  connect(shield2_port1, twoFaceDiskSection4.shield2_port1) annotation(
-      Line(points = {{-120, 64}, {-52, 64}, {-52, -7}, {-32, -7}}, color = {191, 0, 0}));
-  connect(fuel_port1, twoFaceDiskSection5.fuel_port1) annotation(
-      Line(points = {{-120, 118}, {-40, 118}, {-40, -21}, {-32, -21}}, color = {191, 0, 0}));
-  connect(shield1_port1, twoFaceDiskSection5.shield1_port1) annotation(
-      Line(points = {{-120, 100}, {-44, 100}, {-44, -28}, {-32, -28}}, color = {191, 0, 0}));
-  connect(shield2_port1, twoFaceDiskSection3.shield2_port1) annotation(
-      Line(points = {{-120, 64}, {-52, 64}, {-52, 30}, {-32, 30}}, color = {191, 0, 0}));
-  connect(shield2_port1, twoFaceDiskSection2.shield2_port1) annotation(
-      Line(points = {{-120, 64}, {-32, 64}}, color = {191, 0, 0}));
-  connect(TPV_port1, twoFaceDiskSection5.TPV_port1) annotation(
-      Line(points = {{-120, 82}, {-48, 82}, {-48, -34}, {-32, -34}}, color = {191, 0, 0}));
-  connect(shield2_port1, twoFaceDiskSection5.shield2_port1) annotation(
-      Line(points = {{-120, 64}, {-52, 64}, {-52, -42}, {-32, -42}}, color = {191, 0, 0}));
-  connect(fuel_port1, twoFaceDiskSection6.fuel_port1) annotation(
-      Line(points = {{-120, 118}, {-40, 118}, {-40, -56}, {-32, -56}}, color = {191, 0, 0}));
-  connect(shield1_port1, twoFaceDiskSection6.shield1_port1) annotation(
-      Line(points = {{-120, 100}, {-44, 100}, {-44, -64}, {-32, -64}}, color = {191, 0, 0}));
-  connect(TPV_port1, twoFaceDiskSection6.TPV_port1) annotation(
-      Line(points = {{-120, 82}, {-48, 82}, {-48, -70}, {-32, -70}}, color = {191, 0, 0}));
-  connect(shield2_port1, twoFaceDiskSection6.shield2_port1) annotation(
-      Line(points = {{-120, 64}, {-52, 64}, {-52, -78}, {-32, -78}}, color = {191, 0, 0}));
-  connect(fuel_port1, twoFaceDiskSection7.fuel_port1) annotation(
-      Line(points = {{-120, 118}, {-40, 118}, {-40, -92}, {-32, -92}}, color = {191, 0, 0}));
-  connect(shield1_port1, twoFaceDiskSection7.shield1_port1) annotation(
-      Line(points = {{-120, 100}, {-44, 100}, {-44, -100}, {-32, -100}}, color = {191, 0, 0}));
-  connect(TPV_port1, twoFaceDiskSection7.TPV_port1) annotation(
-      Line(points = {{-120, 82}, {-48, 82}, {-48, -106}, {-32, -106}}, color = {191, 0, 0}));
-  connect(shield2_port1, twoFaceDiskSection7.shield2_port1) annotation(
-      Line(points = {{-120, 64}, {-52, 64}, {-52, -114}, {-32, -114}}, color = {191, 0, 0}));
-  connect(fuel_port1, twoFaceDiskSection8.fuel_port1) annotation(
-      Line(points = {{-120, 118}, {-40, 118}, {-40, -132}, {-32, -132}}, color = {191, 0, 0}));
-  connect(shield1_port1, twoFaceDiskSection8.shield1_port1) annotation(
-      Line(points = {{-120, 100}, {-44, 100}, {-44, -140}, {-32, -140}}, color = {191, 0, 0}));
-  connect(TPV_port1, twoFaceDiskSection8.TPV_port1) annotation(
-      Line(points = {{-120, 82}, {-48, 82}, {-48, -146}, {-32, -146}}, color = {191, 0, 0}));
-  connect(shield2_port1, twoFaceDiskSection8.shield2_port1) annotation(
-      Line(points = {{-120, 64}, {-52, 64}, {-52, -154}, {-32, -154}}, color = {191, 0, 0}));
-  connect(fuel_port1, twoFaceDiskSection9.fuel_port1) annotation(
-      Line(points = {{-120, 118}, {-40, 118}, {-40, -172}, {-32, -172}}, color = {191, 0, 0}));
-  connect(shield1_port1, twoFaceDiskSection9.shield1_port1) annotation(
-      Line(points = {{-120, 100}, {-44, 100}, {-44, -180}, {-32, -180}}, color = {191, 0, 0}));
-  connect(TPV_port1, twoFaceDiskSection9.TPV_port1) annotation(
-      Line(points = {{-120, 82}, {-48, 82}, {-48, -186}, {-32, -186}}, color = {191, 0, 0}));
-  connect(shield2_port1, twoFaceDiskSection9.shield2_port1) annotation(
-      Line(points = {{-120, 64}, {-52, 64}, {-52, -194}, {-32, -194}}, color = {191, 0, 0}));
-  connect(fuel_port1, twoFaceDiskSection10.fuel_port1) annotation(
-      Line(points = {{-120, 118}, {-40, 118}, {-40, -210}, {-32, -210}}, color = {191, 0, 0}));
-  connect(shield1_port1, twoFaceDiskSection10.shield1_port1) annotation(
-      Line(points = {{-120, 100}, {-44, 100}, {-44, -218}, {-32, -218}}, color = {191, 0, 0}));
-  connect(TPV_port1, twoFaceDiskSection10.TPV_port1) annotation(
-      Line(points = {{-120, 82}, {-48, 82}, {-48, -224}, {-32, -224}}, color = {191, 0, 0}));
-  connect(shield2_port1, twoFaceDiskSection10.shield2_port1) annotation(
-      Line(points = {{-120, 64}, {-52, 64}, {-52, -232}, {-32, -232}}, color = {191, 0, 0}));
-  connect(fuel_port1, twoFaceDiskSection11.fuel_port1) annotation(
-      Line(points = {{-120, 118}, {-40, 118}, {-40, -246}, {-32, -246}}, color = {191, 0, 0}));
-  connect(shield1_port1, twoFaceDiskSection11.shield1_port1) annotation(
-      Line(points = {{-120, 100}, {-44, 100}, {-44, -254}, {-32, -254}}, color = {191, 0, 0}));
-  connect(TPV_port1, twoFaceDiskSection11.TPV_port1) annotation(
-      Line(points = {{-120, 82}, {-48, 82}, {-48, -260}, {-32, -260}}, color = {191, 0, 0}));
-  connect(shield2_port1, twoFaceDiskSection11.shield2_port1) annotation(
-      Line(points = {{-120, 64}, {-52, 64}, {-52, -268}, {-32, -268}}, color = {191, 0, 0}));
-  connect(fuel_port1, twoFaceDiskSection12.fuel_port1) annotation(
-      Line(points = {{-120, 118}, {-40, 118}, {-40, -286}, {-32, -286}}, color = {191, 0, 0}));
-  connect(shield1_port1, twoFaceDiskSection12.shield1_port1) annotation(
-      Line(points = {{-120, 100}, {-44, 100}, {-44, -294}, {-32, -294}}, color = {191, 0, 0}));
-  connect(TPV_port1, twoFaceDiskSection12.TPV_port1) annotation(
-      Line(points = {{-120, 82}, {-48, 82}, {-48, -300}, {-32, -300}}, color = {191, 0, 0}));
-  connect(shield2_port1, twoFaceDiskSection12.shield2_port1) annotation(
-      Line(points = {{-120, 64}, {-52, 64}, {-52, -308}, {-32, -308}}, color = {191, 0, 0}));
-  connect(twoFaceDiskSection1.fuel_port2, fuel_port2) annotation(
-      Line(points = {{16, 120}, {120, 120}}, color = {191, 0, 0}));
-  connect(fuel_port2, twoFaceDiskSection2.fuel_port2) annotation(
-      Line(points = {{120, 120}, {24, 120}, {24, 86}, {16, 86}}, color = {191, 0, 0}));
-  connect(shield1_port2, twoFaceDiskSection1.shield1_port2) annotation(
-      Line(points = {{120, 102}, {28, 102}, {28, 112}, {16, 112}}, color = {191, 0, 0}));
-  connect(TPV_port2, twoFaceDiskSection1.TPV_port2) annotation(
-      Line(points = {{120, 84}, {32, 84}, {32, 106}, {16, 106}}, color = {191, 0, 0}));
-  connect(shield2_port2, twoFaceDiskSection1.shield2_port2) annotation(
-      Line(points = {{120, 66}, {36, 66}, {36, 98}, {16, 98}}, color = {191, 0, 0}));
-  connect(fuel_port2, twoFaceDiskSection3.fuel_port2) annotation(
-      Line(points = {{120, 120}, {24, 120}, {24, 52}, {16, 52}}, color = {191, 0, 0}));
-  connect(fuel_port2, twoFaceDiskSection4.fuel_port2) annotation(
-      Line(points = {{120, 120}, {24, 120}, {24, 16}, {16, 16}}, color = {191, 0, 0}));
-  connect(fuel_port2, twoFaceDiskSection5.fuel_port2) annotation(
-      Line(points = {{120, 120}, {24, 120}, {24, -20}, {16, -20}}, color = {191, 0, 0}));
-  connect(fuel_port2, twoFaceDiskSection6.fuel_port2) annotation(
-      Line(points = {{120, 120}, {24, 120}, {24, -56}, {16, -56}}, color = {191, 0, 0}));
-  connect(fuel_port2, twoFaceDiskSection7.fuel_port2) annotation(
-      Line(points = {{120, 120}, {24, 120}, {24, -92}, {16, -92}}, color = {191, 0, 0}));
-  connect(fuel_port2, twoFaceDiskSection8.fuel_port2) annotation(
-      Line(points = {{120, 120}, {24, 120}, {24, -132}, {16, -132}}, color = {191, 0, 0}));
-  connect(fuel_port2, twoFaceDiskSection9.fuel_port2) annotation(
-      Line(points = {{120, 120}, {24, 120}, {24, -172}, {16, -172}}, color = {191, 0, 0}));
-  connect(fuel_port2, twoFaceDiskSection10.fuel_port2) annotation(
-      Line(points = {{120, 120}, {24, 120}, {24, -210}, {16, -210}}, color = {191, 0, 0}));
-  connect(fuel_port2, twoFaceDiskSection11.fuel_port2) annotation(
-      Line(points = {{120, 120}, {24, 120}, {24, -246}, {16, -246}}, color = {191, 0, 0}));
-  connect(fuel_port2, twoFaceDiskSection12.fuel_port2) annotation(
-      Line(points = {{120, 120}, {24, 120}, {24, -286}, {16, -286}}, color = {191, 0, 0}));
-  connect(shield1_port2, twoFaceDiskSection2.shield1_port2) annotation(
-      Line(points = {{120, 102}, {28, 102}, {28, 78}, {16, 78}}, color = {191, 0, 0}));
-  connect(shield1_port2, twoFaceDiskSection3.shield1_port2) annotation(
-      Line(points = {{120, 102}, {28, 102}, {28, 44}, {16, 44}}, color = {191, 0, 0}));
-  connect(shield1_port2, twoFaceDiskSection4.shield1_port2) annotation(
-      Line(points = {{120, 102}, {28, 102}, {28, 8}, {16, 8}}, color = {191, 0, 0}));
-  connect(shield1_port2, twoFaceDiskSection5.shield1_port2) annotation(
-      Line(points = {{120, 102}, {28, 102}, {28, -28}, {16, -28}}, color = {191, 0, 0}));
-  connect(shield1_port2, twoFaceDiskSection6.shield1_port2) annotation(
-      Line(points = {{120, 102}, {28, 102}, {28, -64}, {16, -64}}, color = {191, 0, 0}));
-  connect(shield1_port2, twoFaceDiskSection7.shield1_port2) annotation(
-      Line(points = {{120, 102}, {28, 102}, {28, -100}, {16, -100}}, color = {191, 0, 0}));
-  connect(shield1_port2, twoFaceDiskSection8.shield1_port2) annotation(
-      Line(points = {{120, 102}, {28, 102}, {28, -140}, {16, -140}}, color = {191, 0, 0}));
-  connect(shield1_port2, twoFaceDiskSection10.shield1_port2) annotation(
-      Line(points = {{120, 102}, {28, 102}, {28, -218}, {16, -218}}, color = {191, 0, 0}));
-  connect(shield1_port2, twoFaceDiskSection9.shield1_port2) annotation(
-      Line(points = {{120, 102}, {28, 102}, {28, -180}, {16, -180}}, color = {191, 0, 0}));
-  connect(shield1_port2, twoFaceDiskSection11.shield1_port2) annotation(
-      Line(points = {{120, 102}, {28, 102}, {28, -254}, {16, -254}}, color = {191, 0, 0}));
-  connect(shield1_port2, twoFaceDiskSection12.shield1_port2) annotation(
-      Line(points = {{120, 102}, {28, 102}, {28, -294}, {16, -294}}, color = {191, 0, 0}));
-  connect(TPV_port2, twoFaceDiskSection2.TPV_port2) annotation(
-      Line(points = {{120, 84}, {32, 84}, {32, 72}, {16, 72}}, color = {191, 0, 0}));
-  connect(TPV_port2, twoFaceDiskSection3.TPV_port2) annotation(
-      Line(points = {{120, 84}, {32, 84}, {32, 38}, {16, 38}}, color = {191, 0, 0}));
-  connect(TPV_port2, twoFaceDiskSection4.TPV_port2) annotation(
-      Line(points = {{120, 84}, {32, 84}, {32, 2}, {16, 2}}, color = {191, 0, 0}));
-  connect(TPV_port2, twoFaceDiskSection5.TPV_port2) annotation(
-      Line(points = {{120, 84}, {32, 84}, {32, -34}, {16, -34}}, color = {191, 0, 0}));
-  connect(TPV_port2, twoFaceDiskSection6.TPV_port2) annotation(
-      Line(points = {{120, 84}, {32, 84}, {32, -70}, {16, -70}}, color = {191, 0, 0}));
-  connect(TPV_port2, twoFaceDiskSection7.TPV_port2) annotation(
-      Line(points = {{120, 84}, {32, 84}, {32, -106}, {16, -106}}, color = {191, 0, 0}));
-  connect(TPV_port2, twoFaceDiskSection8.TPV_port2) annotation(
-      Line(points = {{120, 84}, {32, 84}, {32, -146}, {16, -146}}, color = {191, 0, 0}));
-  connect(TPV_port2, twoFaceDiskSection9.TPV_port2) annotation(
-      Line(points = {{120, 84}, {32, 84}, {32, -186}, {16, -186}}, color = {191, 0, 0}));
-  connect(TPV_port2, twoFaceDiskSection10.TPV_port2) annotation(
-      Line(points = {{120, 84}, {32, 84}, {32, -224}, {16, -224}}, color = {191, 0, 0}));
-  connect(TPV_port2, twoFaceDiskSection11.TPV_port2) annotation(
-      Line(points = {{120, 84}, {32, 84}, {32, -260}, {16, -260}}, color = {191, 0, 0}));
-  connect(TPV_port2, twoFaceDiskSection12.TPV_port2) annotation(
-      Line(points = {{120, 84}, {32, 84}, {32, -300}, {16, -300}}, color = {191, 0, 0}));
-  connect(shield2_port2, twoFaceDiskSection2.shield2_port2) annotation(
-      Line(points = {{120, 66}, {36, 66}, {36, 64}, {16, 64}}, color = {191, 0, 0}));
-  connect(shield2_port2, twoFaceDiskSection3.shield2_port2) annotation(
-      Line(points = {{120, 66}, {36, 66}, {36, 30}, {16, 30}}, color = {191, 0, 0}));
-  connect(shield2_port2, twoFaceDiskSection4.shield2_port2) annotation(
-      Line(points = {{120, 66}, {36, 66}, {36, -6}, {16, -6}}, color = {191, 0, 0}));
-  connect(shield2_port2, twoFaceDiskSection5.shield2_port2) annotation(
-      Line(points = {{120, 66}, {36, 66}, {36, -42}, {16, -42}}, color = {191, 0, 0}));
-  connect(shield2_port2, twoFaceDiskSection6.shield2_port2) annotation(
-      Line(points = {{120, 66}, {36, 66}, {36, -78}, {16, -78}}, color = {191, 0, 0}));
-  connect(shield2_port2, twoFaceDiskSection7.shield2_port2) annotation(
-      Line(points = {{120, 66}, {36, 66}, {36, -114}, {16, -114}}, color = {191, 0, 0}));
-  connect(shield2_port2, twoFaceDiskSection8.shield2_port2) annotation(
-      Line(points = {{120, 66}, {36, 66}, {36, -154}, {16, -154}}, color = {191, 0, 0}));
-  connect(shield2_port2, twoFaceDiskSection9.shield2_port2) annotation(
-      Line(points = {{120, 66}, {36, 66}, {36, -194}, {16, -194}}, color = {191, 0, 0}));
-  connect(shield2_port2, twoFaceDiskSection10.shield2_port2) annotation(
-      Line(points = {{120, 66}, {36, 66}, {36, -232}, {16, -232}}, color = {191, 0, 0}));
-  connect(shield2_port2, twoFaceDiskSection11.shield2_port2) annotation(
-      Line(points = {{120, 66}, {36, 66}, {36, -268}, {16, -268}}, color = {191, 0, 0}));
-  connect(shield2_port2, twoFaceDiskSection12.shield2_port2) annotation(
-      Line(points = {{120, 66}, {36, 66}, {36, -308}, {16, -308}}, color = {191, 0, 0}));
-  connect(twoFaceDiskSection4.section_temperature_port, temperatureSensor.port) annotation(
-      Line(points = {{12, -16}, {43, -16}, {43, -18}, {74, -18}}, color = {191, 0, 0}));
-    annotation(
-      Icon(coordinateSystem(extent = {{-100, -100}, {100, 100}}), graphics = {Rectangle(extent = {{-80, 40}, {80, -40}}), Line(points = {{-80, 0}, {-40, 0}}, thickness = 1), Line(points = {{40, 0}, {80, 0}}, thickness = 1), Line(points = {{0, 20}, {0, -20}}, thickness = 2), Text(extent = {{-70, 70}, {70, 90}}, textString = "Disk")}),
-      Diagram(coordinateSystem(extent = {{-140, 160}, {140, -320}}), graphics = {Text(origin = {4, 56}, extent = {{-98, 84}, {98, 98}}, textString = "Disk")}));
-  end Disk;
+  connect(fuel_port1, twoFaceDiskSection1.fuel_port1) annotation(
+    Line(points = {{-120, 118}, {-32, 118}, {-32, 119}}, color = {191, 0, 0}));
+connect(shield1_port1, twoFaceDiskSection1.shield1_port1) annotation(
+    Line(points = {{-120, 100}, {-44, 100}, {-44, 112}, {-32, 112}}, color = {191, 0, 0}));
+connect(TPV_port1, twoFaceDiskSection1.TPV_port1) annotation(
+    Line(points = {{-120, 82}, {-48, 82}, {-48, 105}, {-32, 105}}, color = {191, 0, 0}));
+connect(shield2_port1, twoFaceDiskSection1.shield2_port1) annotation(
+    Line(points = {{-120, 64}, {-52, 64}, {-52, 97}, {-32, 97}}, color = {191, 0, 0}));
+connect(fuel_port1, twoFaceDiskSection2.fuel_port1) annotation(
+    Line(points = {{-120, 118}, {-40, 118}, {-40, 85}, {-32, 85}}, color = {191, 0, 0}));
+connect(shield1_port1, twoFaceDiskSection2.shield1_port1) annotation(
+    Line(points = {{-120, 100}, {-44, 100}, {-44, 78}, {-32, 78}}, color = {191, 0, 0}));
+connect(TPV_port1, twoFaceDiskSection2.TPV_port1) annotation(
+    Line(points = {{-120, 82}, {-48, 82}, {-48, 71}, {-32, 71}}, color = {191, 0, 0}));
+connect(fuel_port1, twoFaceDiskSection3.fuel_port1) annotation(
+    Line(points = {{-120, 118}, {-40, 118}, {-40, 51}, {-32, 51}}, color = {191, 0, 0}));
+connect(shield1_port1, twoFaceDiskSection3.shield1_port1) annotation(
+    Line(points = {{-120, 100}, {-44, 100}, {-44, 44}, {-32, 44}}, color = {191, 0, 0}));
+connect(TPV_port1, twoFaceDiskSection3.TPV_port1) annotation(
+    Line(points = {{-120, 82}, {-48, 82}, {-48, 37}, {-32, 37}}, color = {191, 0, 0}));
+connect(fuel_port1, twoFaceDiskSection4.fuel_port1) annotation(
+    Line(points = {{-120, 118}, {-40, 118}, {-40, 15}, {-32, 15}}, color = {191, 0, 0}));
+connect(shield1_port1, twoFaceDiskSection4.shield1_port1) annotation(
+    Line(points = {{-120, 100}, {-44, 100}, {-44, 8}, {-32, 8}}, color = {191, 0, 0}));
+connect(TPV_port1, twoFaceDiskSection4.TPV_port1) annotation(
+    Line(points = {{-120, 82}, {-48, 82}, {-48, 1}, {-32, 1}}, color = {191, 0, 0}));
+connect(shield2_port1, twoFaceDiskSection4.shield2_port1) annotation(
+    Line(points = {{-120, 64}, {-52, 64}, {-52, -7}, {-32, -7}}, color = {191, 0, 0}));
+connect(fuel_port1, twoFaceDiskSection5.fuel_port1) annotation(
+    Line(points = {{-120, 118}, {-40, 118}, {-40, -21}, {-32, -21}}, color = {191, 0, 0}));
+connect(shield1_port1, twoFaceDiskSection5.shield1_port1) annotation(
+    Line(points = {{-120, 100}, {-44, 100}, {-44, -28}, {-32, -28}}, color = {191, 0, 0}));
+connect(shield2_port1, twoFaceDiskSection3.shield2_port1) annotation(
+    Line(points = {{-120, 64}, {-52, 64}, {-52, 30}, {-32, 30}}, color = {191, 0, 0}));
+connect(shield2_port1, twoFaceDiskSection2.shield2_port1) annotation(
+    Line(points = {{-120, 64}, {-32, 64}}, color = {191, 0, 0}));
+connect(TPV_port1, twoFaceDiskSection5.TPV_port1) annotation(
+    Line(points = {{-120, 82}, {-48, 82}, {-48, -34}, {-32, -34}}, color = {191, 0, 0}));
+connect(shield2_port1, twoFaceDiskSection5.shield2_port1) annotation(
+    Line(points = {{-120, 64}, {-52, 64}, {-52, -42}, {-32, -42}}, color = {191, 0, 0}));
+connect(fuel_port1, twoFaceDiskSection6.fuel_port1) annotation(
+    Line(points = {{-120, 118}, {-40, 118}, {-40, -56}, {-32, -56}}, color = {191, 0, 0}));
+connect(shield1_port1, twoFaceDiskSection6.shield1_port1) annotation(
+    Line(points = {{-120, 100}, {-44, 100}, {-44, -64}, {-32, -64}}, color = {191, 0, 0}));
+connect(TPV_port1, twoFaceDiskSection6.TPV_port1) annotation(
+    Line(points = {{-120, 82}, {-48, 82}, {-48, -70}, {-32, -70}}, color = {191, 0, 0}));
+connect(shield2_port1, twoFaceDiskSection6.shield2_port1) annotation(
+    Line(points = {{-120, 64}, {-52, 64}, {-52, -78}, {-32, -78}}, color = {191, 0, 0}));
+connect(fuel_port1, twoFaceDiskSection7.fuel_port1) annotation(
+    Line(points = {{-120, 118}, {-40, 118}, {-40, -92}, {-32, -92}}, color = {191, 0, 0}));
+connect(shield1_port1, twoFaceDiskSection7.shield1_port1) annotation(
+    Line(points = {{-120, 100}, {-44, 100}, {-44, -100}, {-32, -100}}, color = {191, 0, 0}));
+connect(TPV_port1, twoFaceDiskSection7.TPV_port1) annotation(
+    Line(points = {{-120, 82}, {-48, 82}, {-48, -106}, {-32, -106}}, color = {191, 0, 0}));
+connect(shield2_port1, twoFaceDiskSection7.shield2_port1) annotation(
+    Line(points = {{-120, 64}, {-52, 64}, {-52, -114}, {-32, -114}}, color = {191, 0, 0}));
+connect(fuel_port1, twoFaceDiskSection8.fuel_port1) annotation(
+    Line(points = {{-120, 118}, {-40, 118}, {-40, -132}, {-32, -132}}, color = {191, 0, 0}));
+connect(shield1_port1, twoFaceDiskSection8.shield1_port1) annotation(
+    Line(points = {{-120, 100}, {-44, 100}, {-44, -140}, {-32, -140}}, color = {191, 0, 0}));
+connect(TPV_port1, twoFaceDiskSection8.TPV_port1) annotation(
+    Line(points = {{-120, 82}, {-48, 82}, {-48, -146}, {-32, -146}}, color = {191, 0, 0}));
+connect(shield2_port1, twoFaceDiskSection8.shield2_port1) annotation(
+    Line(points = {{-120, 64}, {-52, 64}, {-52, -154}, {-32, -154}}, color = {191, 0, 0}));
+connect(fuel_port1, twoFaceDiskSection9.fuel_port1) annotation(
+    Line(points = {{-120, 118}, {-40, 118}, {-40, -172}, {-32, -172}}, color = {191, 0, 0}));
+connect(shield1_port1, twoFaceDiskSection9.shield1_port1) annotation(
+    Line(points = {{-120, 100}, {-44, 100}, {-44, -180}, {-32, -180}}, color = {191, 0, 0}));
+connect(TPV_port1, twoFaceDiskSection9.TPV_port1) annotation(
+    Line(points = {{-120, 82}, {-48, 82}, {-48, -186}, {-32, -186}}, color = {191, 0, 0}));
+connect(shield2_port1, twoFaceDiskSection9.shield2_port1) annotation(
+    Line(points = {{-120, 64}, {-52, 64}, {-52, -194}, {-32, -194}}, color = {191, 0, 0}));
+connect(fuel_port1, twoFaceDiskSection10.fuel_port1) annotation(
+    Line(points = {{-120, 118}, {-40, 118}, {-40, -210}, {-32, -210}}, color = {191, 0, 0}));
+connect(shield1_port1, twoFaceDiskSection10.shield1_port1) annotation(
+    Line(points = {{-120, 100}, {-44, 100}, {-44, -218}, {-32, -218}}, color = {191, 0, 0}));
+connect(TPV_port1, twoFaceDiskSection10.TPV_port1) annotation(
+    Line(points = {{-120, 82}, {-48, 82}, {-48, -224}, {-32, -224}}, color = {191, 0, 0}));
+connect(shield2_port1, twoFaceDiskSection10.shield2_port1) annotation(
+    Line(points = {{-120, 64}, {-52, 64}, {-52, -232}, {-32, -232}}, color = {191, 0, 0}));
+connect(fuel_port1, twoFaceDiskSection11.fuel_port1) annotation(
+    Line(points = {{-120, 118}, {-40, 118}, {-40, -246}, {-32, -246}}, color = {191, 0, 0}));
+connect(shield1_port1, twoFaceDiskSection11.shield1_port1) annotation(
+    Line(points = {{-120, 100}, {-44, 100}, {-44, -254}, {-32, -254}}, color = {191, 0, 0}));
+connect(TPV_port1, twoFaceDiskSection11.TPV_port1) annotation(
+    Line(points = {{-120, 82}, {-48, 82}, {-48, -260}, {-32, -260}}, color = {191, 0, 0}));
+connect(shield2_port1, twoFaceDiskSection11.shield2_port1) annotation(
+    Line(points = {{-120, 64}, {-52, 64}, {-52, -268}, {-32, -268}}, color = {191, 0, 0}));
+connect(fuel_port1, twoFaceDiskSection12.fuel_port1) annotation(
+    Line(points = {{-120, 118}, {-40, 118}, {-40, -286}, {-32, -286}}, color = {191, 0, 0}));
+connect(shield1_port1, twoFaceDiskSection12.shield1_port1) annotation(
+    Line(points = {{-120, 100}, {-44, 100}, {-44, -294}, {-32, -294}}, color = {191, 0, 0}));
+connect(TPV_port1, twoFaceDiskSection12.TPV_port1) annotation(
+    Line(points = {{-120, 82}, {-48, 82}, {-48, -300}, {-32, -300}}, color = {191, 0, 0}));
+connect(shield2_port1, twoFaceDiskSection12.shield2_port1) annotation(
+    Line(points = {{-120, 64}, {-52, 64}, {-52, -308}, {-32, -308}}, color = {191, 0, 0}));
+connect(fuel_port2, twoFaceDiskSection2.fuel_port2) annotation(
+    Line(points = {{120, 218}, {24, 218}, {24, 86}, {16, 86}}, color = {191, 0, 0}));
+connect(shield1_port2, twoFaceDiskSection1.shield1_port2) annotation(
+    Line(points = {{120, 200}, {28, 200}, {28, 112}, {16, 112}}, color = {191, 0, 0}));
+connect(TPV_port2, twoFaceDiskSection1.TPV_port2) annotation(
+    Line(points = {{120, 182}, {32, 182}, {32, 106}, {16, 106}}, color = {191, 0, 0}));
+connect(shield2_port2, twoFaceDiskSection1.shield2_port2) annotation(
+    Line(points = {{120, 164}, {36, 164}, {36, 98}, {16, 98}}, color = {191, 0, 0}));
+connect(fuel_port2, twoFaceDiskSection3.fuel_port2) annotation(
+    Line(points = {{120, 218}, {24, 218}, {24, 52}, {16, 52}}, color = {191, 0, 0}));
+connect(fuel_port2, twoFaceDiskSection4.fuel_port2) annotation(
+    Line(points = {{120, 218}, {24, 218}, {24, 16}, {16, 16}}, color = {191, 0, 0}));
+connect(fuel_port2, twoFaceDiskSection5.fuel_port2) annotation(
+    Line(points = {{120, 218}, {24, 218}, {24, -20}, {16, -20}}, color = {191, 0, 0}));
+connect(fuel_port2, twoFaceDiskSection6.fuel_port2) annotation(
+    Line(points = {{120, 218}, {24, 218}, {24, -56}, {16, -56}}, color = {191, 0, 0}));
+connect(fuel_port2, twoFaceDiskSection7.fuel_port2) annotation(
+    Line(points = {{120, 218}, {24, 218}, {24, -92}, {16, -92}}, color = {191, 0, 0}));
+connect(fuel_port2, twoFaceDiskSection8.fuel_port2) annotation(
+    Line(points = {{120, 218}, {24, 218}, {24, -132}, {16, -132}}, color = {191, 0, 0}));
+connect(fuel_port2, twoFaceDiskSection9.fuel_port2) annotation(
+    Line(points = {{120, 218}, {24, 218}, {24, -172}, {16, -172}}, color = {191, 0, 0}));
+connect(fuel_port2, twoFaceDiskSection10.fuel_port2) annotation(
+    Line(points = {{120, 218}, {24, 218}, {24, -210}, {16, -210}}, color = {191, 0, 0}));
+connect(fuel_port2, twoFaceDiskSection11.fuel_port2) annotation(
+    Line(points = {{120, 218}, {24, 218}, {24, -246}, {16, -246}}, color = {191, 0, 0}));
+connect(fuel_port2, twoFaceDiskSection12.fuel_port2) annotation(
+    Line(points = {{120, 218}, {24, 218}, {24, -286}, {16, -286}}, color = {191, 0, 0}));
+connect(shield1_port2, twoFaceDiskSection2.shield1_port2) annotation(
+    Line(points = {{120, 200}, {28, 200}, {28, 78}, {16, 78}}, color = {191, 0, 0}));
+connect(shield1_port2, twoFaceDiskSection3.shield1_port2) annotation(
+    Line(points = {{120, 200}, {28, 200}, {28, 44}, {16, 44}}, color = {191, 0, 0}));
+connect(shield1_port2, twoFaceDiskSection4.shield1_port2) annotation(
+    Line(points = {{120, 200}, {28, 200}, {28, 8}, {16, 8}}, color = {191, 0, 0}));
+connect(shield1_port2, twoFaceDiskSection5.shield1_port2) annotation(
+    Line(points = {{120, 200}, {28, 200}, {28, -28}, {16, -28}}, color = {191, 0, 0}));
+connect(shield1_port2, twoFaceDiskSection6.shield1_port2) annotation(
+    Line(points = {{120, 200}, {28, 200}, {28, -64}, {16, -64}}, color = {191, 0, 0}));
+connect(shield1_port2, twoFaceDiskSection7.shield1_port2) annotation(
+    Line(points = {{120, 200}, {28, 200}, {28, -100}, {16, -100}}, color = {191, 0, 0}));
+connect(shield1_port2, twoFaceDiskSection8.shield1_port2) annotation(
+    Line(points = {{120, 200}, {28, 200}, {28, -140}, {16, -140}}, color = {191, 0, 0}));
+connect(shield1_port2, twoFaceDiskSection10.shield1_port2) annotation(
+    Line(points = {{120, 200}, {28, 200}, {28, -218}, {16, -218}}, color = {191, 0, 0}));
+connect(shield1_port2, twoFaceDiskSection9.shield1_port2) annotation(
+    Line(points = {{120, 200}, {28, 200}, {28, -180}, {16, -180}}, color = {191, 0, 0}));
+connect(shield1_port2, twoFaceDiskSection11.shield1_port2) annotation(
+    Line(points = {{120, 200}, {28, 200}, {28, -254}, {16, -254}}, color = {191, 0, 0}));
+connect(shield1_port2, twoFaceDiskSection12.shield1_port2) annotation(
+    Line(points = {{120, 200}, {28, 200}, {28, -294}, {16, -294}}, color = {191, 0, 0}));
+connect(TPV_port2, twoFaceDiskSection2.TPV_port2) annotation(
+    Line(points = {{120, 182}, {32, 182}, {32, 72}, {16, 72}}, color = {191, 0, 0}));
+connect(TPV_port2, twoFaceDiskSection3.TPV_port2) annotation(
+    Line(points = {{120, 182}, {32, 182}, {32, 38}, {16, 38}}, color = {191, 0, 0}));
+connect(TPV_port2, twoFaceDiskSection4.TPV_port2) annotation(
+    Line(points = {{120, 182}, {32, 182}, {32, 2}, {16, 2}}, color = {191, 0, 0}));
+connect(TPV_port2, twoFaceDiskSection5.TPV_port2) annotation(
+    Line(points = {{120, 182}, {32, 182}, {32, -34}, {16, -34}}, color = {191, 0, 0}));
+connect(TPV_port2, twoFaceDiskSection6.TPV_port2) annotation(
+    Line(points = {{120, 182}, {32, 182}, {32, -70}, {16, -70}}, color = {191, 0, 0}));
+connect(TPV_port2, twoFaceDiskSection7.TPV_port2) annotation(
+    Line(points = {{120, 182}, {32, 182}, {32, -106}, {16, -106}}, color = {191, 0, 0}));
+connect(TPV_port2, twoFaceDiskSection8.TPV_port2) annotation(
+    Line(points = {{120, 182}, {32, 182}, {32, -146}, {16, -146}}, color = {191, 0, 0}));
+connect(TPV_port2, twoFaceDiskSection9.TPV_port2) annotation(
+    Line(points = {{120, 182}, {32, 182}, {32, -186}, {16, -186}}, color = {191, 0, 0}));
+connect(TPV_port2, twoFaceDiskSection10.TPV_port2) annotation(
+    Line(points = {{120, 182}, {32, 182}, {32, -224}, {16, -224}}, color = {191, 0, 0}));
+connect(TPV_port2, twoFaceDiskSection11.TPV_port2) annotation(
+    Line(points = {{120, 182}, {32, 182}, {32, -260}, {16, -260}}, color = {191, 0, 0}));
+connect(TPV_port2, twoFaceDiskSection12.TPV_port2) annotation(
+    Line(points = {{120, 182}, {32, 182}, {32, -300}, {16, -300}}, color = {191, 0, 0}));
+connect(shield2_port2, twoFaceDiskSection2.shield2_port2) annotation(
+    Line(points = {{120, 164}, {36, 164}, {36, 64}, {16, 64}}, color = {191, 0, 0}));
+connect(shield2_port2, twoFaceDiskSection3.shield2_port2) annotation(
+    Line(points = {{120, 164}, {36, 164}, {36, 30}, {16, 30}}, color = {191, 0, 0}));
+connect(shield2_port2, twoFaceDiskSection4.shield2_port2) annotation(
+    Line(points = {{120, 164}, {36, 164}, {36, -6}, {16, -6}}, color = {191, 0, 0}));
+connect(shield2_port2, twoFaceDiskSection5.shield2_port2) annotation(
+    Line(points = {{120, 164}, {36, 164}, {36, -42}, {16, -42}}, color = {191, 0, 0}));
+connect(shield2_port2, twoFaceDiskSection6.shield2_port2) annotation(
+    Line(points = {{120, 164}, {36, 164}, {36, -78}, {16, -78}}, color = {191, 0, 0}));
+connect(shield2_port2, twoFaceDiskSection7.shield2_port2) annotation(
+    Line(points = {{120, 164}, {36, 164}, {36, -114}, {16, -114}}, color = {191, 0, 0}));
+connect(shield2_port2, twoFaceDiskSection8.shield2_port2) annotation(
+    Line(points = {{120, 164}, {36, 164}, {36, -154}, {16, -154}}, color = {191, 0, 0}));
+connect(shield2_port2, twoFaceDiskSection9.shield2_port2) annotation(
+    Line(points = {{120, 164}, {36, 164}, {36, -194}, {16, -194}}, color = {191, 0, 0}));
+connect(shield2_port2, twoFaceDiskSection10.shield2_port2) annotation(
+    Line(points = {{120, 164}, {36, 164}, {36, -232}, {16, -232}}, color = {191, 0, 0}));
+connect(shield2_port2, twoFaceDiskSection11.shield2_port2) annotation(
+    Line(points = {{120, 164}, {36, 164}, {36, -268}, {16, -268}}, color = {191, 0, 0}));
+connect(shield2_port2, twoFaceDiskSection12.shield2_port2) annotation(
+    Line(points = {{120, 164}, {36, 164}, {36, -308}, {16, -308}}, color = {191, 0, 0}));
+connect(twoFaceDiskSection1.fuel_port2, fuel_port2) annotation(
+    Line(points = {{16, 120}, {24, 120}, {24, 218}, {120, 218}}, color = {191, 0, 0}));
+connect(twoFaceDiskSection1.section_temperature_port, tSens1.port) annotation(
+    Line(points = {{12, 88}, {64, 88}}, color = {191, 0, 0}));
+connect(twoFaceDiskSection2.section_temperature_port, tSens2.port) annotation(
+    Line(points = {{12, 54}, {64, 54}}, color = {191, 0, 0}));
+connect(twoFaceDiskSection12.section_temperature_port, tSens12.port) annotation(
+    Line(points = {{12, -318}, {64, -318}}, color = {191, 0, 0}));
+connect(twoFaceDiskSection11.section_temperature_port, tSens11.port) annotation(
+    Line(points = {{12, -278}, {64, -278}}, color = {191, 0, 0}));
+connect(twoFaceDiskSection10.section_temperature_port, tSens10.port) annotation(
+    Line(points = {{12, -242}, {64, -242}, {64, -240}}, color = {191, 0, 0}));
+connect(twoFaceDiskSection9.section_temperature_port, tSens9.port) annotation(
+    Line(points = {{12, -204}, {64, -204}}, color = {191, 0, 0}));
+connect(twoFaceDiskSection8.section_temperature_port, tSens8.port) annotation(
+    Line(points = {{12, -164}, {64, -164}}, color = {191, 0, 0}));
+connect(twoFaceDiskSection7.section_temperature_port, tSens7.port) annotation(
+    Line(points = {{12, -124}, {64, -124}}, color = {191, 0, 0}));
+connect(twoFaceDiskSection6.section_temperature_port, tSens6.port) annotation(
+    Line(points = {{12, -88}, {64, -88}}, color = {191, 0, 0}));
+connect(twoFaceDiskSection5.section_temperature_port, tSens5.port) annotation(
+    Line(points = {{12, -52}, {64, -52}}, color = {191, 0, 0}));
+connect(twoFaceDiskSection4.section_temperature_port, tSens4.port) annotation(
+    Line(points = {{12, -16}, {64, -16}, {64, -14}}, color = {191, 0, 0}));
+connect(twoFaceDiskSection3.section_temperature_port, tSens3.port) annotation(
+    Line(points = {{12, 20}, {64, 20}}, color = {191, 0, 0}));
   annotation(
-    uses(Modelica(version = "4.0.0")));
+    Icon(coordinateSystem(extent = {{-100, -100}, {100, 100}}), graphics = {Rectangle(extent = {{-80, 40}, {80, -40}}), Line(points = {{-80, 0}, {-40, 0}}, thickness = 1), Line(points = {{40, 0}, {80, 0}}, thickness = 1), Line(points = {{0, 20}, {0, -20}}, thickness = 2), Text(extent = {{-70, 70}, {70, 90}}, textString = "Disk")}),
+    Diagram(coordinateSystem(extent = {{-140, 160}, {140, -320}}), graphics = {Text(origin = {4, 56}, extent = {{-98, 84}, {98, 98}}, textString = "Disk")}));
+end Disk;
+
+  model SwitchedThermalConductor
+    "Lumped thermal element transporting heat without storing it"
+    extends Modelica.Thermal.HeatTransfer.Interfaces.Element1D;
+    parameter Real tSwitch;
+    parameter Real Gon = 5 "W/K";
+    parameter Real Goff = 0 "W/K";
+  
+  
+  protected
+    Real G "W/K";
+  equation
+    // switch conductance at tSwitch
+    G = if time < tSwitch then Goff else Gon;
+  
+    Q_flow = G*dT;
+    annotation (
+      Icon(coordinateSystem(preserveAspectRatio=true, extent={{-100,-100},{
+              100,100}}), graphics={
+          Rectangle(
+            extent={{-90,70},{90,-70}},
+            pattern=LinePattern.None,
+            fillColor={192,192,192},
+            fillPattern=FillPattern.Backward),
+          Line(
+            points={{-90,70},{-90,-70}},
+            thickness=0.5),
+          Line(
+            points={{90,70},{90,-70}},
+            thickness=0.5),
+          Text(
+            extent={{-150,120},{150,80}},
+            textString="%name",
+            textColor={0,0,255}),
+          Text(
+            extent={{-150,-80},{150,-110}},
+            textString="G=%G")}),
+      Documentation(info="<html>
+  <p>
+  This is a model for transport of heat without storing it; see also:
+  <a href=\"modelica://Modelica.Thermal.HeatTransfer.Components.ThermalResistor\">ThermalResistor</a>.
+  It may be used for complicated geometries where
+  the thermal conductance G (= inverse of thermal resistance)
+  is determined by measurements and is assumed to be constant
+  over the range of operations. If the component consists mainly of
+  one type of material and a regular geometry, it may be calculated,
+  e.g., with one of the following equations:
+  </p>
+  <ul>
+  <li><p>
+      Conductance for a <strong>box</strong> geometry under the assumption
+      that heat flows along the box length:</p>
+      <blockquote><pre>
+  G = k*A/L
+  k: Thermal conductivity (material constant)
+  A: Area of box
+  L: Length of box
+      </pre></blockquote>
+      </li>
+  <li><p>
+      Conductance for a <strong>cylindrical</strong> geometry under the assumption
+      that heat flows from the inside to the outside radius
+      of the cylinder:</p>
+      <blockquote><pre>
+  G = 2*pi*k*L/log(r_out/r_in)
+  pi   : Modelica.Constants.pi
+  k    : Thermal conductivity (material constant)
+  L    : Length of cylinder
+  log  : Modelica.Math.log;
+  r_out: Outer radius of cylinder
+  r_in : Inner radius of cylinder
+      </pre></blockquote>
+      </li>
+  </ul>
+  <blockquote><pre>
+  Typical values for k at 20 degC in W/(m.K):
+    aluminium   220
+    concrete      1
+    copper      384
+    iron         74
+    silver      407
+    steel        45 .. 15 (V2A)
+    wood         0.1 ... 0.2
+  </pre></blockquote>
+  </html>"));
+  end SwitchedThermalConductor;
+
+  model GapAtmosphere
+  parameter Real tSwitch;
+  
+  
+  Modelica.Fluid.Sources.MassFlowSource_T inlet(redeclare package Medium = Modelica.Media.Air.DryAirNasa, T = 353.15, m_flow = 0.01, nPorts = 1) annotation(
+      Placement(transformation(origin = {0, -2}, extent = {{-10, -10}, {10, 10}})));
+  Modelica.Fluid.Sources.MassFlowSource_T outlet(redeclare package Medium = Modelica.Media.Air.DryAirNasa, m_flow = -0.01, nPorts = 1) annotation(
+      Placement(transformation(origin = {64, 4}, extent = {{10, -10}, {-10, 10}})));
+  RIMAEL.SwitchedThermalConductor FuelGapConductor(Goff = 0, Gon = 61.6, tSwitch = tSwitch) annotation(
+      Placement(transformation(origin = {-34, 0}, extent = {{-10, -10}, {10, 10}})));
+  Buildings.Fluid.MixingVolumes.MixingVolume Atmosphere(redeclare package Medium = Modelica.Media.Air.DryAirNasa, V = 0.237, m_flow_nominal = 0.01, nPorts = 2) annotation(
+      Placement(transformation(origin = {30, 26}, extent = {{-10, -10}, {10, 10}})));
+  Modelica.Thermal.HeatTransfer.Interfaces.HeatPort_a port_a annotation(
+      Placement(transformation(origin = {-98, 2}, extent = {{-10, -10}, {10, 10}}), iconTransformation(origin = {-98, 2}, extent = {{-10, -10}, {10, 10}})));
+  equation
+    connect(FuelGapConductor.port_b, Atmosphere.heatPort) annotation(
+      Line(points = {{-24, 0}, {-16, 0}, {-16, 26}, {20, 26}}, color = {191, 0, 0}));
+    connect(inlet.ports[1], Atmosphere.ports[1]) annotation(
+      Line(points = {{10, -2}, {30, -2}, {30, 16}}, color = {0, 127, 255}));
+    connect(outlet.ports[1], Atmosphere.ports[2]) annotation(
+      Line(points = {{54, 4}, {30, 4}, {30, 16}}, color = {0, 127, 255}));
+  connect(port_a, FuelGapConductor.port_a) annotation(
+      Line(points = {{-98, 2}, {-44, 2}, {-44, 0}}, color = {191, 0, 0}));
+  annotation (
+  defaultComponentName="vol",
+  Documentation(info=""),
+      Icon(coordinateSystem(preserveAspectRatio=false, extent={{-100,-100},{100,
+              100}}), graphics={
+         Text(
+            extent={{-60,-26},{56,-58}},
+            textColor={255,255,255},
+            textString="V=%V"),
+          Text(
+            extent={{-152,100},{148,140}},
+            textString="%name",
+            textColor={0,0,255}),
+         Ellipse(
+            extent={{-100,98},{100,-102}},
+            lineColor={0,0,0},
+            fillPattern=FillPattern.Sphere,
+            fillColor=DynamicSelect({170,213,255}, min(1, max(0, (1-(Atmosphere.T-273.15)/50)))*{28,108,200}+min(1, max(0, (Atmosphere.T-273.15)/50))*{255,0,0})),
+          Text(
+            extent={{62,28},{-58,-22}},
+            textColor={255,255,255},
+            textString=DynamicSelect("", String(Atmosphere.T-273.15, format=".1f")))}),
+  experiment(StartTime = 0, StopTime = 3000, Tolerance = 1e-06, Interval = 6));
+  end GapAtmosphere;
+  annotation(
+    uses(Modelica(version = "4.0.0"), Buildings(version = "12.1.0")));
 end RIMAEL;
