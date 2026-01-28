@@ -689,12 +689,16 @@ package RIMAEL
     parameter Real tSwitch;
     parameter Real Gon = 5 "W/K";
     parameter Real Goff = 0 "W/K";
+    Modelica.Blocks.Interfaces.RealInput f "Visible/view fraction 0..1" annotation(
+      Placement(transformation(extent = {{-10, 90}, {10, 110}}), iconTransformation(extent = {{-10, 90}, {10, 110}})));
   protected
     Real G "W/K";
+    Real fclamped;
   equation
+    fclamped = max(0, min(1, f));
 // switch conductance at tSwitch
     G = if time < tSwitch then Goff else Gon;
-    Q_flow = G*dT;
+    Q_flow = fclamped*G*dT;
     annotation(
       Icon(coordinateSystem(preserveAspectRatio = true, extent = {{-100, -100}, {100, 100}}), graphics = {Rectangle(extent = {{-90, 70}, {90, -70}}, pattern = LinePattern.None, fillColor = {192, 192, 192}, fillPattern = FillPattern.Backward), Line(points = {{-90, 70}, {-90, -70}}, thickness = 0.5), Line(points = {{90, 70}, {90, -70}}, thickness = 0.5), Text(extent = {{-150, 120}, {150, 80}}, textString = "%name", textColor = {0, 0, 255}), Text(extent = {{-150, -80}, {150, -110}}, textString = "G=%G")}),
       Documentation(info = "<html>
@@ -750,11 +754,11 @@ package RIMAEL
   model GapAtmosphere
     parameter Real tSwitch;
     RIMAEL.SwitchedThermalConductor FuelGapConductor(Goff = 0, Gon = 61.6, tSwitch = tSwitch) annotation(
-      Placement(transformation(origin = {-56, 2}, extent = {{-10, -10}, {10, 10}})));
+      Placement(transformation(origin = {-56, -30}, extent = {{-10, -10}, {10, 10}})));
     Buildings.Fluid.MixingVolumes.MixingVolume Atmosphere(redeclare package Medium = Modelica.Media.Air.DryAirNasa, V = 0.237, m_flow_nominal = 0.01, nPorts = 2) annotation(
-      Placement(transformation(origin = {-14, 2}, extent = {{-10, 10}, {10, -10}}, rotation = -0)));
+      Placement(transformation(origin = {-14, -30}, extent = {{-10, 10}, {10, -10}})));
     Modelica.Thermal.HeatTransfer.Interfaces.HeatPort_a port_a annotation(
-      Placement(transformation(origin = {-98, 2}, extent = {{-10, -10}, {10, 10}}), iconTransformation(origin = {-98, 2}, extent = {{-10, -10}, {10, 10}})));
+      Placement(transformation(origin = {-98, -30}, extent = {{-10, -10}, {10, 10}}), iconTransformation(origin = {-98, 2}, extent = {{-10, -10}, {10, 10}})));
     Modelica.Fluid.Sources.Boundary_pT outerPBoundary(redeclare package Medium = Modelica.Media.Air.DryAirNasa, T = 323.15, nPorts = 2) annotation(
       Placement(transformation(origin = {-80, 74}, extent = {{-10, -10}, {10, 10}})));
     Buildings.Airflow.Multizone.MediumColumn column(h = 10, redeclare package Medium = Modelica.Media.Air.DryAirNasa, densitySelection = Buildings.Airflow.Multizone.Types.densitySelection.actual) annotation(
@@ -769,11 +773,13 @@ package RIMAEL
       Placement(transformation(origin = {58, 38}, extent = {{-10, -10}, {10, 10}})));
     Buildings.Airflow.Multizone.Orifice gapEntryOrifice(redeclare package Medium = Modelica.Media.Air.DryAirNasa, A = 0.002) annotation(
       Placement(transformation(origin = {-54, 38}, extent = {{-10, -10}, {10, 10}})));
+  Modelica.Blocks.Sources.RealExpression fractionalConductance(y = 1) annotation(
+      Placement(transformation(origin = {-78, 0}, extent = {{-10, -10}, {10, 10}})));
   equation
     connect(FuelGapConductor.port_b, Atmosphere.heatPort) annotation(
-      Line(points = {{-46, 2}, {-24, 2}}, color = {191, 0, 0}));
+      Line(points = {{-46, -30}, {-24, -30}}, color = {191, 0, 0}));
     connect(port_a, FuelGapConductor.port_a) annotation(
-      Line(points = {{-98, 2}, {-66, 2}}, color = {191, 0, 0}));
+      Line(points = {{-98, -30}, {-66, -30}}, color = {191, 0, 0}));
     connect(chimneyOrifice.port_a, outerPBoundary.ports[1]) annotation(
       Line(points = {{-2, 74}, {-70, 74}}, color = {0, 127, 255}));
     connect(chimneyOrifice.port_b, dPChimney.port_b) annotation(
@@ -787,9 +793,11 @@ package RIMAEL
     connect(outerPBoundary.ports[2], gapEntryOrifice.port_a) annotation(
       Line(points = {{-70, 74}, {-64, 74}, {-64, 38}}, color = {0, 127, 255}));
     connect(gapEntryOrifice.port_b, Atmosphere.ports[1]) annotation(
-      Line(points = {{-44, 38}, {-14, 38}, {-14, 12}}, color = {0, 127, 255}));
+      Line(points = {{-44, 38}, {-44, 36}, {-14, 36}, {-14, -20}}, color = {0, 127, 255}));
     connect(Atmosphere.ports[2], dPGap.port_a) annotation(
-      Line(points = {{-14, 12}, {-14, 38}, {12, 38}}, color = {0, 127, 255}));
+      Line(points = {{-14, -20}, {-14, 38}, {12, 38}}, color = {0, 127, 255}));
+  connect(fractionalConductance.y, FuelGapConductor.f) annotation(
+      Line(points = {{-66, 0}, {-56, 0}, {-56, -20}}, color = {0, 0, 127}));
     annotation(
       defaultComponentName = "vol",
       Documentation(info = ""),
