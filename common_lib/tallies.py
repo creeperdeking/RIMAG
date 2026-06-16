@@ -582,6 +582,8 @@ def print_tallies(
     electric_power,
     batches,
 ):
+    total_dose_time = 365 * 24 * 60 * 60 # seconds
+    
     sp = openmc.StatePoint(f"statepoint.{batches}.h5")
     k_eff = sp.keff  # keff (mean)
     photovolatic = sp.get_tally(name="photovoltaic")
@@ -668,12 +670,12 @@ def print_tallies(
         heating_photovoltaic * source_strength / mass_photovoltaic
     )  # kGy/s
     yearly_heating_rate_photovoltaic = (
-        heating_rate_photovoltaic * 365 * 24 * 60 * 60
+        heating_rate_photovoltaic * total_dose_time
     )  # kGy/year
 
-    # Calculate absolute flux (neutrons/cm²-s)
+    # Calculate Displacement Damage Dose Rate (MeV/g/s)
     absolute_ddd_photovoltaic = (
-        normalized_ddd_photovoltaic * source_strength / photovoltaic_slice_volume
+        normalized_ddd_photovoltaic * source_strength / photovoltaic_slice_volume # MeV/g/s
     )
 
     absorption_photovoltaic = (
@@ -701,10 +703,10 @@ def print_tallies(
     print("--------------------------------")
     print("photovoltaic")
     print(
-        f"Displacement damage: {absolute_ddd_photovoltaic * 365 * 24 * 60 * 60:.4e} MeV/g/year"
+        f"Displacement damage: {absolute_ddd_photovoltaic * total_dose_time:.4e} MeV/g/year"
     )
     print(
-        f"Absorption: {absorption_photovoltaic * 365 * 24 * 60 * 60:.4e} neutrons/cm3/year"
+        f"Absorption: {absorption_photovoltaic * total_dose_time:.4e} neutrons/cm3/year"
     )
     print(f"Dose rate: {yearly_heating_rate_photovoltaic:.4e} kGy/year")
     print("--------------------------------")
@@ -715,6 +717,6 @@ def print_tallies(
     )
     print(f"dpa emitter: {dpa_emitter:.2e} dpa/year")
     print(
-        f"Absorption: {absorption_emitter * 365 * 24 * 60 * 60:.4e} neutrons/cm3/year"
+        f"Absorption: {absorption_emitter * total_dose_time:.4e} neutrons/cm3/year"
     )
     print("--------------------------------")

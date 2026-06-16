@@ -12,7 +12,11 @@ from one_layer_disk_design.frustum_geometry_definition import make_simulation_ge
 
 ### Simulation parameters
 
-run_mode: RunMode = "keff"
+# ========= PAPER RELEVANT PARAMETERS ===========
+
+# ===============================================
+
+run_mode: RunMode = ""
 print_core_characteristics = True
 batches = 200  # 2500  # 1250
 weight_windows: UseWeightWindows = "no"
@@ -27,39 +31,39 @@ emitter_gamma_rate_per_cm3 = 3.35e6  # photons/cm3/s
 ### Geometry parameters
 
 reload_fraction = 1/4
-enrichment_multiplicator = 1/4
+enrichment_multiplicator = 1 / 2
 
-fuel_thickness = 0.012 / enrichment_multiplicator
+fuel_thickness = 0.017 / enrichment_multiplicator
 total_fuel_thickness = 1
-thickness_photovoltaic = 0.02
+thickness_photovoltaic = 2e-4 * 100 # cm
 disk_geometry_params = make_disk_geometry_params(
     DiskGeometryParams(
-        core_diameter=140,
-        moderator_cladding_thickness=0.4,
-        shield_moderator_cladding_thickness=0.05,
+        core_diameter=100,
+        moderator_cladding_thickness=0.05, # not relevant since same material as moderator
+        shield_moderator_cladding_thickness=0.05, # not relevant since same material as moderator
         fuel_thickness=fuel_thickness,
         fuel_cladding_thickness=(total_fuel_thickness - fuel_thickness) / 2,
         moderator_thickness=1,
-        fuel_emitter_gap=0.15,
-        emitter_thickness=0.2,
+        fuel_emitter_gap=0.1,
+        emitter_thickness=1.0,
         thickness_photovoltaic=thickness_photovoltaic,
-        rotary_axle_thickness=5,
-        reflector_thickness=20,
-        neutron_shield_moderator_thickness=175,  # 175
+        rotary_axle_thickness=1,
+        reflector_thickness=30,
+        neutron_shield_moderator_thickness=2380,  # 175
         neutron_shield_moderator_cladding_thickness=0.1,
         neutron_shield_absorber_thickness=10,
         gamma_shield_thickness=10,
-        frustum_pitch=5,
-        number_of_reactor_columns=3,
+        frustum_pitch=2,
+        number_of_reactor_columns=1,
     )
 )
 
 ### Thermodynamic parameters
 
-hot_temp = 1300 + 273  # K
+hot_temp = 1360 + 273  # K
 min_cold_temp = 1100 + 273  # K
-photovoltaic_efficiency = 0.35 * 0.95  # 0.33
-photovoltaic_power_density = 1.5   #1.1 0.59 0.89  # W/cm2
+photovoltaic_efficiency = 0.33
+photovoltaic_power_density = 0.89 # W/cm2
 
 ### Nuclear parameters
 
@@ -69,33 +73,31 @@ u235_enrichment = u235_fresh_enrichment * equivalent_enrichment
 gadolinium_oxide_in_fuel_proportion = 0.0005 * 0
 fuel_burnup = u235_fresh_enrichment * 12  # MWd/kgHM
 borated_moderator_ppm = 3000 * 0
-moderator_density = 1.016 * 1
+moderator_density = 1
 add_xe135 = False
 
 ### Material definition
 
-# TODO: current bug with the implementation: in order to tally regions of the reactor properly,
-# we need to have a unique material for each cell.
 material_choice = MaterialChoice(
-    moderator="Light Water",
+    moderator="Graphite",
     neutron_absorber="Boron Carbide",
     neutron_reflector="Graphite",
     bottom_reflector="Graphite",
     rotary_axle="Graphite",
     fuel="Uranium Dioxide",
-    moderator_cladding="Zirconium",
-    coolant_cladding="Aluminum",
+    moderator_cladding="Graphite",
+    coolant_cladding="Stainless Steel",
     emitter="Graphite",
-    fuel_cladding="Low Density Graphite",
+    fuel_cladding="Graphite",
     void="Void",
     outer_empty_zone="Void",
-    photovoltaic="InGaAsP",
+    photovoltaic="InGaAs",
     coolant="Light Water",
-    shaft_shield_moderator="Light Water", # low temperature
-    neutron_shield_moderator="Lithium Oxide", # high temperature
-    shield_moderator_cladding="Aluminum",
+    shaft_shield_moderator="Polyethylene",
+    outer_cold_shield_moderator="Polyethylene",
+    neutron_shield_moderator="Polyethylene",
+    shield_moderator_cladding="Polyethylene",
     gamma_shield="", # not used
-    moduler_spacer="Graphite",
 )
 
 materials_dict, colors, updated_material_choice = make_materials(

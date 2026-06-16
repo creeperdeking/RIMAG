@@ -508,7 +508,7 @@ def define_geometry(
         # Create two cells: original column and a rotated clone around the midpoint
         col1_cell = openmc.Cell(region=region_col1, fill=reactor_column_universe_1, name="reactor_column_1")
 
-        offset_y = 104 + bg.outer_empty_zone_parameters.radius*(8.5/30) # 157
+        offset_y = 104 + 8 + bg.outer_empty_zone_parameters.radius*(8.5/30) # 157
 
         col2_cell = openmc.Cell(region=region_col2, fill=reactor_column_universe_1, name="reactor_column_2_rotated")
         # Apply rotation around midpoint: x' = R x + t, choose t so that midpoint is fixed

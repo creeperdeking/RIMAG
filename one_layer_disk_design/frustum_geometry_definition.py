@@ -42,7 +42,7 @@ def make_simulation_geometry(
     disk_geometry_params: DiskGeometryParams,
     materials_dict: Dict[str, openmc.Material],
 ) -> MakeSimulationGeometryResult:
-    central_section_multiplicator = 3
+    central_section_multiplicator = 5
     emitter_assembly = AssemblySections(
         parts=[
             ### Void
@@ -315,7 +315,7 @@ def make_simulation_geometry(
                 AssemblySections(
                     parts=[
                         Assembly(
-                            material=material_choice.shaft_shield_moderator,
+                            material=material_choice.outer_cold_shield_moderator,
                             thickness=intermediary_section_core_thickness
                             - intermediary_section_shield_moderator_cladding_thickness,
                         ),

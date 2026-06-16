@@ -18,7 +18,7 @@ def sanity_check_triso_fuel_volume(hm_volume: float, graphite_volume: float):
     TRISO_HM_VOLUME_FRACTION = 0.3
     MAX_TRISO_PACKING_FRACTION = 0.3
     PACKED_TRISO_VOLUME_RATIO = (
-        TRISO_HM_VOLUME_FRACTION * MAX_TRISO_PACKING_FRACTION
+        TRISO_HM_VOLUME_FRACTION * MAX_TRISO_PACKING_FRACTION * 0.75
     )  # cm3 / cm3
     if actual_volume_ratio > PACKED_TRISO_VOLUME_RATIO:
         raise ValueError(
@@ -86,8 +86,8 @@ def calculate_disk_core_characteristics(
     cold_temp = calc_T2_radiative_heat_flux_between_plates(
         hot_temp,
         photovoltaic_power_per_m2_fuel_area,
-        0.92,
-        0.92,
+        0.96,
+        0.96,
     )
     assert cold_temp > 0 and cold_temp < hot_temp
     if cold_temp < min_cold_temp:

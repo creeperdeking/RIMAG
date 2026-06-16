@@ -47,6 +47,7 @@ class MaterialChoice(BaseModel):
     coolant_cladding: str
     shield_moderator_cladding: str
     shaft_shield_moderator: str
+    outer_cold_shield_moderator: str
     emitter: str
     fuel_cladding: str
     void: str
@@ -55,7 +56,6 @@ class MaterialChoice(BaseModel):
     coolant: str
     gamma_shield: str
     rotary_axle: str
-    moduler_spacer: str
 
 
 atoms: Dict[str, Atom] = {
@@ -67,6 +67,7 @@ atoms: Dict[str, Atom] = {
     "O": Atom(name="O", atomic_weight=15.9994),
     "H2": Atom(name="H2", atomic_weight=2.01410177812),
     "W": Atom(name="W", atomic_weight=183.84),
+    "Sn": Atom(name="Sn", atomic_weight=118.71),
     "C": Atom(name="C", atomic_weight=12.0107),
     "Pb": Atom(name="Pb", atomic_weight=207.2),
     "B": Atom(name="B", atomic_weight=10.811),
@@ -461,7 +462,7 @@ def make_materials(
             AtomProportion(atom=atoms["C"], proportion=2),
             AtomProportion(atom=atoms["H"], proportion=4),
         ],
-        density=0.96 * 0.95, # the lower density is to account for the presence of structural elements, heat pipes, etc.
+        density=0.96 * 0.90, # the lower density is to account for the presence of structural elements, heat pipes, etc.
         color="lightgray",
     )
 
@@ -537,6 +538,15 @@ def make_materials(
             density=7.8,
             color="gray",
         ),
+        "Galinstan": Material(
+            composition=[
+                AtomProportion(atom=atoms["Ga"], proportion=1),
+                AtomProportion(atom=atoms["In"], proportion=1),
+                AtomProportion(atom=atoms["Sn"], proportion=1),
+            ],
+            density=6.2,
+            color="lightblue",
+        ),
         "Lithium Oxide": Material(
             composition=[
                 AtomProportion(atom=atoms["Li"], proportion=2),
@@ -544,6 +554,14 @@ def make_materials(
             ],
             density=1.78,
             color="lightblue",
+        ),
+        "Lithium Fluoride": Material(
+            composition=[
+                AtomProportion(atom=atoms["Li"], proportion=1),
+                AtomProportion(atom=atoms["F"], proportion=1),
+            ],
+            density=2.635,
+            color="yellow",
         ),
         "Molten Lithium Fluoride": Material(
             composition=[
@@ -813,6 +831,15 @@ def make_materials(
                 AtomProportion(atom=atoms["P"], proportion=0.63),
             ],
             density=5.07,
+            color="lightblue",
+        ),
+        "InGaAs": Material(
+            composition=[
+                AtomProportion(atom=atoms["In"], proportion=0.53),
+                AtomProportion(atom=atoms["Ga"], proportion=0.47),
+                AtomProportion(atom=atoms["As"], proportion=1.0),
+            ],
+            density=5.50,
             color="lightblue",
         ),
     }
