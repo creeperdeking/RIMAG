@@ -1,0 +1,36 @@
+✅ Actual volume ratio 0.034 is less than the maximum allowed 0.0675
+[OpenMC] Running stochastic volume calculations...
+❌ The cold temperature 848.637836282855°C is below the minimum allowed 1100°C
+Tracked cells mass:
+'Graphite (Graphite)': mass per kW = 0.01 kg/kW
+'Graphite 4 (Graphite 4)': mass per kW = 0.00 kg/kW
+'Void (Void, Void, outer_zone)': mass per kW = 0.00 kg/kW
+'Graphite 6 (Graphite 6)': mass per kW = 0.12 kg/kW
+'Uranium Dioxide (Uranium Dioxide)': mass per kW = 0.02 kg/kW
+'Graphite 2 (Graphite 2, outer_core_layer_Graphite 2_0)': mass per kW = 0.16 kg/kW
+'Polyethylene 4 (Polyethylene 4)': mass per kW = 0.91 kg/kW
+'Stainless Steel (Stainless Steel)': mass per kW = 0.94 kg/kW
+'Polyethylene 2 (Polyethylene 2)': mass per kW = 0.68 kg/kW
+'Polyethylene (Polyethylene)': mass per kW = 2.73 kg/kW
+'Boron Carbide (Boron Carbide, outer_core_layer_Boron Carbide_2)': mass per kW = 0.26 kg/kW
+'Polyethylene 3 (outer_core_layer_Polyethylene 3_1, outer_core_layer_Polyethylene 3_1)': mass per kW = 55.45 kg/kW
+'Graphite 3 (outer_core_layer_Graphite 3_0)': mass per kW = 0.16 kg/kW
+'Light Water (Light Water)': mass per kW = 0.64 kg/kW
+'InGaAs (InGaAs)': mass per kW = 0.12 kg/kW
+'Graphite 5 (Graphite 5)': mass per kW = 11.33 kg/kW
+'Void 2 (outer_empty_zone)': mass per kW = 0.00 kg/kW
+'Graphite 7 (shaft)': mass per kW = 0.23 kg/kW
+rotary axle diameter 2620 cm
+vertical core height 28.72 cm
+cold temp 849 °C
+emissive_surface 21.71 m2
+Radiative flux 289372 W/m2
+core power 6.28 MW
+core power electric 2.07 MW
+photovoltaic power 2.07 MW
+photovoltaic power density 8900.0 W/m2
+photovoltaic power per m 7.22 MW/m
+photovoltaic area 232.93 m2
+fuel lifetime 4.209363929121705 years
+fuel thickness 0.34 mm
+batches 200
