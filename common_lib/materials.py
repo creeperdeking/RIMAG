@@ -457,12 +457,12 @@ def make_materials(
         color="darkgray",
     )
 
-    polyethylene = Material(
+    high_density_polyethylene = Material(
         composition=[
             AtomProportion(atom=atoms["C"], proportion=2),
             AtomProportion(atom=atoms["H"], proportion=4),
         ],
-        density=0.96 * 0.90, # the lower density is to account for the presence of structural elements, heat pipes, etc.
+        density=0.96,
         color="lightgray",
     )
 
@@ -663,7 +663,7 @@ def make_materials(
                 AtomProportion(atom=atoms["Ti"], proportion=1),
                 AtomProportion(atom=atoms["H"], proportion=2),
             ],
-            density=3.9 * 0.92, # the lower density is to account for the presence of structural elements, heat pipes, etc.
+            density=3.9,
             color="gray",
         ),
         "Silicon": Material(
@@ -814,7 +814,7 @@ def make_materials(
             color="purple",
         ),
         "Boron": boron,
-        "Polyethylene": polyethylene,
+        "High Density PolyEthylene": high_density_polyethylene,
         "Gallium Arsenide": Material(
             composition=[
                 AtomProportion(atom=atoms["Ga"], proportion=1),
@@ -846,7 +846,7 @@ def make_materials(
 
     material_mixed_def = {
         "Borotron": MixedMaterial(
-            materials=["Boron", "Polyethylene"],
+            materials=["Boron", "High Density PolyEthylene"],
             proportions=[0.05, 0.95],
         ),
         "Borated Graphite": MixedMaterial(

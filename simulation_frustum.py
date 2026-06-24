@@ -13,6 +13,34 @@ from one_layer_disk_design.frustum_geometry_definition import make_simulation_ge
 ### Simulation parameters
 
 # ========= PAPER RELEVANT PARAMETERS ===========
+import sys
+import json
+
+# Set defaults for extracted variables
+nsm_material = None
+nsm_thickness = None
+conical_pitch = None
+n_batches = None
+
+if len(sys.argv) > 1:
+    json_file = sys.argv[1]
+    try:
+        with open(json_file, "r") as f:
+            params = json.load(f)
+        nsm_material = params.get("nsm_material", nsm_material)
+        nsm_thickness = float(params["nsm_thickness"]) if "nsm_thickness" in params else nsm_thickness
+        conical_pitch = float(params["conical_pitch"]) if "conical_pitch" in params else conical_pitch
+        n_batches = float(params["n_batches"]) if "n_batches" in params else n_batches
+    except Exception as e:
+        print(f"Failed to read or parse parameter file '{json_file}': {e}")
+
+print(f"nsm_material: {nsm_material}")
+print(f"nsm_thickness: {nsm_thickness}")
+print(f"conical_pitch: {conical_pitch}")
+print(f"n_batches: {n_batches}")
+
+exit()
+
 
 # ===============================================
 
@@ -93,10 +121,10 @@ material_choice = MaterialChoice(
     outer_empty_zone="Void",
     photovoltaic="InGaAs",
     coolant="Light Water",
-    shaft_shield_moderator="Polyethylene",
-    outer_cold_shield_moderator="Polyethylene",
-    neutron_shield_moderator="Polyethylene",
-    shield_moderator_cladding="Polyethylene",
+    shaft_shield_moderator="High Density PolyEthylene",
+    outer_cold_shield_moderator="High Density PolyEthylene",
+    neutron_shield_moderator="High Density PolyEthylene",
+    shield_moderator_cladding="High Density PolyEthylene",
     gamma_shield="", # not used
 )
 
