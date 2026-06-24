@@ -50,6 +50,7 @@ def start_program(
     monitored_nuclide: MonitoredNuclide,
     emitter_gamma_energy_MeV: float,
     add_xe135: bool,
+    dose_time: float,
     print_characteristics=True,
     deterministic=False,
 ):
@@ -143,6 +144,7 @@ def start_program(
             particle_type=particle_type,
             monitored_nuclide=monitored_nuclide,
             coolant_cells=tracked_cells[material_choice.coolant],
+            dose_time=dose_time,
         )
 
     if run_mode == "keff_notallies":
@@ -179,6 +181,7 @@ def start_program(
             batches=batches,
             particle_type="photon",
             monitored_nuclide=monitored_nuclide,
+            dose_time=dose_time,
         )
 
     if run_mode == "render":

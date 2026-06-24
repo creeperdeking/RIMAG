@@ -581,9 +581,8 @@ def print_tallies(
     emitter_slice_volume,
     electric_power,
     batches,
+    dose_time,
 ):
-    total_dose_time = 365 * 24 * 60 * 60 # seconds
-    
     sp = openmc.StatePoint(f"statepoint.{batches}.h5")
     k_eff = sp.keff  # keff (mean)
     photovolatic = sp.get_tally(name="photovoltaic")
@@ -647,6 +646,9 @@ def print_tallies(
     normalized_ddd_photovoltaic = float(
         ddd_photovoltaic.get_values(scores=["flux"], value="mean")
     )
+    normalized_ddd_photovoltaic_sd = float(
+        ddd_photovoltaic.get_values(scores=["flux"], value="std_dev")
+    )
 
     # Get absorption in photovoltaic
     normalized_absorption_photovoltaic = float(
@@ -670,12 +672,18 @@ def print_tallies(
         heating_photovoltaic * source_strength / mass_photovoltaic
     )  # kGy/s
     yearly_heating_rate_photovoltaic = (
-        heating_rate_photovoltaic * total_dose_time
+        heating_rate_photovoltaic * dose_time
     )  # kGy/year
 
     # Calculate Displacement Damage Dose Rate (MeV/g/s)
     absolute_ddd_photovoltaic = (
         normalized_ddd_photovoltaic * source_strength / photovoltaic_slice_volume # MeV/g/s
+    )
+    yearly_ddd_photovoltaic = absolute_ddd_photovoltaic * dose_time
+    yearly_ddd_photovoltaic_ci95_pct = (
+        100 * 1.96 * normalized_ddd_photovoltaic_sd / normalized_ddd_photovoltaic
+        if normalized_ddd_photovoltaic != 0
+        else float("nan")
     )
 
     absorption_photovoltaic = (
@@ -703,10 +711,10 @@ def print_tallies(
     print("--------------------------------")
     print("photovoltaic")
     print(
-        f"Displacement damage: {absolute_ddd_photovoltaic * total_dose_time:.4e} MeV/g/year"
+        f"Displacement damage: {yearly_ddd_photovoltaic:.4e} MeV/g/year (± {yearly_ddd_photovoltaic_ci95_pct:.2f}%, 95% CI)"
     )
     print(
-        f"Absorption: {absorption_photovoltaic * total_dose_time:.4e} neutrons/cm3/year"
+        f"Absorption: {absorption_photovoltaic * dose_time:.4e} neutrons/cm3/year"
     )
     print(f"Dose rate: {yearly_heating_rate_photovoltaic:.4e} kGy/year")
     print("--------------------------------")
@@ -717,6 +725,6 @@ def print_tallies(
     )
     print(f"dpa emitter: {dpa_emitter:.2e} dpa/year")
     print(
-        f"Absorption: {absorption_emitter * total_dose_time:.4e} neutrons/cm3/year"
+        f"Absorption: {absorption_emitter * dose_time:.4e} neutrons/cm3/year"
     )
     print("--------------------------------")

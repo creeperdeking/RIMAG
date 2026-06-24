@@ -562,6 +562,7 @@ def run_sim_with_tallies(
     heat_deposition_cells: List[openmc.Cell],
     source_strength: float,
     batches: int,
+    dose_time: float,
     particle_type: Literal["neutron", "photon"] = "neutron",
     monitored_nuclide: MonitoredNuclide = None,
 ):
@@ -657,6 +658,7 @@ def run_sim_with_tallies(
         sum(cell.volume for cell in emitter_cells),
         electric_power,
         batches,
+        dose_time,
     )
 
     # clean_directory()

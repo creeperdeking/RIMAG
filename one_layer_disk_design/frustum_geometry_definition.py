@@ -42,7 +42,7 @@ def make_simulation_geometry(
     disk_geometry_params: DiskGeometryParams,
     materials_dict: Dict[str, openmc.Material],
 ) -> MakeSimulationGeometryResult:
-    central_section_multiplicator = 5
+    central_section_multiplicator = 1
     emitter_assembly = AssemblySections(
         parts=[
             ### Void

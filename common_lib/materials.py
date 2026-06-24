@@ -105,6 +105,7 @@ atoms: Dict[str, Atom] = {
     "V": Atom(name="V", atomic_weight=50.9415),
     "Ta": Atom(name="Ta", atomic_weight=180.94788),
     "F": Atom(name="F", atomic_weight=18.9984032),
+    "Y": Atom(name="Y", atomic_weight=88.90584),
 }
 
 
@@ -585,7 +586,15 @@ def make_materials(
                 AtomProportion(atom=atoms["Zr"], proportion=1),
                 AtomProportion(atom=atoms["H"], proportion=1.6),
             ],
-            density=5.9,
+            density=5.6,
+            color="gray",
+        ),
+        "Yttrium Hydride": Material(
+            composition=[
+                AtomProportion(atom=atoms["Y"], proportion=1),
+                AtomProportion(atom=atoms["H"], proportion=1.9),
+            ],
+            density=5.0,
             color="gray",
         ),
         "Salt Water": Material(

@@ -34,19 +34,21 @@ if len(sys.argv) > 1:
     except Exception as e:
         print(f"Failed to read or parse parameter file '{json_file}': {e}")
 
+print("--------------------------------")
+print("Simulation parameters:")
 print(f"nsm_material: {nsm_material}")
 print(f"nsm_thickness: {nsm_thickness}")
 print(f"conical_pitch: {conical_pitch}")
 print(f"n_batches: {n_batches}")
-
-exit()
+print("--------------------------------")
 
 
 # ===============================================
 
-run_mode: RunMode = ""
-print_core_characteristics = True
-batches = 200  # 2500  # 1250
+run_mode: RunMode = "keff"
+print_core_characteristics = False
+batches = int(n_batches)  # 2500  # 1250
+dose_time = 10  # years
 weight_windows: UseWeightWindows = "no"
 particle_type: ParticleType = "neutron"
 # Tally absoption only for this particular nuclide:
@@ -77,11 +79,11 @@ disk_geometry_params = make_disk_geometry_params(
         thickness_photovoltaic=thickness_photovoltaic,
         rotary_axle_thickness=1,
         reflector_thickness=30,
-        neutron_shield_moderator_thickness=2380,  # 175
-        neutron_shield_moderator_cladding_thickness=0.1,
+        neutron_shield_moderator_thickness=nsm_thickness,
+        neutron_shield_moderator_cladding_thickness=0.1, # not relevant since same material as shield moderator
         neutron_shield_absorber_thickness=10,
-        gamma_shield_thickness=10,
-        frustum_pitch=2,
+        gamma_shield_thickness=0, # not used
+        frustum_pitch=conical_pitch,
         number_of_reactor_columns=1,
     )
 )
@@ -107,7 +109,7 @@ add_xe135 = False
 ### Material definition
 
 material_choice = MaterialChoice(
-    moderator="Graphite",
+    moderator="Zirconium Hydride",
     neutron_absorber="Boron Carbide",
     neutron_reflector="Graphite",
     bottom_reflector="Graphite",
@@ -121,10 +123,10 @@ material_choice = MaterialChoice(
     outer_empty_zone="Void",
     photovoltaic="InGaAs",
     coolant="Light Water",
-    shaft_shield_moderator="High Density PolyEthylene",
-    outer_cold_shield_moderator="High Density PolyEthylene",
-    neutron_shield_moderator="High Density PolyEthylene",
-    shield_moderator_cladding="High Density PolyEthylene",
+    shaft_shield_moderator=nsm_material,
+    outer_cold_shield_moderator=nsm_material,
+    neutron_shield_moderator=nsm_material,
+    shield_moderator_cladding=nsm_material,
     gamma_shield="", # not used
 )
 
@@ -179,4 +181,5 @@ start_program(
     emitter_gamma_energy_MeV=emitter_gamma_energy_MeV,
     print_characteristics=print_core_characteristics,
     add_xe135=add_xe135,
+    dose_time=365 * 24 * 60 * 60 * dose_time,
 )
