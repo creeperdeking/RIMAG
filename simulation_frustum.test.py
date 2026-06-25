@@ -1,0 +1,9 @@
+content = '''{
+  "ddd": [1.6196e+12],
+  "ddd_ci95p": 0.20061702708011567,
+  "n_batches": 50
+}
+'''
+
+with open('resultsim.json', 'w') as f:
+    f.write(content)

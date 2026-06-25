@@ -8,7 +8,7 @@ from one_layer_disk_design.disks_geometry import (
     DiskGeometryParams,
     make_disk_geometry_params,
 )
-from one_layer_disk_design.frustum_geometry_definition import make_simulation_geometry
+from one_layer_disk_design.paper_geometry_definition import make_simulation_geometry
 
 ### Simulation parameters
 

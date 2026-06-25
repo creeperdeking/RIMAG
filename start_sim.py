@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Look up NSM material and conical pitch from a simulation spreadsheet."""
 
+import argparse
 import ast
 import json
 import re
@@ -10,6 +11,11 @@ import zipfile
 import xml.etree.ElementTree as ET
 from functools import lru_cache
 from pathlib import Path
+from typing import get_args
+
+from common_lib.runlib import RunMode
+
+RUN_MODE_CHOICES = get_args(RunMode.__value__ if hasattr(RunMode, "__value__") else RunMode)
 
 SIM_FILENAME_RE = re.compile(r"^simpaper_(\d+)_([\d.]+)\.json$", re.IGNORECASE)
 SIM_PATTERN_RE = re.compile(r"^simpaper_(\d+)_\[NSM thickness\]\.json$", re.IGNORECASE)
@@ -21,7 +27,7 @@ CALCEXT_NS = "urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1
 NS = {"table": TABLE_NS, "text": TEXT_NS}
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-SIMULATION_SCRIPT = SCRIPT_DIR / "simulation_frustum.py"
+SIMULATION_SCRIPT = SCRIPT_DIR / "simulation_paper.py"
 MATERIALS_PY = SCRIPT_DIR / "common_lib" / "materials.py"
 RESULTSIM_JSON = SCRIPT_DIR / "resultsim.json"
 
@@ -250,6 +256,7 @@ def write_sim_json(
     sim_json_path: Path,
     params: dict[str, str | float | int],
     n_batches: int,
+    run_mode: RunMode | None = None,
 ) -> None:
     payload = {
         "nsm_material": _resolve_nsm_material(str(params["nsm"])),
@@ -257,6 +264,8 @@ def write_sim_json(
         "conical_pitch": params["pitch"],
         "n_batches": n_batches,
     }
+    if run_mode is not None:
+        payload["run_mode"] = run_mode
     with sim_json_path.open("w", encoding="utf-8") as json_file:
         json.dump(payload, json_file, indent=4)
         json_file.write("\n")
@@ -569,12 +578,13 @@ def run_single_simulation(
     params: dict[str, str | float | int],
     n_batches: int,
     sim_json_path: Path | None = None,
+    run_mode: RunMode | None = None,
 ) -> int:
     sim_index = int(params["sim_index"])
     nsm_thickness = float(params["nsm_thickness"])
     json_path = sim_json_path or _sim_json_path(sim_index, nsm_thickness)
 
-    write_sim_json(json_path, params, n_batches)
+    write_sim_json(json_path, params, n_batches, run_mode=run_mode)
     print(f"Wrote simulation parameters to '{json_path}'", flush=True)
     sys.stdout.flush()
 
@@ -591,7 +601,11 @@ def run_single_simulation(
     return 0
 
 
-def run_pending_simulations(ods_path: str | Path, sim_index: int) -> tuple[int, int]:
+def run_pending_simulations(
+    ods_path: str | Path,
+    sim_index: int,
+    run_mode: RunMode | None = None,
+) -> tuple[int, int]:
     block = get_sim_block(ods_path, sim_index)
     pending, warnings = _pending_columns(block)
 
@@ -621,7 +635,9 @@ def run_pending_simulations(ods_path: str | Path, sim_index: int) -> tuple[int, 
             flush=True,
         )
         try:
-            exit_code = run_single_simulation(ods_path, params, n_batches, sim_json_path)
+            exit_code = run_single_simulation(
+                ods_path, params, n_batches, sim_json_path, run_mode=run_mode
+            )
         except (ValueError, FileNotFoundError, zipfile.BadZipFile, KeyError) as error:
             print(f"Error: {error}", file=sys.stderr)
             return 1, 0
@@ -720,33 +736,51 @@ def notify_completion(title: str, message: str) -> None:
     print(f"\n{banner}\n{title}\n{message}\n{banner}\n", flush=True)
 
 
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Look up NSM material and conical pitch from a simulation spreadsheet."
+    )
+    parser.add_argument("ods_path", help="Path to the simulation spreadsheet (.ods)")
+    parser.add_argument(
+        "target",
+        help="Simulation index (batch mode) or simpaper_<index>_<NSM thickness>.json path",
+    )
+    parser.add_argument(
+        "n_batches",
+        nargs="?",
+        type=int,
+        help="Number of batches (required when target is a JSON file)",
+    )
+    parser.add_argument(
+        "--run-mode",
+        choices=RUN_MODE_CHOICES,
+        default=None,
+        help="Override the simulation run mode (default: keff in simulation script)",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
-    if len(sys.argv) not in (3, 4):
-        print(
-            "Usage:\n"
-            "  python start_sim.py <simulation_data.ods> <sim_index>\n"
-            "  python start_sim.py <simulation_data.ods> "
-            "<simpaper_<index>_<NSM thickness>.json> <n_batches>",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+    args = _parse_args()
+    ods_path = args.ods_path
+    run_mode: RunMode | None = args.run_mode
 
-    ods_path = sys.argv[1]
-
-    if len(sys.argv) == 3:
+    if args.n_batches is None:
         try:
-            sim_index = int(sys.argv[2])
+            sim_index = int(args.target)
             if sim_index <= 0:
                 raise ValueError
         except ValueError:
             print(
-                f"Error: Invalid simulation index '{sys.argv[2]}'. Expected a positive integer.",
+                f"Error: Invalid simulation index '{args.target}'. Expected a positive integer.",
                 file=sys.stderr,
             )
             sys.exit(1)
 
         try:
-            exit_code, pending_count = run_pending_simulations(ods_path, sim_index)
+            exit_code, pending_count = run_pending_simulations(
+                ods_path, sim_index, run_mode=run_mode
+            )
         except (ValueError, FileNotFoundError, zipfile.BadZipFile, KeyError) as error:
             print(f"Error: {error}", file=sys.stderr)
             sys.exit(1)
@@ -758,8 +792,8 @@ def main() -> None:
             )
         sys.exit(exit_code)
 
-    sim_json_path = Path(sys.argv[2])
-    n_batches_arg = sys.argv[3]
+    sim_json_path = Path(args.target)
+    n_batches = args.n_batches
 
     try:
         params = lookup_sim_parameters(ods_path, sim_json_path)
@@ -773,19 +807,17 @@ def main() -> None:
     print(_format_metric("Uncertainty", params["uncertainty"]))
     print(_format_metric("DDD 10 years (MeV/g)", params["ddd_10_years"]))
 
-    try:
-        n_batches = int(n_batches_arg)
-        if n_batches <= 0:
-            raise ValueError
-    except ValueError:
+    if n_batches <= 0:
         print(
-            f"Error: Invalid number of batches '{n_batches_arg}'. Expected a positive integer.",
+            f"Error: Invalid number of batches '{n_batches}'. Expected a positive integer.",
             file=sys.stderr,
         )
         sys.exit(1)
 
     try:
-        exit_code = run_single_simulation(ods_path, params, n_batches, sim_json_path)
+        exit_code = run_single_simulation(
+            ods_path, params, n_batches, sim_json_path, run_mode=run_mode
+        )
     except (ValueError, FileNotFoundError, zipfile.BadZipFile, KeyError) as error:
         print(f"Error: {error}", file=sys.stderr)
         sys.exit(1)
