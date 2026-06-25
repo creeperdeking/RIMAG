@@ -16,11 +16,14 @@ SIM_PATTERN_RE = re.compile(r"^simpaper_(\d+)_\[NSM thickness\]\.json$", re.IGNO
 
 TABLE_NS = "urn:oasis:names:tc:opendocument:xmlns:table:1.0"
 TEXT_NS = "urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+OFFICE_NS = "urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+CALCEXT_NS = "urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0"
 NS = {"table": TABLE_NS, "text": TEXT_NS}
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 SIMULATION_SCRIPT = SCRIPT_DIR / "simulation_frustum.py"
 MATERIALS_PY = SCRIPT_DIR / "common_lib" / "materials.py"
+RESULTSIM_JSON = SCRIPT_DIR / "resultsim.json"
 
 
 def _row_cells(row: ET.Element) -> list[str]:
@@ -125,23 +128,21 @@ def _is_todo(value: str | None) -> bool:
     return value is None or value.lower() == "#todo"
 
 
-def lookup_sim_parameters(ods_path: str | Path, sim_json_name: str | Path) -> dict[str, str | float | int]:
+def _format_thickness_for_filename(nsm_thickness: float) -> str:
+    if abs(nsm_thickness - round(nsm_thickness)) < 1e-9:
+        return str(int(round(nsm_thickness)))
+    return format(nsm_thickness, "g")
+
+
+def _sim_json_path(sim_index: int, nsm_thickness: float) -> Path:
+    thickness_part = _format_thickness_for_filename(nsm_thickness)
+    return SCRIPT_DIR / f"simpaper_{sim_index}_{thickness_part}.json"
+
+
+def get_sim_block(ods_path: str | Path, sim_index: int) -> dict[str, object]:
     ods_file = Path(ods_path)
-    sim_name = Path(sim_json_name).name
-
-    filename_match = SIM_FILENAME_RE.match(sim_name)
-    if not filename_match:
-        raise ValueError(
-            f"Invalid simulation file name '{sim_name}'. "
-            "Expected format: simpaper_<sim index>_<NSM thickness>.json"
-        )
-
-    sim_index = int(filename_match.group(1))
-    nsm_thickness = float(filename_match.group(2))
-
-    sheets = _load_sheet_rows(ods_file)
-    sim_blocks: dict[int, dict[str, str]] = {}
-    for sheet_name, rows in sheets.items():
+    sim_blocks: dict[int, dict[str, object]] = {}
+    for sheet_name, rows in _load_sheet_rows(ods_file).items():
         if sheet_name == "General simulation settings":
             continue
         sim_blocks.update(_parse_sim_blocks(rows))
@@ -165,7 +166,24 @@ def lookup_sim_parameters(ods_path: str | Path, sim_json_name: str | Path) -> di
             f"No NSM thickness columns found for simulation index {sim_index}."
         )
 
-    column_index = _thickness_column_index(thicknesses, nsm_thickness)
+    return block
+
+
+def lookup_sim_parameters(ods_path: str | Path, sim_json_name: str | Path) -> dict[str, str | float | int]:
+    ods_file = Path(ods_path)
+    sim_name = Path(sim_json_name).name
+
+    filename_match = SIM_FILENAME_RE.match(sim_name)
+    if not filename_match:
+        raise ValueError(
+            f"Invalid simulation file name '{sim_name}'. "
+            "Expected format: simpaper_<sim index>_<NSM thickness>.json"
+        )
+
+    sim_index = int(filename_match.group(1))
+    nsm_thickness = float(filename_match.group(2))
+    block = get_sim_block(ods_file, sim_index)
+    column_index = _thickness_column_index(block["thicknesses"], nsm_thickness)
 
     return {
         "sim_index": sim_index,
@@ -253,20 +271,404 @@ def run_simulation(sim_json_path: Path) -> int:
     return result.returncode
 
 
+def _cell_text(cell: ET.Element) -> str:
+    return "".join(text.text or "" for text in cell.findall(".//text:p", NS))
+
+
+def _logical_row_values(row: ET.Element) -> list[str]:
+    values: list[str] = []
+    for cell in row.findall("table:table-cell", NS):
+        repeated = int(cell.get(f"{{{TABLE_NS}}}number-columns-repeated", 1))
+        if repeated > 100 and _cell_text(cell) == "":
+            break
+        values.extend([_cell_text(cell)] * repeated)
+    return values
+
+
+def _row_label(row: ET.Element) -> str:
+    values = _logical_row_values(row)
+    return values[0] if values else ""
+
+
+def _set_cell_text(cell: ET.Element, text: str) -> None:
+    cell.set(f"{{{OFFICE_NS}}}value-type", "string")
+    cell.set(f"{{{CALCEXT_NS}}}value-type", "string")
+    repeated_attr = f"{{{TABLE_NS}}}number-columns-repeated"
+    if repeated_attr in cell.attrib:
+        del cell.attrib[repeated_attr]
+
+    paragraph = cell.find("text:p", NS)
+    if paragraph is None:
+        paragraph = ET.SubElement(cell, f"{{{TEXT_NS}}}p")
+    paragraph.text = text
+
+
+def _make_data_cell(value: str, style_name: str = "ce1") -> ET.Element:
+    cell = ET.Element(f"{{{TABLE_NS}}}table-cell")
+    cell.set(f"{{{TABLE_NS}}}style-name", style_name)
+    _set_cell_text(cell, value)
+    return cell
+
+
+def _set_row_data_value(row: ET.Element, column_index: int, value: str) -> None:
+    cells = row.findall("table:table-cell", NS)
+    if not cells:
+        return
+
+    logical_values = _logical_row_values(row)
+    data_values = logical_values[1:6]
+    while len(data_values) < 5:
+        data_values.append("")
+    data_values[column_index] = value
+
+    trailing_repeat = "1018"
+    if len(cells) > 1:
+        last_cell = cells[-1]
+        repeat = last_cell.get(f"{{{TABLE_NS}}}number-columns-repeated")
+        if repeat and int(repeat) > 100 and _cell_text(last_cell) == "":
+            trailing_repeat = repeat
+
+    data_style = cells[1].get(f"{{{TABLE_NS}}}style-name", "ce1") if len(cells) > 1 else "ce1"
+    for cell in cells[1:]:
+        row.remove(cell)
+
+    for data_value in data_values:
+        row.append(_make_data_cell(data_value, data_style))
+
+    trailing_cell = ET.SubElement(row, f"{{{TABLE_NS}}}table-cell")
+    trailing_cell.set(f"{{{TABLE_NS}}}number-columns-repeated", trailing_repeat)
+
+
+def _find_sim_block_rows(sheet: ET.Element, sim_index: int) -> dict[str, ET.Element]:
+    target_name = f"simpaper_{sim_index}_[NSM thickness].json"
+    rows = sheet.findall("table:table-row", NS)
+    block_rows: dict[str, ET.Element] = {}
+    in_block = False
+
+    for row in rows:
+        label = _row_label(row)
+        if label == "Sim file name":
+            logical_values = _logical_row_values(row)
+            if len(logical_values) > 1 and logical_values[1] == target_name:
+                in_block = True
+                continue
+            if in_block:
+                break
+            continue
+
+        if not in_block or not label:
+            continue
+
+        block_rows[label] = row
+
+    if not block_rows:
+        raise ValueError(f"Could not locate simulation block for index {sim_index} in ODS content.")
+
+    return block_rows
+
+
+def _format_ddd_value(ddd: float) -> str:
+    return f"{ddd:.2E}"
+
+
+def _format_uncertainty_value(ddd_ci95p: float | None) -> str:
+    if ddd_ci95p is None:
+        return "#todo"
+    return f"{ddd_ci95p * 100:.2f}%"
+
+
+def load_resultsim(path: Path = RESULTSIM_JSON) -> dict[str, float | int | None]:
+    if not path.is_file():
+        raise FileNotFoundError(f"Simulation result file '{path}' was not found.")
+
+    with path.open(encoding="utf-8") as result_file:
+        payload = json.load(result_file)
+
+    if "ddd" not in payload or not payload["ddd"]:
+        raise ValueError(f"Simulation result file '{path}' does not contain a DDD value.")
+
+    return {
+        "ddd": float(payload["ddd"][0]),
+        "ddd_ci95p": None if payload.get("ddd_ci95p") is None else float(payload["ddd_ci95p"]),
+        "n_batches": int(payload["n_batches"]),
+    }
+
+
+def update_ods_with_results(
+    ods_path: str | Path,
+    sim_index: int,
+    nsm_thickness: float,
+    results: dict[str, float | int | None],
+) -> None:
+    ods_file = Path(ods_path)
+    with zipfile.ZipFile(ods_file, "r") as archive:
+        content_xml = archive.read("content.xml")
+        other_files = [
+            (info, archive.read(info.filename))
+            for info in archive.infolist()
+            if info.filename != "content.xml"
+        ]
+
+    root = ET.fromstring(content_xml)
+    block_rows = None
+    column_index = None
+
+    for sheet in root.findall(".//table:table", NS):
+        sheet_name = sheet.get(f"{{{TABLE_NS}}}name")
+        if sheet_name == "General simulation settings":
+            continue
+        try:
+            candidate_rows = _find_sim_block_rows(sheet, sim_index)
+            thickness_row = candidate_rows["NSM thickness (cm)"]
+            thicknesses = [float(value) for value in _logical_row_values(thickness_row)[1:6]]
+            column_index = _thickness_column_index(thicknesses, nsm_thickness)
+            block_rows = candidate_rows
+            break
+        except ValueError:
+            continue
+
+    if block_rows is None or column_index is None:
+        raise ValueError(
+            f"Could not locate ODS rows to update for simulation index {sim_index} "
+            f"and NSM thickness {nsm_thickness} cm."
+        )
+
+    row_updates = {
+        next(label for label in block_rows if label.startswith("DDD 10")): _format_ddd_value(
+            float(results["ddd"])
+        ),
+        "Number of batches": str(int(results["n_batches"])),
+        "Uncertainty": _format_uncertainty_value(
+            None if results["ddd_ci95p"] is None else float(results["ddd_ci95p"])
+        ),
+    }
+
+    for label, value in row_updates.items():
+        if label not in block_rows:
+            raise ValueError(f"Missing '{label}' row for simulation index {sim_index} in ODS.")
+        _set_row_data_value(block_rows[label], column_index, value)
+
+    updated_content = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+    temp_path = ods_file.with_suffix(".ods.tmp")
+    with zipfile.ZipFile(temp_path, "w") as archive:
+        archive.writestr("content.xml", updated_content)
+        for info, data in other_files:
+            archive.writestr(info, data)
+    temp_path.replace(ods_file)
+
+
+def _parse_batches_value(batches_value: str | None) -> int | None:
+    if _is_todo(batches_value):
+        return None
+    try:
+        n_batches = int(str(batches_value).strip())
+    except ValueError:
+        return None
+    if n_batches <= 0:
+        return None
+    return n_batches
+
+
+def _pending_columns(block: dict[str, object]) -> tuple[list[tuple[float, int]], list[str]]:
+    pending: list[tuple[float, int]] = []
+    warnings: list[str] = []
+    thicknesses = block["thicknesses"]
+
+    for column_index, thickness in enumerate(thicknesses):
+        batches_value = _value_at_column(block["n_batches"], column_index)
+        ddd_value = _value_at_column(block["ddd_10_years"], column_index)
+        uncertainty_value = _value_at_column(block["uncertainty"], column_index)
+        n_batches = _parse_batches_value(batches_value)
+
+        if n_batches is None:
+            if _is_todo(batches_value):
+                warnings.append(
+                    f"Skipping NSM thickness {thickness} cm: missing number of batches."
+                )
+            else:
+                warnings.append(
+                    f"Skipping NSM thickness {thickness} cm: invalid number of batches "
+                    f"('{batches_value}')."
+                )
+            continue
+
+        if not _is_todo(ddd_value) and not _is_todo(uncertainty_value):
+            continue
+
+        pending.append((float(thickness), n_batches))
+
+    return pending, warnings
+
+
+def run_single_simulation(
+    ods_path: str | Path,
+    params: dict[str, str | float | int],
+    n_batches: int,
+    sim_json_path: Path | None = None,
+) -> int:
+    sim_index = int(params["sim_index"])
+    nsm_thickness = float(params["nsm_thickness"])
+    json_path = sim_json_path or _sim_json_path(sim_index, nsm_thickness)
+
+    write_sim_json(json_path, params, n_batches)
+    print(f"Wrote simulation parameters to '{json_path}'", flush=True)
+    sys.stdout.flush()
+
+    exit_code = run_simulation(json_path)
+    if exit_code != 0:
+        return exit_code
+
+    results = load_resultsim()
+    update_ods_with_results(ods_path, sim_index, nsm_thickness, results)
+    print(
+        f"Updated '{ods_path}' for NSM thickness {nsm_thickness} cm "
+        f"with results from '{RESULTSIM_JSON.name}'."
+    )
+    return 0
+
+
+def run_pending_simulations(ods_path: str | Path, sim_index: int) -> tuple[int, int]:
+    block = get_sim_block(ods_path, sim_index)
+    pending, warnings = _pending_columns(block)
+
+    print(f"NSM: {block['nsm']}")
+    print(f"Pitch: {block['pitch']}")
+
+    for warning in warnings:
+        print(f"Warning: {warning}", file=sys.stderr)
+
+    if not pending:
+        print(f"No pending simulations for index {sim_index}.")
+        return 0, 0
+
+    print(f"Running {len(pending)} pending simulation(s) for index {sim_index}...")
+
+    for nsm_thickness, n_batches in pending:
+        params = {
+            "sim_index": sim_index,
+            "nsm_thickness": nsm_thickness,
+            "nsm": block["nsm"],
+            "pitch": float(block["pitch"]),
+        }
+        sim_json_path = _sim_json_path(sim_index, nsm_thickness)
+        print(
+            f"\nStarting {sim_json_path.name} with {n_batches} batches "
+            f"(NSM thickness {nsm_thickness} cm)...",
+            flush=True,
+        )
+        try:
+            exit_code = run_single_simulation(ods_path, params, n_batches, sim_json_path)
+        except (ValueError, FileNotFoundError, zipfile.BadZipFile, KeyError) as error:
+            print(f"Error: {error}", file=sys.stderr)
+            return 1, 0
+
+        if exit_code != 0:
+            print(
+                f"Simulation failed for {sim_json_path.name} with exit code {exit_code}.",
+                file=sys.stderr,
+            )
+            return exit_code, 0
+
+    print(f"\nFinished all pending simulations for index {sim_index}.")
+    return 0, len(pending)
+
+
+def _escape_powershell_string(text: str) -> str:
+    return text.replace("'", "''").replace("\n", "`n")
+
+
+def notify_completion(title: str, message: str) -> None:
+    """Show a loud, visible popup when the script finishes successfully."""
+    print("\a", end="", flush=True)
+
+    ps_message = _escape_powershell_string(message)
+    ps_title = _escape_powershell_string(title)
+    powershell_command = (
+        "Add-Type -AssemblyName System.Windows.Forms; "
+        "[System.Media.SystemSounds]::Exclamation.Play(); "
+        "Start-Sleep -Milliseconds 200; "
+        f"[System.Windows.Forms.MessageBox]::Show('{ps_message}', '{ps_title}', "
+        "[System.Windows.Forms.MessageBoxButtons]::OK, "
+        "[System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null"
+    )
+
+    try:
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-Command", powershell_command],
+            check=False,
+            timeout=120,
+        )
+        if result.returncode == 0:
+            return
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pass
+
+    try:
+        subprocess.run(
+            ["notify-send", "-u", "critical", title, message],
+            check=False,
+        )
+        return
+    except FileNotFoundError:
+        pass
+
+    banner = "=" * 60
+    print(f"\n{banner}\n{title}\n{message}\n{banner}\n", flush=True)
+
+
+def _completion_message_for_batch(sim_index: int, pending_count: int) -> str:
+    if pending_count == 0:
+        return f"No pending simulations were found for index {sim_index}."
+    return f"All {pending_count} pending simulation(s) for index {sim_index} have finished."
+
+
+def _completion_message_for_single(sim_json_path: Path) -> str:
+    return f"Simulation {sim_json_path.name} has finished and the ODS file was updated."
+
+
 def main() -> None:
     if len(sys.argv) not in (3, 4):
         print(
-            "Usage: python start_sim.py <simulation_data.ods> "
-            "<simpaper_<index>_<NSM thickness>.json> [n_batches]",
+            "Usage:\n"
+            "  python start_sim.py <simulation_data.ods> <sim_index>\n"
+            "  python start_sim.py <simulation_data.ods> "
+            "<simpaper_<index>_<NSM thickness>.json> <n_batches>",
             file=sys.stderr,
         )
         sys.exit(1)
 
+    ods_path = sys.argv[1]
+
+    if len(sys.argv) == 3:
+        try:
+            sim_index = int(sys.argv[2])
+            if sim_index <= 0:
+                raise ValueError
+        except ValueError:
+            print(
+                f"Error: Invalid simulation index '{sys.argv[2]}'. Expected a positive integer.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        try:
+            exit_code, pending_count = run_pending_simulations(ods_path, sim_index)
+        except (ValueError, FileNotFoundError, zipfile.BadZipFile, KeyError) as error:
+            print(f"Error: {error}", file=sys.stderr)
+            sys.exit(1)
+
+        if exit_code == 0:
+            notify_completion(
+                "RIMAEL simulations complete",
+                _completion_message_for_batch(sim_index, pending_count),
+            )
+        sys.exit(exit_code)
+
     sim_json_path = Path(sys.argv[2])
-    n_batches_arg = sys.argv[3] if len(sys.argv) == 4 else None
+    n_batches_arg = sys.argv[3]
 
     try:
-        params = lookup_sim_parameters(sys.argv[1], sim_json_path)
+        params = lookup_sim_parameters(ods_path, sim_json_path)
     except (ValueError, FileNotFoundError, zipfile.BadZipFile, KeyError) as error:
         print(f"Error: {error}", file=sys.stderr)
         sys.exit(1)
@@ -276,9 +678,6 @@ def main() -> None:
     print(_format_metric("Number of batches", params["n_batches"]))
     print(_format_metric("Uncertainty", params["uncertainty"]))
     print(_format_metric("DDD 10 years (MeV/g)", params["ddd_10_years"]))
-
-    if n_batches_arg is None:
-        return
 
     try:
         n_batches = int(n_batches_arg)
@@ -292,14 +691,17 @@ def main() -> None:
         sys.exit(1)
 
     try:
-        write_sim_json(sim_json_path, params, n_batches)
-    except ValueError as error:
+        exit_code = run_single_simulation(ods_path, params, n_batches, sim_json_path)
+    except (ValueError, FileNotFoundError, zipfile.BadZipFile, KeyError) as error:
         print(f"Error: {error}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Wrote simulation parameters to '{sim_json_path}'", flush=True)
-    sys.stdout.flush()
-    sys.exit(run_simulation(sim_json_path))
+    if exit_code == 0:
+        notify_completion(
+            "RIMAEL simulation complete",
+            _completion_message_for_single(sim_json_path),
+        )
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":

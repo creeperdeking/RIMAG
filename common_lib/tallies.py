@@ -728,3 +728,18 @@ def print_tallies(
         f"Absorption: {absorption_emitter * dose_time:.4e} neutrons/cm3/year"
     )
     print("--------------------------------")
+
+    ddd_ci95p = (
+        yearly_ddd_photovoltaic_ci95_pct / 100
+        if np.isfinite(yearly_ddd_photovoltaic_ci95_pct)
+        else None
+    )
+    with open("resultsim.json", "w") as f:
+        f.write("{\n")
+        f.write(f'  "ddd": [{yearly_ddd_photovoltaic:.4e}],\n')
+        if ddd_ci95p is None:
+            f.write('  "ddd_ci95p": null,\n')
+        else:
+            f.write(f'  "ddd_ci95p": {ddd_ci95p},\n')
+        f.write(f'  "n_batches": {batches}\n')
+        f.write("}\n")

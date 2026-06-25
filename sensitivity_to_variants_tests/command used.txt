@@ -1,0 +1,1 @@
+python start_sim.py "Simulation data.ods" simpaper_10_25.json 50

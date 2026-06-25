@@ -48,7 +48,7 @@ print("--------------------------------")
 run_mode: RunMode = "keff"
 print_core_characteristics = False
 batches = int(n_batches)  # 2500  # 1250
-dose_time = 10  # years
+dose_time = 1  # years
 weight_windows: UseWeightWindows = "no"
 particle_type: ParticleType = "neutron"
 # Tally absoption only for this particular nuclide:
@@ -65,7 +65,7 @@ enrichment_multiplicator = 1 / 2
 
 fuel_thickness = 0.017 / enrichment_multiplicator
 total_fuel_thickness = 1
-thickness_photovoltaic = 2e-4 * 100 # cm
+thickness_photovoltaic = 2e-6 * 100 # cm # Note: changing thickness of TPV does appear to affect DDD results and uncertainties significantly
 disk_geometry_params = make_disk_geometry_params(
     DiskGeometryParams(
         core_diameter=100,
@@ -109,7 +109,7 @@ add_xe135 = False
 ### Material definition
 
 material_choice = MaterialChoice(
-    moderator="Zirconium Hydride",
+    moderator="Graphite",
     neutron_absorber="Boron Carbide",
     neutron_reflector="Graphite",
     bottom_reflector="Graphite",
