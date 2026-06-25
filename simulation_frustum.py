@@ -48,7 +48,7 @@ print("--------------------------------")
 run_mode: RunMode = "keff"
 print_core_characteristics = False
 batches = int(n_batches)  # 2500  # 1250
-dose_time = 1  # years
+dose_time = 10  # years
 weight_windows: UseWeightWindows = "no"
 particle_type: ParticleType = "neutron"
 # Tally absoption only for this particular nuclide:
@@ -109,25 +109,25 @@ add_xe135 = False
 ### Material definition
 
 material_choice = MaterialChoice(
-    moderator="Graphite",
+    moderator="Zirconium Hydride",
+    moderator_cladding="Zirconium Hydride",
     neutron_absorber="Boron Carbide",
     neutron_reflector="Graphite",
     bottom_reflector="Graphite",
     rotary_axle="Graphite",
     fuel="Uranium Dioxide",
-    moderator_cladding="Graphite",
-    coolant_cladding="Stainless Steel",
-    emitter="Graphite",
     fuel_cladding="Graphite",
-    void="Void",
-    outer_empty_zone="Void",
+    emitter="Graphite",
     photovoltaic="InGaAs",
     coolant="Light Water",
+    coolant_cladding="Stainless Steel",
     shaft_shield_moderator=nsm_material,
     outer_cold_shield_moderator=nsm_material,
     neutron_shield_moderator=nsm_material,
     shield_moderator_cladding=nsm_material,
     gamma_shield="", # not used
+    outer_empty_zone="Void",
+    void="Void",
 )
 
 materials_dict, colors, updated_material_choice = make_materials(

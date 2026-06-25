@@ -12,6 +12,7 @@ from common_lib.materials import MonitoredNuclide
 import numpy as np
 import h5py
 import math
+import re
 import sys
 from common_lib.geometry_utils import get_geometry_bounding_box
 from common_lib.geometry_types import GeometrySettings
@@ -100,25 +101,151 @@ def _get_threads_from_settings(default_threads: int = 20) -> int:
         return default_threads
 
 
+def _format_duration(seconds: float) -> str:
+    seconds = max(0, int(seconds))
+    hours, remainder = divmod(seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes}:{secs:02d}"
+
+
+class _OpenMCProgressReporter:
+    _BATCH_GEN_RE = re.compile(r"^\s*(\d+)/(\d+)\s+([\d.+-]+)")
+
+    def __init__(self, total_batches: int | None, generations_per_batch: int):
+        self.total_batches = total_batches
+        self.generations_per_batch = generations_per_batch
+        self.total_steps = (
+            total_batches * generations_per_batch if total_batches else None
+        )
+        self._output = sys.__stdout__
+        self._start_time = time.time()
+        self._last_render = 0.0
+        self._current_step = 0
+        self._last_k = None
+        self._active = False
+
+    def feed_line(self, line: str) -> None:
+        if not line.strip():
+            return
+
+        if "K EIGENVALUE SIMULATION" in line:
+            self._active = True
+            return
+
+        match = self._BATCH_GEN_RE.match(line)
+        if match and self.total_steps:
+            batch = int(match.group(1))
+            generation = int(match.group(2))
+            self._last_k = match.group(3)
+            self._current_step = (batch - 1) * self.generations_per_batch + generation
+            self._active = True
+            self._render()
+            return
+
+        if self.total_steps is None:
+            self._active = True
+            now = time.time()
+            if now - self._last_render >= 0.5:
+                self._render_indeterminate()
+                self._last_render = now
+
+    def _render(self) -> None:
+        if not self.total_steps:
+            return
+
+        progress = min(self._current_step / self.total_steps, 1.0)
+        elapsed = time.time() - self._start_time
+        if self._current_step > 0:
+            eta = elapsed * (self.total_steps - self._current_step) / self._current_step
+        else:
+            eta = 0.0
+
+        batch = (self._current_step - 1) // self.generations_per_batch + 1
+        generation = (self._current_step - 1) % self.generations_per_batch + 1
+        bar_width = 30
+        filled = int(bar_width * progress)
+        bar = "#" * filled + "-" * (bar_width - filled)
+
+        message = (
+            f"\r[OpenMC] |{bar}| {progress * 100:5.1f}%  "
+            f"batch {batch}/{self.total_batches}  "
+            f"gen {generation}/{self.generations_per_batch}"
+        )
+        if self._last_k is not None:
+            message += f"  k={self._last_k}"
+        message += f"  ETA {_format_duration(eta)}"
+        self._output.write(message)
+        self._output.flush()
+        self._last_render = time.time()
+
+    def _render_indeterminate(self) -> None:
+        elapsed = time.time() - self._start_time
+        self._output.write(
+            f"\r[OpenMC] running... elapsed {_format_duration(elapsed)}"
+        )
+        self._output.flush()
+
+    def finish(self) -> None:
+        if self._active:
+            if self.total_steps and self._current_step > 0:
+                self._render()
+            elif self.total_steps is None:
+                self._render_indeterminate()
+        self._output.write("\n")
+        self._output.flush()
+
+
+class _OpenMCProgressStream:
+    def __init__(self, reporter: _OpenMCProgressReporter):
+        self._reporter = reporter
+        self._buffer = ""
+
+    def write(self, data: str) -> int:
+        if not data:
+            return 0
+        self._buffer += data
+        while "\n" in self._buffer:
+            line, self._buffer = self._buffer.split("\n", 1)
+            self._reporter.feed_line(line)
+        return len(data)
+
+    def flush(self) -> None:
+        if self._buffer:
+            self._reporter.feed_line(self._buffer)
+            self._buffer = ""
+
+    def isatty(self) -> bool:
+        return False
+
+
 def run_sim(geometry, settings, materials_dict, tallies=None, quiet=False):
     generate_XML(geometry, settings, tallies, materials_dict)
     if settings.run_mode == "volume":
         print("[OpenMC] Running stochastic volume calculations...")
     threads = _get_threads_from_settings(default_threads=20)
+    geometry_debug = settings.run_mode == "volume"
     if quiet:
-        # Redirect stdout and stderr to suppress OpenMC output
-        with open(os.devnull, "w") as devnull:
-            old_stdout = sys.stdout
-            old_stderr = sys.stderr
-            sys.stdout = devnull
-            sys.stderr = devnull
-            try:
-                openmc.run(threads=threads, geometry_debug=True)
-            finally:
-                sys.stdout = old_stdout
-                sys.stderr = old_stderr
+        total_batches = getattr(settings, "batches", None)
+        generations_per_batch = getattr(settings, "generations_per_batch", 10)
+        reporter = _OpenMCProgressReporter(total_batches, generations_per_batch)
+        progress_stream = _OpenMCProgressStream(reporter)
+        old_stdout = sys.stdout
+        old_stderr = sys.stderr
+        sys.stdout = progress_stream
+        sys.stderr = progress_stream
+        try:
+            openmc.run(threads=threads, geometry_debug=geometry_debug)
+        except RuntimeError as exc:
+            msg = str(exc).split("Abort(")[0].strip()
+            raise RuntimeError(msg) from exc
+        finally:
+            sys.stdout = old_stdout
+            sys.stderr = old_stderr
+            reporter.finish()
     else:
-        openmc.run(threads=threads, geometry_debug=False)
+        openmc.run(threads=threads, geometry_debug=geometry_debug)
     # clean_directory()
 
 
@@ -270,7 +397,7 @@ def run_keff_sim(
     geometry: openmc.Geometry,
     settings: openmc.Settings,
     materials_dict: Dict[str, openmc.Material],
-    quiet: bool = False,
+    quiet: bool = True,
 ):
     print()
     print("-------- Criticality simulation --------")
@@ -649,7 +776,7 @@ def run_sim_with_tallies(
             dpa_emitter,
         ]
     )
-    run_sim(geometry, settings, materials_dict, tallies)
+    run_sim(geometry, settings, materials_dict, tallies, quiet=True)
     print_tallies(
         source_strength,
         emitter_cells,

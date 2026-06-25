@@ -290,36 +290,83 @@ def _row_label(row: ET.Element) -> str:
     return values[0] if values else ""
 
 
-def _set_cell_text(cell: ET.Element, text: str) -> None:
-    cell.set(f"{{{OFFICE_NS}}}value-type", "string")
-    cell.set(f"{{{CALCEXT_NS}}}value-type", "string")
-    repeated_attr = f"{{{TABLE_NS}}}number-columns-repeated"
-    if repeated_attr in cell.attrib:
-        del cell.attrib[repeated_attr]
+def _capture_data_columns(row: ET.Element) -> list[dict[str, str | None]]:
+    columns: list[dict[str, str | None]] = []
+    for cell in row.findall("table:table-cell", NS)[1:]:
+        repeated = int(cell.get(f"{{{TABLE_NS}}}number-columns-repeated", 1))
+        if repeated > 100 and _cell_text(cell) == "":
+            break
+        cell_info = {
+            "style": cell.get(f"{{{TABLE_NS}}}style-name", "ce1"),
+            "value_type": cell.get(f"{{{OFFICE_NS}}}value-type", "string"),
+            "office_value": cell.get(f"{{{OFFICE_NS}}}value"),
+            "text": _cell_text(cell),
+        }
+        columns.extend([cell_info.copy() for _ in range(repeated)])
 
-    paragraph = cell.find("text:p", NS)
-    if paragraph is None:
-        paragraph = ET.SubElement(cell, f"{{{TEXT_NS}}}p")
-    paragraph.text = text
+    while len(columns) < 5:
+        columns.append(
+            {
+                "style": "ce1",
+                "value_type": "string",
+                "office_value": None,
+                "text": "",
+            }
+        )
+    return columns[:5]
 
 
-def _make_data_cell(value: str, style_name: str = "ce1") -> ET.Element:
+def _format_office_number(value: float) -> str:
+    if abs(value - round(value)) < 1e-9:
+        return str(int(round(value)))
+    return format(value, ".15g")
+
+
+def _make_ods_cell(
+    style_name: str,
+    display_text: str,
+    value_type: str,
+    office_value: str | None = None,
+) -> ET.Element:
     cell = ET.Element(f"{{{TABLE_NS}}}table-cell")
     cell.set(f"{{{TABLE_NS}}}style-name", style_name)
-    _set_cell_text(cell, value)
+    cell.set(f"{{{OFFICE_NS}}}value-type", value_type)
+    cell.set(f"{{{CALCEXT_NS}}}value-type", value_type)
+    if office_value is not None:
+        cell.set(f"{{{OFFICE_NS}}}value", office_value)
+
+    paragraph = ET.SubElement(cell, f"{{{TEXT_NS}}}p")
+    paragraph.text = display_text
     return cell
 
 
-def _set_row_data_value(row: ET.Element, column_index: int, value: str) -> None:
+def _make_ods_cell_from_info(cell_info: dict[str, str | None]) -> ET.Element:
+    return _make_ods_cell(
+        str(cell_info["style"]),
+        str(cell_info["text"]),
+        str(cell_info["value_type"]),
+        cell_info["office_value"],
+    )
+
+
+def _set_row_data_value(
+    row: ET.Element,
+    column_index: int,
+    display_text: str,
+    value_type: str,
+    office_value: float | None = None,
+) -> None:
     cells = row.findall("table:table-cell", NS)
     if not cells:
         return
 
-    logical_values = _logical_row_values(row)
-    data_values = logical_values[1:6]
-    while len(data_values) < 5:
-        data_values.append("")
-    data_values[column_index] = value
+    data_columns = _capture_data_columns(row)
+    data_columns[column_index] = {
+        "style": data_columns[column_index]["style"],
+        "value_type": value_type,
+        "office_value": None if office_value is None else _format_office_number(office_value),
+        "text": display_text,
+    }
 
     trailing_repeat = "1018"
     if len(cells) > 1:
@@ -328,12 +375,11 @@ def _set_row_data_value(row: ET.Element, column_index: int, value: str) -> None:
         if repeat and int(repeat) > 100 and _cell_text(last_cell) == "":
             trailing_repeat = repeat
 
-    data_style = cells[1].get(f"{{{TABLE_NS}}}style-name", "ce1") if len(cells) > 1 else "ce1"
     for cell in cells[1:]:
         row.remove(cell)
 
-    for data_value in data_values:
-        row.append(_make_data_cell(data_value, data_style))
+    for cell_info in data_columns:
+        row.append(_make_ods_cell_from_info(cell_info))
 
     trailing_cell = ET.SubElement(row, f"{{{TABLE_NS}}}table-cell")
     trailing_cell.set(f"{{{TABLE_NS}}}number-columns-repeated", trailing_repeat)
@@ -433,20 +479,38 @@ def update_ods_with_results(
             f"and NSM thickness {nsm_thickness} cm."
         )
 
+    ddd_value = float(results["ddd"])
+    n_batches_value = int(results["n_batches"])
+    ddd_ci95p = None if results["ddd_ci95p"] is None else float(results["ddd_ci95p"])
+
     row_updates = {
-        next(label for label in block_rows if label.startswith("DDD 10")): _format_ddd_value(
-            float(results["ddd"])
+        next(label for label in block_rows if label.startswith("DDD 10")): (
+            _format_ddd_value(ddd_value),
+            "float",
+            ddd_value,
         ),
-        "Number of batches": str(int(results["n_batches"])),
-        "Uncertainty": _format_uncertainty_value(
-            None if results["ddd_ci95p"] is None else float(results["ddd_ci95p"])
+        "Number of batches": (
+            str(n_batches_value),
+            "float",
+            float(n_batches_value),
+        ),
+        "Uncertainty": (
+            _format_uncertainty_value(ddd_ci95p),
+            "percentage" if ddd_ci95p is not None else "string",
+            ddd_ci95p,
         ),
     }
 
-    for label, value in row_updates.items():
+    for label, (display_text, value_type, office_value) in row_updates.items():
         if label not in block_rows:
             raise ValueError(f"Missing '{label}' row for simulation index {sim_index} in ODS.")
-        _set_row_data_value(block_rows[label], column_index, value)
+        _set_row_data_value(
+            block_rows[label],
+            column_index,
+            display_text,
+            value_type,
+            office_value,
+        )
 
     updated_content = ET.tostring(root, encoding="utf-8", xml_declaration=True)
     temp_path = ods_file.with_suffix(".ods.tmp")
@@ -573,23 +637,61 @@ def run_pending_simulations(ods_path: str | Path, sim_index: int) -> tuple[int, 
     return 0, len(pending)
 
 
-def _escape_powershell_string(text: str) -> str:
-    return text.replace("'", "''").replace("\n", "`n")
+def _format_resultsim_for_notification(path: Path = RESULTSIM_JSON) -> str:
+    if not path.is_file():
+        return f"({path.name} not found)"
+    return path.read_text(encoding="utf-8").strip()
+
+
+def _completion_message_for_batch(sim_index: int, pending_count: int) -> str:
+    if pending_count == 0:
+        return f"No pending simulations were found for index {sim_index}."
+    return (
+        f"All {pending_count} pending simulation(s) for index {sim_index} have finished.\n\n"
+        f"{RESULTSIM_JSON.name}:\n{_format_resultsim_for_notification()}"
+    )
+
+
+def _completion_message_for_single(sim_json_path: Path) -> str:
+    return (
+        f"Simulation {sim_json_path.name} has finished and the ODS file was updated.\n\n"
+        f"{RESULTSIM_JSON.name}:\n{_format_resultsim_for_notification()}"
+    )
 
 
 def notify_completion(title: str, message: str) -> None:
     """Show a loud, visible popup when the script finishes successfully."""
     print("\a", end="", flush=True)
 
-    ps_message = _escape_powershell_string(message)
-    ps_title = _escape_powershell_string(title)
+    notify_path = SCRIPT_DIR / ".notify_popup.json"
+    notify_path.write_text(
+        json.dumps({"title": title, "message": message}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    try:
+        win_path = subprocess.check_output(
+            ["wslpath", "-w", str(notify_path.resolve())],
+            text=True,
+        ).strip()
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        win_path = str(notify_path.resolve())
+
+    win_path_escaped = win_path.replace("'", "''")
     powershell_command = (
-        "Add-Type -AssemblyName System.Windows.Forms; "
-        "[System.Media.SystemSounds]::Exclamation.Play(); "
-        "Start-Sleep -Milliseconds 200; "
-        f"[System.Windows.Forms.MessageBox]::Show('{ps_message}', '{ps_title}', "
-        "[System.Windows.Forms.MessageBoxButtons]::OK, "
-        "[System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null"
+        f"$data = Get-Content -LiteralPath '{win_path_escaped}' -Raw -Encoding UTF8 | ConvertFrom-Json; "
+        "Add-Type @'"
+        "\nusing System;"
+        "\nusing System.Runtime.InteropServices;"
+        "\npublic static class NativeMessageBox {"
+        "\n    [DllImport(\"user32.dll\", CharSet = CharSet.Unicode)]"
+        "\n    public static extern int MessageBoxW(IntPtr hWnd, string text, string caption, uint type);"
+        "\n}"
+        "\n'@;"
+        "[System.Media.SystemSounds]::Exclamation.Play();"
+        "Start-Sleep -Milliseconds 200;"
+        "$flags = 0x00000040 -bor 0x00040000 -bor 0x00010000 -bor 0x00001000;"
+        "[NativeMessageBox]::MessageBoxW([IntPtr]::Zero, $data.message, $data.title, $flags) | Out-Null"
     )
 
     try:
@@ -602,6 +704,8 @@ def notify_completion(title: str, message: str) -> None:
             return
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         pass
+    finally:
+        notify_path.unlink(missing_ok=True)
 
     try:
         subprocess.run(
@@ -614,16 +718,6 @@ def notify_completion(title: str, message: str) -> None:
 
     banner = "=" * 60
     print(f"\n{banner}\n{title}\n{message}\n{banner}\n", flush=True)
-
-
-def _completion_message_for_batch(sim_index: int, pending_count: int) -> str:
-    if pending_count == 0:
-        return f"No pending simulations were found for index {sim_index}."
-    return f"All {pending_count} pending simulation(s) for index {sim_index} have finished."
-
-
-def _completion_message_for_single(sim_json_path: Path) -> str:
-    return f"Simulation {sim_json_path.name} has finished and the ODS file was updated."
 
 
 def main() -> None:
