@@ -17,6 +17,51 @@ from common_lib.runlib import RunMode
 
 RUN_MODE_CHOICES = get_args(RunMode.__value__ if hasattr(RunMode, "__value__") else RunMode)
 
+HELP_EPILOG = """
+Examples
+--------
+
+  Run all pending simulations for simulation index 7:
+    python start_sim.py "Simulation data.ods" 7
+
+  Run all pending simulations with a custom run mode:
+    python start_sim.py "Simulation data.ods" 7 --run-mode depletion
+
+  Run one specific simulation with an explicit batch count:
+    python start_sim.py "Simulation data.ods" simpaper_10_25.json 50
+
+  Run one specific simulation in render mode:
+    python start_sim.py "Simulation data.ods" simpaper_10_25.json 50 --run-mode render
+
+Invocation modes
+----------------
+
+  Batch mode
+    python start_sim.py <ods_path> <sim_index> [--run-mode MODE]
+
+    <sim_index> is a positive integer. The script finds every NSM thickness
+    column marked as pending (#todo) for that index in the spreadsheet,
+    writes a simpaper_<index>_<thickness>.json file for each, runs the
+    simulation, and writes results back to the ODS.
+
+  Single mode
+    python start_sim.py <ods_path> <simpaper_json> <n_batches> [--run-mode MODE]
+
+    <simpaper_json> is a path like simpaper_10_25.json. NSM material, pitch,
+    and thickness are looked up from the spreadsheet; <n_batches> overrides
+    the batch count for that run.
+
+Run modes (--run-mode)
+----------------------
+
+  keff                      Eigenvalue calculation with tallies (default)
+  keff_notallies            Eigenvalue without tallies
+  keff_emitter_gamma_source Gamma-source eigenvalue study
+  render                    Geometry visualization
+  depletion                 Burnup/depletion simulation
+  norun                     Build geometry only; do not run OpenMC
+"""
+
 SIM_FILENAME_RE = re.compile(r"^simpaper_(\d+)_([\d.]+)\.json$", re.IGNORECASE)
 SIM_PATTERN_RE = re.compile(r"^simpaper_(\d+)_\[NSM thickness\]\.json$", re.IGNORECASE)
 
@@ -738,7 +783,13 @@ def notify_completion(title: str, message: str) -> None:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Look up NSM material and conical pitch from a simulation spreadsheet."
+        description=(
+            "Run OpenMC simulations from a RIMAEL simulation spreadsheet (.ods).\n\n"
+            "Writes simpaper_*.json parameter files, launches the simulation "
+            "script, and updates the spreadsheet with results."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=HELP_EPILOG,
     )
     parser.add_argument("ods_path", help="Path to the simulation spreadsheet (.ods)")
     parser.add_argument(
