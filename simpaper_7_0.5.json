@@ -1,0 +1,6 @@
+{
+    "nsm_material": "Graphite",
+    "nsm_thickness": 0.5,
+    "conical_pitch": 15.0,
+    "n_batches": 200
+}

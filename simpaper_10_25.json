@@ -1,0 +1,6 @@
+{
+    "nsm_material": "Light Water",
+    "nsm_thickness": 25.0,
+    "conical_pitch": 15.0,
+    "n_batches": 50
+}
