@@ -4,7 +4,11 @@
 
 Install Docker on your machine https://www.docker.com/products/docker-desktop/
 
-Modify "threads" in simsettings.json with the number relevant for your machine, for example if you have 20 logical cpu cores set "threads" as 20.
+Download and extract cross sections data for ENDF/B-VIII.0 from https://openmc.org/data/
+
+In this project modify the ".env" file to set:
+- OPENMC_DATA_DIR to your cross section data folder that contains cross_sections.xml
+- THREADS to the number relevant for your machine, for example if you have 20 logical cpu cores set "threads" as 20.
 
 Build:
 - Go the the relevant git branch:
