@@ -112,8 +112,8 @@ add_xe135 = False
 ### Material definition
 
 material_choice = MaterialChoice(
-    moderator="Zirconium Hydride",
-    moderator_cladding="Zirconium Hydride",
+    moderator="Graphite",
+    moderator_cladding="Graphite",
     neutron_absorber="Boron Carbide",
     neutron_reflector="Graphite",
     bottom_reflector="Graphite",
@@ -122,7 +122,7 @@ material_choice = MaterialChoice(
     fuel_cladding="Graphite",
     emitter="Graphite",
     photovoltaic="InGaAs",
-    coolant="Light Water",
+    coolant="Void",
     coolant_cladding="Stainless Steel",
     shaft_shield_moderator=nsm_material,
     outer_cold_shield_moderator=nsm_material,

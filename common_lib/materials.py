@@ -429,7 +429,7 @@ def make_materials(
 
     graphite = Material(
         composition=[AtomProportion(atom=atoms["C"])],
-        density=2.26,
+        density=1.82, # https://www.osti.gov/servlets/purl/1928952
         color="black",
         scattering="c_Graphite",
     )
@@ -463,7 +463,7 @@ def make_materials(
             AtomProportion(atom=atoms["C"], proportion=2),
             AtomProportion(atom=atoms["H"], proportion=4),
         ],
-        density=0.96,
+        density=0.95, # https://www.bpf.co.uk/plastipedia/polymers/HDPE.aspx
         color="lightgray",
     )
 
@@ -485,7 +485,7 @@ def make_materials(
                 AtomProportion(atom=atoms["Ar"], proportion=1.8e-7),
                 AtomProportion(atom=atoms["C"], proportion=2.4e-7),
             ],
-            density=1,
+            density=0.9982,
             color="blue",
             scattering="c_H_in_H2O",
         ),
@@ -553,7 +553,7 @@ def make_materials(
                 AtomProportion(atom=atoms["Li"], proportion=2),
                 AtomProportion(atom=atoms["O"], proportion=1),
             ],
-            density=1.78,
+            density=1.76, # at 1250 celsius
             color="lightblue",
         ),
         "Lithium Fluoride": Material(
@@ -569,15 +569,15 @@ def make_materials(
                 AtomProportion(atom=atoms["Li"], proportion=1),
                 AtomProportion(atom=atoms["F"], proportion=1),
             ],
-            density=1.69,
+            density=1.69, # at 1250 celsius
             color="yellow",
         ),
-        "Beryllium Oxide": Material(
+        "Beryllium Oxide": Material( 
             composition=[
                 AtomProportion(atom=atoms["Be"], proportion=1),
                 AtomProportion(atom=atoms["O"], proportion=1),
             ],
-            density=3.02,
+            density=2.92, # at 1250 celsius https://physics.nist.gov/cgi-bin/Star/compos.pl?matno=116
             color="lightblue",
             # scattering="c_B_in_BeO",
         ),
@@ -672,7 +672,7 @@ def make_materials(
                 AtomProportion(atom=atoms["Ti"], proportion=1),
                 AtomProportion(atom=atoms["H"], proportion=2),
             ],
-            density=3.9,
+            density=3.77, # https://rdreview.jaea.go.jp/review_en/2006/pdf/e2006_3-12.pdf
             color="gray",
         ),
         "Silicon": Material(
@@ -701,7 +701,7 @@ def make_materials(
         "Uranium Dioxide": Material(
             composition=enriched_uranium.composition
             + [AtomProportion(atom=atoms["O"], proportion=2)],
-            density=10.97 * 0.95,
+            density=10.56 * 0.95, # Uranium Dioxide density at 1250 celsius with 5% porosity
             color="green",
         ),
         "Concrete": Material(
