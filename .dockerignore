@@ -1,0 +1,25 @@
+.git
+__pycache__/
+*.pyc
+
+# OpenMC generated files
+materials.xml
+geometry.xml
+settings.xml
+tallies.xml
+summary.h5
+statepoint*.h5
+particle*.h5
+volume_*.h5
+openmc_*.h5
+depletion_results.h5
+weight_windows.h5
+
+# Generated local outputs
+resultsim.json
+.notify_popup.json
+plot.png
+
+# Editor / OS
+.vscode/
+.DS_Store

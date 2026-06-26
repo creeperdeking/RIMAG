@@ -1,0 +1,11 @@
+services:
+  rimag:
+    build: .
+    image: rimag:research-paper
+    working_dir: /work
+    environment:
+      RIMAG_THREADS: "${RIMAG_THREADS:-20}"
+      OPENMC_CROSS_SECTIONS: /data/cross_sections.xml
+    volumes:
+      - ./runs/default:/work
+      - ${OPENMC_DATA_DIR:?Set OPENMC_DATA_DIR to your OpenMC data directory}:/data:ro
