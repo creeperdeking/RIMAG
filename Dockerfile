@@ -11,7 +11,7 @@ RUN python -m pip install --no-cache-dir -r /opt/rimag/requirements-rimag.txt
 COPY . /opt/rimag
 
 COPY docker/entrypoint.sh /usr/local/bin/rimag-entrypoint
-RUN chmod +x /usr/local/bin/rimag-entrypoint
+RUN sed -i 's/\r$//' /usr/local/bin/rimag-entrypoint && chmod +x /usr/local/bin/rimag-entrypoint
 
 ENTRYPOINT ["rimag-entrypoint"]
 

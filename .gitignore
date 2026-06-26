@@ -6,3 +6,4 @@
 .pytest_cache/*
 plot_settings.pkl
 simsettings.json
+runs/*
