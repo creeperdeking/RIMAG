@@ -4,6 +4,8 @@
 
 ### Prerequisites
 
+Install git to clone this repository on your computer.
+
 Install Docker on your machine https://www.docker.com/products/docker-desktop/
 
 Download and extract cross sections data for ENDF/B-VIII.0 from https://openmc.org/data/
