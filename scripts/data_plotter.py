@@ -10,6 +10,17 @@ import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 
 
+def is_incomplete(value: str) -> bool:
+    return value.strip().lower().startswith("#todo")
+
+
+def parse_float_or_nan(value: str) -> float:
+    value = value.strip()
+    if is_incomplete(value):
+        return float("nan")
+    return float(value)
+
+
 def parse_percent(value: str) -> float:
     value = value.strip()
     if value.endswith("%"):
@@ -39,7 +50,7 @@ def read_csv_data(csv_path: Path):
 
         rows = list(reader)
 
-    x = np.array([float(row[x_column]) for row in rows], dtype=float)
+    x = np.array([parse_float_or_nan(row[x_column]) for row in rows], dtype=float)
 
     data = {}
 
@@ -49,12 +60,22 @@ def read_csv_data(csv_path: Path):
         if percent_column not in fieldnames:
             raise ValueError(f"Missing uncertainty column: {percent_column}")
 
-        y = np.array([float(row[material]) for row in rows], dtype=float)
+        y = []
+        yerr_fraction = []
 
-        yerr_fraction = np.array(
-            [parse_percent(row[percent_column]) for row in rows],
-            dtype=float
-        )
+        for row in rows:
+            y_value = row[material]
+            percent_value = row[percent_column]
+
+            if is_incomplete(y_value) or is_incomplete(percent_value):
+                y.append(float("nan"))
+                yerr_fraction.append(float("nan"))
+            else:
+                y.append(float(y_value.strip()))
+                yerr_fraction.append(parse_percent(percent_value))
+
+        y = np.array(y, dtype=float)
+        yerr_fraction = np.array(yerr_fraction, dtype=float)
 
         yerr = y * yerr_fraction
 
@@ -183,13 +204,15 @@ def make_plot(
             f"and --no-fit-material."
         )
 
-    if max_thickness <= np.min(x):
+    x_min = np.nanmin(x)
+
+    if max_thickness <= x_min:
         raise ValueError(
             f"Maximum moderator thickness must be greater than the minimum data thickness "
-            f"({np.min(x)})."
+            f"({x_min})."
         )
 
-    x_curve = np.linspace(np.min(x), max_thickness, 500)
+    x_curve = np.linspace(x_min, max_thickness, 500)
 
     fig, ax = plt.subplots(figsize=(8, 5))
 
@@ -274,7 +297,7 @@ def make_plot(
     ax.set_ylabel("neutron Displacement Damage Dose (MeV/g)")
 
     ax.set_yscale("log")
-    ax.set_xlim(np.min(x), max_thickness)
+    ax.set_xlim(x_min, max_thickness)
     ax.set_ylim(bottom=min_y_axis)
 
     ax.grid(True, which="both", linewidth=0.5)
