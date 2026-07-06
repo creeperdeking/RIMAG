@@ -41,3 +41,6 @@ docker compose run --rm rimag python start_sim.py "simulation_data.ods" SIM_NAME
 ```
 
 - After the simulation is completed, the results are written inside a copy of "simulation_data.ods" created in the subfolder "runs/default/simulation_data.ods" in the relevant table column.
+
+
+python .\data_plotter.py .\materials_sim_curve.csv 170 1.16e7  --exp-fit-start "Graphite" 3 --exp-fit-start "BeO" 3 --exp-fit-start "Water" 2 --exp-fit-start "HDPE" 1 --exp-fit-start "TiH2" 1

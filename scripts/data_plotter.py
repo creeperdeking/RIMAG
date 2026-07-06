@@ -88,7 +88,12 @@ def read_csv_data(csv_path: Path):
     return x_column, x, data
 
 
-def fit_exponential(x, y, yerr):
+def fit_exponential(x, y, yerr, start_index=0):
+    if start_index > 0:
+        x = x[start_index:]
+        y = y[start_index:]
+        yerr = yerr[start_index:]
+
     valid = (
         np.isfinite(x)
         & np.isfinite(y)
@@ -174,9 +179,16 @@ def make_plot(
     min_y_axis: float,
     linear_material: str | None = None,
     no_fit_material: str | None = None,
+    global_fit_start: int = 0,
+    exp_fit_start: dict[str, int] | None = None,
 ):
     if min_y_axis <= 0:
         raise ValueError("The minimum y-axis value must be positive for a logarithmic y-axis.")
+
+    if global_fit_start < 0:
+        raise ValueError("--global-fit-start must be zero or a positive integer.")
+
+    exp_fit_start = exp_fit_start or {}
 
     x_column, x, data = read_csv_data(csv_path)
 
@@ -193,6 +205,18 @@ def make_plot(
             f"No-fit material '{no_fit_material}' was not found in the CSV. "
             f"Available materials: {available}"
         )
+
+    for material, start_index in exp_fit_start.items():
+        if material not in data:
+            available = ", ".join(data.keys())
+            raise ValueError(
+                f"Exp-fit-start material '{material}' was not found in the CSV. "
+                f"Available materials: {available}"
+            )
+        if start_index < 0:
+            raise ValueError(
+                f"--exp-fit-start for '{material}' must be zero or a positive integer."
+            )
 
     if (
         linear_material is not None
@@ -266,7 +290,8 @@ def make_plot(
                 )
 
             else:
-                popt, _ = fit_exponential(x, y, yerr)
+                start_index = exp_fit_start.get(material, global_fit_start)
+                popt, _ = fit_exponential(x, y, yerr, start_index=start_index)
                 a, b = popt
 
                 y_curve = exponential_model(x_curve, a, b)
@@ -378,7 +403,46 @@ def main():
         ),
     )
 
+    parser.add_argument(
+        "--global-fit-start",
+        type=int,
+        default=0,
+        help=(
+            "Number of initial data points to exclude from all exponential fits. "
+            "For example, 1 uses only points after the first for every material. "
+            "Per-material --exp-fit-start values override this default."
+        ),
+    )
+
+    parser.add_argument(
+        "--exp-fit-start",
+        nargs=2,
+        metavar=("MATERIAL", "START"),
+        action="append",
+        default=[],
+        help=(
+            "Per-material start index for exponential fits. Can be repeated. "
+            "For example, --exp-fit-start Graphite 1 fits Graphite using only "
+            "points after the first. Materials without this option use "
+            "--global-fit-start."
+        ),
+    )
+
     args = parser.parse_args()
+
+    exp_fit_start: dict[str, int] = {}
+    for material, start_str in args.exp_fit_start:
+        if material in exp_fit_start:
+            raise ValueError(
+                f"--exp-fit-start was specified more than once for '{material}'."
+            )
+        try:
+            start_index = int(start_str)
+        except ValueError as exc:
+            raise ValueError(
+                f"--exp-fit-start start index for '{material}' must be an integer."
+            ) from exc
+        exp_fit_start[material] = start_index
 
     make_plot(
         args.csv_file,
@@ -386,6 +450,8 @@ def main():
         args.min_y_axis,
         args.linear_material,
         args.no_fit_material,
+        args.global_fit_start,
+        exp_fit_start,
     )
 
 
