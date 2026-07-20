@@ -32,6 +32,7 @@ MATERIAL_TO_CSV = {
     "Beryllium Oxide": "BeO",
     "High Density PolyEthylene": "HDPE",
     "Titanium Hydride": "TiH2",
+    "Lithium Oxide": "Li2O",
     "Water": "Water",
     "Light Water": "Water",
 }
@@ -319,6 +320,12 @@ def _build_material_rows(
             str(block["nsm"]), str(block["nsm"])
         )
         series.append((csv_label, block))
+
+    included_nsm = {str(block["nsm"]) for _, block in series}
+    for nsm, block in blocks_by_nsm.items():
+        if nsm not in MATERIAL_TO_CSV or nsm in included_nsm:
+            continue
+        series.append((MATERIAL_TO_CSV[nsm], block))
 
     if not series:
         raise ValueError(f"No material simulation blocks found on '{SHEET_MATERIALS}'.")
