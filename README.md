@@ -18,7 +18,7 @@ This updates the image only. The container executes the copy already stored in `
 
 ## View the geometry in runs/default
 
-`show_geometry.sh` opens `runs/default/geometry.xml` and `runs/default/materials.xml` with openmc-plotter. The plotter is the WSL program at `~/miniforge3/envs/openmc-plot/bin/openmc-plotter`. Set `OPENMC_PLOTTER` if it lives somewhere else. The script points OpenMC at `cross_sections.xml` inside the `OPENMC_DATA_DIR` folder from `.env`, and opens a writable copy of the model XML so the plotter does not need to overwrite `runs/default/summary.h5`. PowerShell stays busy until the plotter window is closed.
+`show_geometry.sh` opens `runs/default/geometry.xml` and `runs/default/materials.xml` with openmc-plotter. The plotter is the WSL program at `~/miniforge3/envs/openmc-plot/bin/openmc-plotter`. Set `OPENMC_PLOTTER` if it lives somewhere else. The script points OpenMC at `cross_sections.xml` inside the `OPENMC_DATA_DIR` folder from `.env`, and opens a writable copy of the model XML so the plotter does not need to overwrite `runs/default/summary.h5`. Each material is drawn with the `color` set for that name in `common_lib/materials.py`. Numbered copies such as `Graphite 2` keep the base material color. PowerShell stays busy until the plotter window is closed.
 
 ```powershell
 bash ./show_geometry.sh

@@ -71,6 +71,12 @@ for name in geometry.xml materials.xml settings.xml plots.xml; do
   fi
 done
 
+PYTHON="$(dirname "$PLOTTER")/python"
+if [[ ! -x "$PYTHON" ]]; then
+  echo "Interpréteur du plotter introuvable : $PYTHON" >&2
+  exit 1
+fi
+
 echo "Ouverture de la géométrie dans $RUN_DIR"
 echo "Sections efficaces : $OPENMC_CROSS_SECTIONS"
-"$PLOTTER" "$STAGE"
+"$PYTHON" "$ROOT/show_geometry.py" "$STAGE"

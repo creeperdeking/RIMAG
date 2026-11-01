@@ -367,12 +367,54 @@ def make_materials_dict(
     return materials_dict
 
 
+_MATERIAL_SVG_COLORS: Dict[str, str] = {}
+
+
+def _svg_color(materials_def: Dict[str, Material], name: str) -> str:
+    """Color for a material name, including duplicates such as 'Graphite 2'."""
+    spec = materials_def.get(name)
+    if spec is None:
+        base, separator, suffix = name.rpartition(" ")
+        if separator and suffix.isdigit():
+            spec = materials_def.get(base)
+    if spec is None or spec.color is None:
+        return "orange"
+    return spec.color
+
+
+def material_svg_colors() -> Dict[str, str]:
+    """SVG color for every material defined in this module."""
+    if not _MATERIAL_SVG_COLORS:
+        fields = {name: "Void" for name in MaterialChoice.model_fields}
+        make_materials(
+            0.0,
+            MaterialChoice(**fields),
+            0.0,
+            1.0,
+            0.0,
+            _colors_only=True,
+        )
+    return dict(_MATERIAL_SVG_COLORS)
+
+
+def color_for_openmc_material_name(name: str) -> str:
+    """SVG color for an OpenMC material name, including numbered duplicates."""
+    colors = material_svg_colors()
+    if name in colors:
+        return colors[name]
+    base, separator, suffix = name.rpartition(" ")
+    if separator and suffix.isdigit() and base in colors:
+        return colors[base]
+    return "orange"
+
+
 def make_materials(
     uranium_enrichment: float,
     material_choice: MaterialChoice,
     borated_water_moderator_boron_ppm: float = 2000,
     moderator_density: float = 1.016,
     gadolinium_oxide_in_fuel_proportion: float = 0.0,
+    _colors_only: bool = False,
 ):
     natural_uranium = Material(
         composition=[
@@ -853,6 +895,13 @@ def make_materials(
         ),
     }
 
+    _MATERIAL_SVG_COLORS.clear()
+    _MATERIAL_SVG_COLORS.update(
+        {name: _svg_color(materials_def, name) for name in materials_def}
+    )
+    if _colors_only:
+        return {}, {}, material_choice
+
     material_mixed_def = {
         "Borotron": MixedMaterial(
             materials=["Boron", "High Density PolyEthylene"],
@@ -878,11 +927,10 @@ def make_materials(
     updated_materials_dict, updated_material_choice = separate_duplicate_materials(
         material_choice, materials_dict
     )
-    colors = {}
-    for name, material in materials_def.items():
-        if name not in updated_material_choice.model_dump().values():
-            continue
-        colors[updated_materials_dict[name]] = (
-            "orange" if material.color is None else material.color
-        )
+    chosen = set(updated_material_choice.model_dump().values())
+    colors = {
+        openmc_material: _svg_color(materials_def, name)
+        for name, openmc_material in updated_materials_dict.items()
+        if name in chosen
+    }
     return updated_materials_dict, colors, updated_material_choice
