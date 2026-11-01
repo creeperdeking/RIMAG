@@ -21,7 +21,7 @@ nsm_material = None
 nsm_thickness = None
 conical_pitch = None
 n_batches = None
-run_mode: RunMode = "keff"
+run_mode: RunMode = ""
 
 if len(sys.argv) > 1:
     json_file = sys.argv[1]
@@ -49,7 +49,7 @@ print("--------------------------------")
 
 # ===============================================
 
-print_core_characteristics = False
+print_core_characteristics = True
 batches = int(n_batches)  # 2500  # 1250
 dose_time = 10  # years
 weight_windows: UseWeightWindows = "no"
@@ -71,14 +71,14 @@ total_fuel_thickness = 1
 thickness_photovoltaic = 2e-4 * 100 # cm # Note: changing thickness of TPV does appear to affect DDD results and uncertainties significantly
 disk_geometry_params = make_disk_geometry_params(
     DiskGeometryParams(
-        core_diameter=100,
+        core_diameter=250,
         moderator_cladding_thickness=0.05, # not relevant since same material as moderator
         shield_moderator_cladding_thickness=0.05, # not relevant since same material as moderator
         fuel_thickness=fuel_thickness,
         fuel_cladding_thickness=(total_fuel_thickness - fuel_thickness) / 2,
         moderator_thickness=1,
-        fuel_emitter_gap=0.1,
-        emitter_thickness=1.0,
+        fuel_emitter_gap=0.2,
+        emitter_thickness=0.8,
         thickness_photovoltaic=thickness_photovoltaic,
         rotary_axle_thickness=1,
         reflector_thickness=30,
@@ -93,7 +93,7 @@ disk_geometry_params = make_disk_geometry_params(
 
 ### Thermodynamic parameters
 
-hot_temp = 1360 + 273  # K
+hot_temp = 1150 + 273  # K
 min_cold_temp = 1100 + 273  # K
 photovoltaic_efficiency = 0.33
 photovoltaic_power_density = 0.89 # W/cm2
