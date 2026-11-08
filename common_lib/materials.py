@@ -408,6 +408,36 @@ def color_for_openmc_material_name(name: str) -> str:
     return "orange"
 
 
+def material_copy_number(name: str) -> int:
+    """1 for the base material, 2 for 'Graphite 2', and so on."""
+    colors = material_svg_colors()
+    base, separator, suffix = name.rpartition(" ")
+    if separator and suffix.isdigit() and base in colors:
+        return int(suffix)
+    return 1
+
+
+def lighten_rgb(rgb, extra_copies: int) -> tuple:
+    """Move an RGB color one percent toward white per extra copy."""
+    fraction = min(max(extra_copies, 0) * 0.01, 1.0)
+    return tuple(
+        int(round(channel + (255 - channel) * fraction)) for channel in rgb
+    )
+
+
+def rgb_for_openmc_material_name(name: str) -> tuple:
+    """Shaded RGB color for one material instance.
+
+    The first instance keeps the color from materials.py. Each later copy of
+    that same material is one percent lighter.
+    """
+    from openmc.plots import _SVG_COLORS
+
+    svg_color = color_for_openmc_material_name(name).lower()
+    rgb = _SVG_COLORS.get(svg_color, _SVG_COLORS["orange"])
+    return lighten_rgb(rgb, material_copy_number(name) - 1)
+
+
 def make_materials(
     uranium_enrichment: float,
     material_choice: MaterialChoice,
@@ -929,7 +959,7 @@ def make_materials(
     )
     chosen = set(updated_material_choice.model_dump().values())
     colors = {
-        openmc_material: _svg_color(materials_def, name)
+        openmc_material: rgb_for_openmc_material_name(name)
         for name, openmc_material in updated_materials_dict.items()
         if name in chosen
     }

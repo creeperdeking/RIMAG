@@ -8,11 +8,10 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from openmc.plots import _SVG_COLORS
 from openmc_plotter.__main__ import main
 from openmc_plotter.plotmodel import PlotView
 
-from common_lib.materials import color_for_openmc_material_name
+from common_lib.materials import rgb_for_openmc_material_name
 
 _ORIGINAL_GET_DOMAINS = PlotView.getDomains
 
@@ -29,11 +28,7 @@ def _apply_material_colors(domains):
         # The plotter's own "VOID" entry is empty space, not the Void material.
         if view.name == "VOID":
             continue
-        svg_color = color_for_openmc_material_name(view.name).lower()
-        rgb = _SVG_COLORS.get(svg_color)
-        if rgb is None:
-            continue
-        rgb = tuple(int(channel) for channel in rgb)
+        rgb = rgb_for_openmc_material_name(view.name)
         view.color = rgb
         domains.set_color(domain_id, rgb)
     return domains
