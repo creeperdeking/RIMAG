@@ -1,0 +1,74 @@
+{
+  "a": 2.7,
+  "abs": 0.1,
+  "refl": 0.3,
+  "b_pct": 50.0,
+  "w": 2.0,
+  "ratio_pct": 40.0,
+  "tpv_density": 0.89,
+  "stack_m": 10.0,
+  "columns": 3.0,
+  "dims": true,
+  "layers": {
+    "disk": [
+      {
+        "name": "Void",
+        "cm": 0.2
+      },
+      {
+        "name": "Disk",
+        "cm": 0.8
+      },
+      {
+        "name": "Void",
+        "cm": 0.2
+      }
+    ],
+    "fuel": [
+      {
+        "name": "Graphite",
+        "cm": 0.483
+      },
+      {
+        "name": "Uranium Dioxide",
+        "cm": 0.034
+      },
+      {
+        "name": "Graphite",
+        "cm": 0.483
+      }
+    ],
+    "reflector": [
+      {
+        "name": "Graphite",
+        "cm": 1.0
+      }
+    ],
+    "shield_moderator": [
+      {
+        "name": "Graphite",
+        "cm": 1.0
+      }
+    ],
+    "shield_absorber": [
+      {
+        "name": "Boron Carbide",
+        "cm": 1.0
+      }
+    ],
+    "tpv": [
+      {
+        "name": "InGaAs",
+        "cm": 0.02
+      },
+      {
+        "name": "Void",
+        "cm": 0.96
+      },
+      {
+        "name": "InGaAs",
+        "cm": 0.02
+      }
+    ]
+  }
+}
