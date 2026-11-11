@@ -1,5 +1,6 @@
-from typing import List, Optional, Dict
-import openmc
+from __future__ import annotations
+
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -228,6 +229,8 @@ def heavy_metal_density(mat, elements=None, z_min=90):
     float
         Heavy-metal mass density in g/cm^3.
     """
+    import openmc
+
     # Atom densities for every nuclide in atom/b-cm
     adens = mat.get_nuclide_atom_densities()
 
@@ -253,6 +256,8 @@ def separate_duplicate_materials(
 ):
     # If some elements of material_choice have the same value, create a duplicated material in material_dict named "[material_name] X"
     # For example, if "Graphite" is used for both "neutron_reflector" and "emitter", create "Graphite 2", "Graphite 3", etc.
+
+    import openmc
 
     # Count occurrences of each material name in material_choice
     from collections import Counter, defaultdict
@@ -317,6 +322,8 @@ def make_materials_dict(
     material_mixed_def: Dict[str, MixedMaterial],
     material_choice: MaterialChoice,
 ):
+    import openmc
+
     materials_dict: Dict[str, openmc.Material] = {}
 
     used_materials = set(material_choice.model_dump().values())
@@ -368,6 +375,8 @@ def make_materials_dict(
 
 
 _MATERIAL_SVG_COLORS: Dict[str, str] = {}
+_MATERIAL_SPECS: Dict[str, Material] = {}
+_MATERIAL_MIXED: Dict[str, MixedMaterial] = {}
 
 
 def _svg_color(materials_def: Dict[str, Material], name: str) -> str:
@@ -395,6 +404,28 @@ def material_svg_colors() -> Dict[str, str]:
             _colors_only=True,
         )
     return dict(_MATERIAL_SVG_COLORS)
+
+
+def material_definitions(
+    uranium_enrichment: float,
+    borated_water_moderator_boron_ppm: float = 2000,
+    moderator_density: float = 1.016,
+    gadolinium_oxide_in_fuel_proportion: float = 0.0,
+) -> tuple[Dict[str, Material], Dict[str, MixedMaterial]]:
+    """Compositions, densities, and colors, without building OpenMC materials.
+
+    ``uranium_enrichment`` is the U-235 weight percent stored on uranium atoms.
+    """
+    fields = {name: "Void" for name in MaterialChoice.model_fields}
+    make_materials(
+        uranium_enrichment,
+        MaterialChoice(**fields),
+        borated_water_moderator_boron_ppm,
+        moderator_density,
+        gadolinium_oxide_in_fuel_proportion,
+        _colors_only=True,
+    )
+    return dict(_MATERIAL_SPECS), dict(_MATERIAL_MIXED)
 
 
 def color_for_openmc_material_name(name: str) -> str:
@@ -925,13 +956,6 @@ def make_materials(
         ),
     }
 
-    _MATERIAL_SVG_COLORS.clear()
-    _MATERIAL_SVG_COLORS.update(
-        {name: _svg_color(materials_def, name) for name in materials_def}
-    )
-    if _colors_only:
-        return {}, {}, material_choice
-
     material_mixed_def = {
         "Borotron": MixedMaterial(
             materials=["Boron", "High Density PolyEthylene"],
@@ -949,6 +973,17 @@ def make_materials(
             ],
         ),
     }
+
+    _MATERIAL_SVG_COLORS.clear()
+    _MATERIAL_SVG_COLORS.update(
+        {name: _svg_color(materials_def, name) for name in materials_def}
+    )
+    _MATERIAL_SPECS.clear()
+    _MATERIAL_SPECS.update(materials_def)
+    _MATERIAL_MIXED.clear()
+    _MATERIAL_MIXED.update(material_mixed_def)
+    if _colors_only:
+        return {}, {}, material_choice
 
     materials_dict = make_materials_dict(
         materials_def, material_mixed_def, material_choice

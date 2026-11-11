@@ -3,11 +3,14 @@
   "abs": 0.1,
   "refl": 0.3,
   "b_pct": 50.0,
-  "w": 2.0,
+  "w": 1.7,
   "ratio_pct": 40.0,
   "tpv_density": 0.89,
+  "enrichment_pct": 9.7,
+  "tpv_eff_pct": 33.0,
   "stack_m": 10.0,
   "columns": 3.0,
+  "reload_fraction": "1/4",
   "dims": true,
   "layers": {
     "disk": [

@@ -334,3 +334,239 @@ def compute_layout_for_ratio(
     """Layout at ``ratio``. The curved absorber keeps its thickness without growing the disk."""
     percent = percent_fuel_for_ratio(a, b, ratio, reflector, absorber, 0.0)
     return compute_layout(a, b, w, percent, reflector, absorber, 0.0)
+
+
+def _is_uranium_atom(name: str) -> bool:
+    return name == "U" or (len(name) > 1 and name[0] == "U" and name[1].isdigit())
+
+
+def _contains_uranium(spec) -> bool:
+    return any(_is_uranium_atom(part.atom.name) for part in spec.composition)
+
+
+def _library_parts(name: str, specs: dict, mixed: dict):
+    """The material spec, or a mixture, including a trailing copy such as ' 2'."""
+    if name in specs:
+        return specs[name], None
+    base, separator, suffix = name.rpartition(" ")
+    if separator and suffix.isdigit() and base in specs:
+        return specs[base], None
+    mix = mixed.get(name)
+    if mix is None and separator and suffix.isdigit():
+        mix = mixed.get(base)
+    return None, mix
+
+
+def uranium_bearing_density(name: str, specs: dict, mixed: dict) -> float | None:
+    """Density in g/cm³ of the uranium-bearing material, as stored in the library.
+
+    A pure compound uses that material's density. A mixture uses the library
+    densities of its uranium-bearing constituents and leaves the rest out.
+    """
+    spec, mix = _library_parts(name.strip(), specs, mixed)
+    if spec is not None:
+        if not _contains_uranium(spec) or spec.density <= 0:
+            return None
+        return float(spec.density)
+    if mix is None:
+        return None
+    uranium_weight = 0.0
+    volume = 0.0
+    for component, proportion in zip(mix.materials, mix.proportions):
+        component_spec = specs.get(component)
+        if component_spec is None or component_spec.density <= 0 or proportion <= 0:
+            return None
+        volume += proportion / component_spec.density
+        if _contains_uranium(component_spec):
+            uranium_weight += proportion
+    if uranium_weight <= 0 or volume <= 0:
+        return None
+    return uranium_weight / volume
+
+
+def uranium_inventory_kg(
+    rows: list[dict],
+    fuel_area_m2: float,
+    columns: int,
+    stack_m: float,
+    layer_cm: float,
+    specs: dict,
+    mixed: dict,
+) -> tuple[float, list[tuple[str, float, float]], list[str]]:
+    """Mass of uranium-bearing fuel, per material, and names missing from the library.
+
+    Each counted row fills the fuel area through its own thickness, on every
+    slice of the stack. ``layer_cm`` is the shared slice pitch. Density is the
+    library density of that uranium-bearing material.
+    """
+    if layer_cm <= 0:
+        return 0.0, [], []
+    mass_kg = 0.0
+    counted: list[tuple[str, float, float]] = []
+    skipped: list[str] = []
+    for row in rows:
+        name = str(row.get("name", "")).strip()
+        density = uranium_bearing_density(name, specs, mixed)
+        if density is None:
+            if "uranium" in name.lower():
+                skipped.append(name or "uranium")
+            continue
+        cm = float(row.get("cm", 0.0))
+        volume_m3 = fuel_area_m2 * columns * stack_m * (cm / layer_cm)
+        row_kg = volume_m3 * density * 1000.0
+        mass_kg += row_kg
+        counted.append((name, row_kg, density))
+    return mass_kg, counted, skipped
+
+
+def triso_cylinder_fractions(
+    diameter_mm: float,
+    wall_margin_mm: float,
+    spacing_mm: float,
+    packing_pct: float,
+    hm_particle_pct: float,
+) -> tuple[float, float]:
+    """Particle share of a cylinder, and heavy-metal share of the fuel layer.
+
+    Cylinders span the fuel layer, so the layer is one diameter thick. Particles
+    stay ``wall_margin_mm`` inside the wall and are packed at ``packing_pct`` in
+    that inner circle. Cylinders are separated by ``spacing_mm``, so one cylinder
+    and its gap occupy a cell ``diameter`` by ``diameter + spacing``. The heavy
+    metal is the particle volume in that cell times the HM fraction per particle.
+    """
+    diameter = float(diameter_mm)
+    radius = diameter / 2.0
+    pitch = diameter + float(spacing_mm)
+    if diameter <= 0 or radius <= 0 or pitch <= 0:
+        return 0.0, 0.0
+    usable = max(radius - float(wall_margin_mm), 0.0)
+    packing = min(max(packing_pct / 100.0, 0.0), 1.0)
+    hm = min(max(hm_particle_pct / 100.0, 0.0), 1.0)
+    particle_in_cylinder = packing * (usable / radius) ** 2
+    cell_area = diameter * pitch
+    hm_fraction = packing * hm * math.pi * usable * usable / cell_area
+    return particle_in_cylinder, min(max(hm_fraction, 0.0), 1.0)
+
+
+def triso_particle_layout(
+    diameter_mm: float,
+    wall_margin_mm: float,
+    packing_pct: float,
+    hm_particle_pct: float,
+) -> list[tuple[float, float, float, float]]:
+    """Particles inside one cylinder, in millimetres from its centre.
+
+    Each entry is ``(x, y, radius, kernel_radius)``. Particles stay inside the
+    wall margin, do not overlap, and their combined area is the packing
+    fraction of that inner circle. The kernel is the heavy-metal share of each
+    particle.
+    """
+    diameter = float(diameter_mm)
+    radius = diameter / 2.0
+    usable = max(radius - float(wall_margin_mm), 0.0)
+    packing = min(max(packing_pct / 100.0, 0.0), 1.0)
+    hm = min(max(hm_particle_pct / 100.0, 0.0), 1.0)
+    if diameter <= 0 or usable <= 0 or packing <= 0:
+        return []
+    target = packing * math.pi * usable * usable
+    nominal_r = min(0.45, usable * 0.28)
+    chosen: tuple[int, float, float] | None = None
+    for rings in range(6):
+        count = 1 + 3 * rings * (rings + 1)
+        particle_r = math.sqrt(target / (count * math.pi))
+        if particle_r > usable:
+            continue
+        step = 0.0 if rings == 0 else (usable - particle_r) / rings
+        if rings and step < 2.0 * particle_r - 1e-9:
+            continue
+        if chosen is None or abs(particle_r - nominal_r) < abs(chosen[1] - nominal_r):
+            chosen = (rings, particle_r, step)
+    if chosen is None:
+        return []
+    rings, particle_r, step = chosen
+    limit = max(usable - particle_r, 0.0)
+    points = [
+        point
+        for point in _hex_lattice(step, limit)
+        if math.hypot(point[0], point[1]) <= limit + 1e-6
+    ]
+    kernel_r = particle_r * math.sqrt(hm)
+    return [(point[0], point[1], particle_r, kernel_r) for point in points]
+
+
+def _hex_lattice(step: float, limit: float) -> list[tuple[float, float]]:
+    """Hexagonal lattice points whose centre is at most ``limit`` from the origin."""
+    if step <= 0:
+        return [(0.0, 0.0)]
+    points = [(0.0, 0.0)]
+    ring = 1
+    while ring * step <= limit + 1e-9 and ring <= 40:
+        for side in range(6):
+            angle = math.pi / 3.0 * side
+            corner_x = math.cos(angle) * ring * step
+            corner_y = math.sin(angle) * ring * step
+            next_angle = angle + math.pi / 3.0
+            next_x = math.cos(next_angle) * ring * step
+            next_y = math.sin(next_angle) * ring * step
+            for index in range(ring):
+                share = index / ring
+                points.append(
+                    (
+                        corner_x + (next_x - corner_x) * share,
+                        corner_y + (next_y - corner_y) * share,
+                    )
+                )
+        ring += 1
+    return points
+
+
+def triso_fuel_layers(
+    diameter_mm: float,
+    wall_margin_mm: float,
+    spacing_mm: float,
+    packing_pct: float,
+    hm_particle_pct: float,
+) -> tuple[list[dict], float, float]:
+    """Graphite, uranium dioxide, and graphite, plus the two fractions above.
+
+    The three thicknesses add up to the cylinder diameter.
+    """
+    particle_in_cylinder, hm_fraction = triso_cylinder_fractions(
+        diameter_mm, wall_margin_mm, spacing_mm, packing_pct, hm_particle_pct
+    )
+    total_cm = diameter_mm / 10.0
+    uo2_cm = round(total_cm * hm_fraction, 4)
+    graphite_cm = round((total_cm - uo2_cm) / 2.0, 4)
+    cover_cm = round(total_cm - uo2_cm - graphite_cm, 4)
+    layers = [
+        {"name": "Graphite", "cm": graphite_cm},
+        {"name": "Uranium Dioxide", "cm": uo2_cm},
+        {"name": "Graphite", "cm": cover_cm},
+    ]
+    return layers, particle_in_cylinder, hm_fraction
+
+
+def burnup_days(uranium_kg: float, burnup_mwd_per_kg: float, thermal_kw: float) -> float:
+    """Days at ``thermal_kw`` until the uranium reaches ``burnup_mwd_per_kg``.
+
+    ``thermal_kw`` is the core thermal power already shown in the zone overview.
+    """
+    return uranium_kg * burnup_mwd_per_kg / (thermal_kw / 1000.0)
+
+
+def format_burnup_time(days: float) -> str:
+    """Calendar years and months, rounded to the nearest month."""
+    months_total = int(round(days / (365.25 / 12.0)))
+    if months_total <= 0:
+        return "less than a month"
+    years, months = divmod(months_total, 12)
+    parts: list[str] = []
+    if years == 1:
+        parts.append("1 year")
+    elif years:
+        parts.append(f"{years} years")
+    if months == 1:
+        parts.append("1 month")
+    elif months:
+        parts.append(f"{months} months")
+    return " ".join(parts)

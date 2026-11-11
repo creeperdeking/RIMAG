@@ -1,6 +1,8 @@
 import html
 import json
 import math
+import sys
+from pathlib import Path
 
 import numpy as np
 import plotly.graph_objects as go
@@ -18,7 +20,20 @@ from configurations import (
     load_configuration,
     save_configuration,
 )
-from geometry import ZoneLayout, absorber_front, center_cuts, compute_layout_for_ratio
+# The running server keeps this module after the first import, so a signature
+# change would stay invisible until restart. Drop it before each script run.
+sys.modules.pop("geometry", None)
+from geometry import (
+    ZoneLayout,
+    absorber_front,
+    burnup_days,
+    center_cuts,
+    compute_layout_for_ratio,
+    format_burnup_time,
+    triso_fuel_layers,
+    triso_particle_layout,
+    uranium_inventory_kg,
+)
 
 ZONE_COLORS = {
     "fuel": "#f59e0b",
@@ -36,14 +51,6 @@ LAYER_GROUPS = (
 )
 DISK_GROUP = ("disk", "Disk layer", ("#000000", "#171717", "#404040", "#737373"))
 EDITOR_GROUPS = (DISK_GROUP,) + LAYER_GROUPS
-LAYER_MATERIAL_COLORS = {
-    "Uranium Dioxide": "#f59e0b",
-    "Graphite": "#0f766e",
-    "Void": "#e2e8f0",
-    "InGaAs": "#3b82f6",
-    "Boron Carbide": "#475569",
-    "Disk": "#000000",
-}
 LAYER_MATCH_NOTE = (
     "The disk layer sits on top of every stack. Fuel, reflector, shield moderator, "
     "shield absorber, and TPV, each plus the disk, must have the same thickness."
@@ -502,6 +509,83 @@ def format_power(kw: float) -> str:
     return f"{kw:.4g} kW"
 
 
+def format_mass(kg: float) -> str:
+    if kg >= 1000:
+        return f"{kg / 1000:.4g} t"
+    return f"{kg:.4g} kg"
+
+
+def _fuel_mass_text(counted: list[tuple[str, float, float]]) -> str:
+    """Mass of each uranium-bearing material at the density stored for it."""
+    parts = [
+        f"{format_mass(kg)} of {name} ({density:.4g} g/cm³)"
+        for name, kg, density in counted
+    ]
+    if len(parts) == 1:
+        return parts[0]
+    return ", ".join(parts[:-1]) + ", and " + parts[-1]
+
+
+def _reload_share(label: str) -> float:
+    """Turn a reload label such as '1/4' into a fraction of the full burnup time."""
+    numerator, denominator = label.split("/")
+    return float(numerator) / float(denominator)
+
+
+def show_fuel_burnup(
+    rows: list[dict],
+    *,
+    fuel_area: float,
+    n_columns: int,
+    height_m: float,
+    pitch_cm: float | None,
+    specific_burnup: float,
+    thermal_kw: float | None,
+    specs: dict,
+    mixed: dict,
+    reload_label: str,
+) -> None:
+    """Years and months the fuel-layer uranium lasts at the overview thermal power.
+
+    ``thermal_kw`` is the Zones overview thermal power, in kW. It is not derived again here.
+    Density comes from the material library already loaded for this enrichment.
+    """
+    if thermal_kw is None or pitch_cm is None:
+        st.metric("Burnup time", "—", border=True)
+        st.caption("Shown once Zones overview has a thermal power.")
+        return
+    if not specs:
+        st.metric("Burnup time", "—", border=True)
+        st.caption("Material densities are unavailable.")
+        return
+    mass_kg, counted, skipped = uranium_inventory_kg(
+        rows, fuel_area, n_columns, height_m, pitch_cm, specs, mixed
+    )
+    extra = ""
+    if skipped:
+        names = ", ".join(f"'{name}'" for name in skipped)
+        verb = "is" if len(skipped) == 1 else "are"
+        extra = f" {names} {verb} left out of the fuel mass."
+    if mass_kg <= 0:
+        st.metric("Burnup time", "—", border=True)
+        st.caption("This layer has no uranium-bearing material." + extra)
+        return
+    if thermal_kw <= 0:
+        st.metric("Burnup time", "—", border=True)
+        st.caption("Thermal power is zero." + extra)
+        return
+    # Same integer burnup the Fuel setup tab displays. The shown time is that
+    # full life multiplied by the reload fraction.
+    specific = round(specific_burnup)
+    days = burnup_days(mass_kg, specific, thermal_kw) * _reload_share(reload_label)
+    st.metric("Burnup time", format_burnup_time(days), border=True)
+    st.caption(
+        f"{_fuel_mass_text(counted)} at {format_power(thermal_kw)} thermal, "
+        f"{specific:,.0f} MWd/kgHM, reload {reload_label}."
+        + extra
+    )
+
+
 def default_groups() -> dict[str, list[dict]]:
     return {
         group_id: [{"name": title, "cm": 1.0}]
@@ -638,14 +722,117 @@ def thickness_warning(totals: list[tuple[str, float]]) -> str:
     return ", ".join(parts[:-1]) + ", and " + parts[-1] + "."
 
 
-def build_layer_figure(groups: dict[str, list[dict]], layer_cm: float | None) -> go.Figure:
+def _project_root():
+    return Path(__file__).resolve().parents[1]
+
+
+def material_library(enrichment_pct: float):
+    """Compositions, densities, and colors from common_lib.materials."""
+    import sys
+
+    root = str(_project_root())
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    try:
+        from common_lib.materials import material_definitions
+    except ModuleNotFoundError:
+        return {}, {}
+    return material_definitions(enrichment_pct)
+
+
+def _library_entry(name: str, specs: dict, mixed: dict):
+    if name in specs:
+        return specs[name], None
+    base, separator, suffix = name.rpartition(" ")
+    if separator and suffix.isdigit() and base in specs:
+        return specs[base], None
+    mix = mixed.get(name)
+    if mix is None and separator and suffix.isdigit():
+        mix = mixed.get(base)
+    return None, mix
+
+
+def _composition_text(spec) -> str:
+    parts = []
+    for part in spec.composition:
+        proportion = part.proportion
+        amount = "" if proportion in (None, 1) else f" {proportion:.4g}"
+        enrichment = ""
+        if part.enrichment is not None:
+            enrichment = f" ({part.enrichment:.4g}% enriched)"
+        parts.append(f"{part.atom.name}{amount}{enrichment}")
+    return ", ".join(parts)
+
+
+def material_fact(name: str, specs: dict, mixed: dict) -> dict | None:
+    """Color, composition, and density for one library material. Disk is not in the library."""
+    spec, mix = _library_entry(name, specs, mixed)
+    if spec is not None:
+        return {
+            "color": spec.color or "orange",
+            "composition": _composition_text(spec),
+            "density": spec.density,
+        }
+    if mix is None:
+        return {"color": "black", "composition": "", "density": None} if name == "Disk" else None
+    weights = [w for w in mix.proportions if w > 0]
+    if not weights:
+        return None
+    volume = 0.0
+    described = []
+    color = "orange"
+    for component, proportion in zip(mix.materials, mix.proportions):
+        component_spec = specs.get(component)
+        if component_spec is None or proportion <= 0:
+            return None
+        if component == mix.materials[0] and component_spec.color:
+            color = component_spec.color
+        volume += proportion / component_spec.density
+        described.append(f"{proportion:.4g} {component}")
+    total = sum(mix.proportions)
+    return {
+        "color": color,
+        "composition": " + ".join(described),
+        "density": total / volume if volume else None,
+    }
+
+
+def material_lines(rows: list[dict], specs: dict, mixed: dict) -> list[str]:
+    lines = []
+    seen: set[str] = set()
+    for row in rows:
+        name = str(row.get("name", "")).strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        fact = material_fact(name, specs, mixed)
+        if fact is None or not fact["composition"]:
+            continue
+        density = fact["density"]
+        density_text = f" · {density:.4g} g/cm³" if density is not None else ""
+        lines.append(f"{name}: {fact['composition']}{density_text}")
+    return lines
+
+
+def build_layer_figure(
+    groups: dict[str, list[dict]],
+    layer_cm: float | None,
+    specs: dict,
+    mixed: dict,
+) -> go.Figure:
     fig = go.Figure()
     seen_names: set[str] = set()
     for group_id, title, colors in LAYER_GROUPS:
         stacked = list(groups[group_id]) + list(groups.get("disk") or [])
         for i, layer in enumerate(stacked):
             name = layer["name"]
-            color = LAYER_MATERIAL_COLORS.get(name, colors[i % len(colors)])
+            fact = material_fact(name, specs, mixed)
+            color = fact["color"] if fact else colors[i % len(colors)]
+            detail = ""
+            if fact and fact["composition"]:
+                detail = f"<br>{fact['composition']}"
+                if fact["density"] is not None:
+                    detail += f"<br>{fact['density']:.4g} g/cm³"
             fig.add_trace(
                 go.Bar(
                     x=[title],
@@ -654,7 +841,7 @@ def build_layer_figure(groups: dict[str, list[dict]], layer_cm: float | None) ->
                     legendgroup=name,
                     showlegend=name not in seen_names,
                     marker_color=color,
-                    hovertemplate=f"<b>{name}</b><br>{layer['cm']:.3f} cm<extra></extra>",
+                    hovertemplate=f"<b>{name}</b>{detail}<br>{layer['cm']:.3f} cm<extra></extra>",
                 )
             )
             seen_names.add(name)
@@ -670,6 +857,201 @@ def build_layer_figure(groups: dict[str, list[dict]], layer_cm: float | None) ->
         plot_bgcolor="white",
     )
     return fig
+
+
+def build_compact_section(
+    diameter_mm: float,
+    wall_margin_mm: float,
+    spacing_mm: float,
+    packing_pct: float,
+    hm_particle_pct: float,
+    specs: dict,
+    mixed: dict,
+) -> go.Figure:
+    """Two fuel compacts in cross section, to scale in millimetres."""
+    graphite = material_fact("Graphite", specs, mixed)
+    uranium = material_fact("Uranium Dioxide", specs, mixed)
+    graphite_color = graphite["color"] if graphite else "black"
+    uranium_color = uranium["color"] if uranium else "green"
+    diameter = float(diameter_mm)
+    spacing = max(float(spacing_mm), 0.0)
+    margin = max(float(wall_margin_mm), 0.0)
+    pitch = diameter + spacing
+    radius = diameter / 2.0
+    usable = max(radius - margin, 0.0)
+    particles = triso_particle_layout(diameter, margin, packing_pct, hm_particle_pct)
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=[None],
+            y=[None],
+            mode="markers",
+            name="Graphite",
+            marker=dict(size=12, color=graphite_color),
+            hoverinfo="skip",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=[None],
+            y=[None],
+            mode="markers",
+            name="Uranium dioxide",
+            marker=dict(size=12, color=uranium_color),
+            hoverinfo="skip",
+        )
+    )
+    width = diameter + pitch
+    centers = (radius, radius + pitch)
+    for center in centers:
+        fig.add_shape(
+            type="circle",
+            x0=center - radius,
+            y0=0,
+            x1=center + radius,
+            y1=diameter,
+            fillcolor=graphite_color,
+            line=dict(color="#d4d4d4", width=1),
+            layer="below",
+        )
+        for x_pos, y_pos, particle_r, kernel_r in particles:
+            fig.add_shape(
+                type="circle",
+                x0=center + x_pos - particle_r,
+                y0=radius + y_pos - particle_r,
+                x1=center + x_pos + particle_r,
+                y1=radius + y_pos + particle_r,
+                fillcolor="#52525b",
+                line=dict(color="#52525b", width=0),
+                layer="below",
+            )
+            if kernel_r > 0:
+                fig.add_shape(
+                    type="circle",
+                    x0=center + x_pos - kernel_r,
+                    y0=radius + y_pos - kernel_r,
+                    x1=center + x_pos + kernel_r,
+                    y1=radius + y_pos + kernel_r,
+                    fillcolor=uranium_color,
+                    line=dict(color=uranium_color, width=0),
+                    layer="below",
+                )
+        if usable > 0:
+            fig.add_shape(
+                type="circle",
+                x0=center - usable,
+                y0=radius - usable,
+                x1=center + usable,
+                y1=radius + usable,
+                fillcolor="rgba(0,0,0,0)",
+                line=dict(color="#fbbf24", width=1.5, dash="dash"),
+                layer="below",
+            )
+    hover_x = list(centers)
+    hover_y = [radius, radius]
+    hover_text = [
+        f"Cylinder {diameter:.1f} mm<br>Wall margin {margin:.1f} mm",
+        f"Cylinder {diameter:.1f} mm<br>Wall margin {margin:.1f} mm",
+    ]
+    if spacing > 0:
+        hover_x.append(radius + diameter / 2 + spacing / 2)
+        hover_y.append(radius)
+        hover_text.append(f"Compact spacing {spacing:.1f} mm")
+    if particles:
+        sample = particles[0]
+        hover_text.append(
+            f"Packing {packing_pct:.0f}%<br>HM {hm_particle_pct:.0f}% of each particle"
+        )
+        hover_x.append(centers[0] + sample[0])
+        hover_y.append(radius + sample[1])
+    fig.add_trace(
+        go.Scatter(
+            x=hover_x,
+            y=hover_y,
+            mode="markers",
+            marker=dict(size=14, color="rgba(0,0,0,0)"),
+            text=hover_text,
+            hovertemplate="%{text}<extra></extra>",
+            showlegend=False,
+        )
+    )
+    pad = max(diameter * 0.08, 0.4)
+    fig.update_layout(
+        height=320,
+        margin=dict(l=8, r=8, t=36, b=28),
+        title="Compact cross section",
+        legend=dict(orientation="h", yanchor="top", y=-0.22),
+        plot_bgcolor="white",
+        xaxis=dict(
+            range=[-pad, width + pad],
+            zeroline=False,
+            showgrid=False,
+            constrain="domain",
+            ticksuffix=" mm",
+        ),
+        yaxis=dict(
+            range=[-pad, diameter + pad],
+            zeroline=False,
+            showgrid=False,
+            scaleanchor="x",
+            scaleratio=1,
+            constrain="domain",
+            ticksuffix=" mm",
+        ),
+    )
+    return fig
+
+
+def build_fuel_preview(rows: list[dict], specs: dict, mixed: dict) -> go.Figure:
+    """Stacked graphite, uranium dioxide, and graphite for the fuel setup tab."""
+    fig = go.Figure()
+    seen: set[str] = set()
+    for layer in rows:
+        name = str(layer["name"])
+        fact = material_fact(name, specs, mixed)
+        color = fact["color"] if fact else LAYER_MATERIAL_COLORS.get(name, "#94a3b8")
+        cm = float(layer["cm"])
+        fig.add_trace(
+            go.Bar(
+                x=["Fuel layer"],
+                y=[cm],
+                name=name,
+                legendgroup=name,
+                showlegend=name not in seen,
+                marker_color=color,
+                hovertemplate=f"<b>{name}</b><br>{cm:.3f} cm<extra></extra>",
+            )
+        )
+        seen.add(name)
+    fig.update_layout(
+        barmode="stack",
+        height=300,
+        margin=dict(l=10, r=10, t=36, b=10),
+        title="Fuel layer",
+        yaxis=dict(title="cm", rangemode="tozero"),
+        xaxis=dict(title=""),
+        legend=dict(orientation="h", yanchor="top", y=-0.2),
+        plot_bgcolor="white",
+    )
+    return fig
+
+
+def apply_triso_fuel(
+    diameter_mm: float,
+    wall_margin_mm: float,
+    spacing_mm: float,
+    packing_pct: float,
+    hm_particle_pct: float,
+) -> tuple[list[dict], float, float]:
+    """Replace the fuel stack with the cylinder-smeared TRISO sandwich."""
+    layers, particle_in_cylinder, hm_fraction = triso_fuel_layers(
+        diameter_mm, wall_margin_mm, spacing_mm, packing_pct, hm_particle_pct
+    )
+    rows = st.session_state.groups.get("fuel") or []
+    if not _same_layers(rows, layers):
+        st.session_state.groups["fuel"] = layers
+        bump_layer_widgets()
+    return layers, particle_in_cylinder, hm_fraction
 
 
 def snapshot_configuration() -> dict:
@@ -955,9 +1337,13 @@ if layer_cm is None:
 else:
     n_slices = stack_m / (layer_cm / 100)
     stack_power = slice_power * n_slices
+# Cell density is electrical. Core thermal power is that output divided by the TPV efficiency.
+thermal_power = None if stack_power is None else stack_power / (tpv_eff_pct / 100)
 
 overview_tab, fuel_tab, designer_tab = st.tabs(
-    ["Zones overview", "Fuel setup", "Layer designer"]
+    ["Zones overview", "Fuel setup", "Layer designer"],
+    key="tab",
+    bind="query-params",
 )
 
 with overview_tab:
@@ -968,7 +1354,7 @@ with overview_tab:
         with st.container(border=True):
             st.subheader("Results")
             rows = (
-                ("Per slice", format_power(slice_power)),
+                ("Thermal", "—" if thermal_power is None else format_power(thermal_power)),
                 ("Stack", "—" if stack_power is None else format_power(stack_power)),
                 ("Fuel", f"{layout.fuel_area * columns:.3g} m²"),
                 ("Reflector", f"{layout.reflector_area * columns:.3g} m²"),
@@ -1020,28 +1406,124 @@ with overview_tab:
             )
 
 with fuel_tab:
-    enrichment_pct = bounded_slider(
-        "enrichment_pct",
-        "Fuel enrichment",
-        0.1,
-        20.0,
-        5.0,
-        0.1,
-        "%.1f%%",
+    setup_col, fuel_preview_col = st.columns([1.15, 1], vertical_alignment="top")
+    with setup_col:
+        enrichment_pct = bounded_slider(
+            "enrichment_pct",
+            "Fuel enrichment",
+            0.1,
+            20.0,
+            5.0,
+            0.1,
+            "%.1f%%",
+        )
+        burnup = enrichment_pct / 100 * 1200
+        st.metric("Burnup", f"{burnup:,.0f} MWd/kgHM", border=True)
+        st.caption("Burnup is the enrichment fraction multiplied by 1200.")
+        packing_pct = bounded_slider(
+            "packing_pct",
+            "Packing fraction",
+            1,
+            30,
+            30,
+            1,
+            "%.0f%%",
+        )
+        hm_particle_pct = bounded_slider(
+            "hm_particle_pct",
+            "HM fraction per particle",
+            20,
+            60,
+            30,
+            1,
+            "%.0f%%",
+        )
+        cylinder_diameter_mm = bounded_slider(
+            "cylinder_diameter_mm",
+            "Cylinder diameter",
+            2.0,
+            30.0,
+            10.0,
+            0.1,
+            "%.1f mm",
+        )
+        wall_margin_mm = bounded_slider(
+            "wall_margin_mm",
+            "Fuel compact wall margin",
+            0.0,
+            5.0,
+            0.5,
+            0.1,
+            "%.1f mm",
+        )
+        compact_spacing_mm = bounded_slider(
+            "compact_spacing_mm",
+            "Compact spacing",
+            0.0,
+            10.0,
+            1.0,
+            0.1,
+            "%.1f mm",
+        )
+        if "reload_fraction" not in st.session_state:
+            raw = st.query_params.get("reload_fraction")
+            st.session_state.reload_fraction = raw if raw in RELOAD_FRACTIONS else "1/4"
+        st.segmented_control(
+            "Reload fraction",
+            RELOAD_FRACTIONS,
+            key="reload_fraction",
+            required=True,
+            width="content",
+        )
+    specs, mixed = material_library(enrichment_pct)
+    fuel_rows, particle_in_cylinder, hm_fraction = apply_triso_fuel(
+        cylinder_diameter_mm,
+        wall_margin_mm,
+        compact_spacing_mm,
+        packing_pct,
+        hm_particle_pct,
     )
-    burnup = enrichment_pct / 100 * 1200
-    st.metric("Burnup", f"{burnup:,.0f} MWd/kgHM", border=True)
-    st.caption("Burnup is the enrichment fraction multiplied by 1200.")
-    if "reload_fraction" not in st.session_state:
-        raw = st.query_params.get("reload_fraction")
-        st.session_state.reload_fraction = raw if raw in RELOAD_FRACTIONS else "1/4"
-    st.segmented_control(
-        "Reload fraction",
-        RELOAD_FRACTIONS,
-        key="reload_fraction",
-        required=True,
-        width="content",
-    )
+    graphite_fraction = 1 - hm_fraction
+    uo2_to_graphite = hm_fraction / graphite_fraction if graphite_fraction else float("inf")
+    with fuel_preview_col:
+        st.plotly_chart(
+            build_compact_section(
+                cylinder_diameter_mm,
+                wall_margin_mm,
+                compact_spacing_mm,
+                packing_pct,
+                hm_particle_pct,
+                specs,
+                mixed,
+            ),
+            width="stretch",
+            alt="Cross section of two fuel compacts with wall margin and uranium dioxide kernels",
+        )
+        st.caption(
+            "Two compacts. The dashed circle is the wall margin, and the kernels are the heavy metal in each particle."
+        )
+        st.plotly_chart(
+            build_fuel_preview(fuel_rows, specs, mixed),
+            width="stretch",
+            alt="Graphite, uranium dioxide, and graphite in the fuel layer",
+        )
+        st.caption(
+            f"TRISO particles fill {particle_in_cylinder * 100:.1f}% of each cylinder. "
+            f"Heavy metal is {hm_fraction * 100:.2f}% of the {cylinder_diameter_mm / 10:.2f} cm fuel layer. "
+            f"UO2 / graphite = {uo2_to_graphite:.3f}."
+        )
+        show_fuel_burnup(
+            fuel_rows,
+            fuel_area=layout.fuel_area,
+            n_columns=columns,
+            height_m=stack_m,
+            pitch_cm=layer_cm,
+            specific_burnup=burnup,
+            thermal_kw=thermal_power,
+            specs=specs,
+            mixed=mixed,
+            reload_label=st.session_state.reload_fraction,
+        )
 
 with designer_tab:
     editor_col, preview_col = st.columns([1.35, 1], vertical_alignment="top")
@@ -1055,18 +1537,25 @@ with designer_tab:
         with st.container(border=True):
             st.markdown(f"**Disk layer** · {disk_cm:.2f} cm")
             mount_layer_list("disk", "Disk layer", disk_rows)
+            for line in material_lines(disk_rows, specs, mixed):
+                st.caption(line)
             st.button("Add material", key="ladd_disk", on_click=add_layer, args=("disk",))
         if layer_cm is None:
             st.warning(thickness_warning(layer_totals), title="Layers must have the same thickness")
         for group_id, title, _colors in LAYER_GROUPS:
-            own_cm = sum(layer["cm"] for layer in st.session_state.groups[group_id])
+            if group_id == "fuel":
+                continue
+            rows = st.session_state.groups[group_id]
+            own_cm = sum(layer["cm"] for layer in rows)
             with st.container(border=True):
                 st.markdown(f"**{title}** · {own_cm:.2f} cm")
-                mount_layer_list(group_id, title, st.session_state.groups[group_id])
+                mount_layer_list(group_id, title, rows)
+                for line in material_lines(rows, specs, mixed):
+                    st.caption(line)
                 st.button("Add material", key=f"ladd_{group_id}", on_click=add_layer, args=(group_id,))
     with preview_col:
         st.plotly_chart(
-            build_layer_figure(st.session_state.groups, layer_cm),
+            build_layer_figure(st.session_state.groups, layer_cm, specs, mixed),
             width="stretch",
             alt="Stacked thickness of the fuel, reflector, shield, and TPV layers",
         )
@@ -1081,6 +1570,11 @@ st.query_params.update(
     tpv_density=f"{tpv_density:.2f}",
     tpv_eff_pct=f"{tpv_eff_pct:.0f}",
     enrichment_pct=f"{enrichment_pct:.1f}",
+    packing_pct=f"{packing_pct:.0f}",
+    hm_particle_pct=f"{hm_particle_pct:.0f}",
+    cylinder_diameter_mm=f"{cylinder_diameter_mm:.1f}",
+    wall_margin_mm=f"{wall_margin_mm:.1f}",
+    compact_spacing_mm=f"{compact_spacing_mm:.1f}",
     reload_fraction=st.session_state.reload_fraction,
     layer_cm="" if layer_cm is None else f"{layer_cm:.2f}",
     layers=json.dumps(
