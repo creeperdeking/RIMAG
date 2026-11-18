@@ -1,0 +1,154 @@
+body {
+  background: #f3f0e8;
+  color: #1f2933;
+}
+
+h1, h2, .fw-semibold {
+  letter-spacing: 0;
+}
+
+.controls .control-heading {
+  margin: 0.65rem 0 0.2rem;
+  font-size: 0.8rem;
+}
+
+.controls .control-slider {
+  margin-bottom: 0.3rem;
+}
+
+.controls .control-slider .form-label {
+  margin-bottom: 0;
+  font-size: 0.78rem;
+  line-height: 1.15;
+}
+
+.controls .slider-value-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.controls .slider-value {
+  cursor: text;
+  border-bottom: 1px dashed transparent;
+}
+
+.controls .slider-value:hover {
+  border-bottom-color: #8aa096;
+}
+
+.controls .slider-value-input {
+  width: 4.6rem;
+  padding: 0 0.25rem;
+  font-size: 0.78rem;
+  line-height: 1.2;
+  height: 1.35rem;
+  text-align: right;
+}
+
+.app-shell {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.5rem;
+  padding: 0.75rem 1.25rem 1.5rem;
+}
+
+.app-sidebar {
+  width: 21rem;
+  flex: 0 0 21rem;
+}
+
+.app-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.app-main .control-slider {
+  margin-bottom: 0.85rem;
+}
+
+.app-main .control-slider .form-label {
+  margin-bottom: 0.15rem;
+}
+
+@media (max-width: 991px) {
+  .app-shell {
+    flex-direction: column;
+  }
+
+  .app-sidebar {
+    width: 100%;
+    flex-basis: auto;
+  }
+}
+
+.line-chart-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #4d615b;
+}
+
+.line-chart-key i {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.zone-chart {
+  position: relative;
+}
+
+.zone-chart-svg,
+.compact-section-svg,
+.layer-chart-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.zone-chart-svg {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.zone-chart-svg.is-panning {
+  cursor: grabbing;
+}
+
+.zone-chart-tools {
+  position: absolute;
+  top: 0.7rem;
+  right: 0.7rem;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.zone-chart-tools button {
+  width: 1.8rem;
+  height: 1.8rem;
+  padding: 0;
+  border: 1px solid #d6d3cd;
+  border-radius: 0.35rem;
+  background: #fff;
+  color: #1f2933;
+  line-height: 1;
+}
+
+.results-compact div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.35rem;
+  font-size: 0.92rem;
+}
+
+.results-compact p {
+  margin: 0.75rem 0 0;
+  color: #4d615b;
+  font-size: 0.82rem;
+}
