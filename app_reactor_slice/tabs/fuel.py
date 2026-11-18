@@ -118,7 +118,7 @@ def render_fuel_tab(
             alt="Cross section of two fuel compacts with wall margin and uranium dioxide kernels",
         )
         st.caption(
-            "Two compacts. The dashed circle is the wall margin, and the kernels are the heavy metal in each particle."
+            "Two compacts held by a graphite slab with flat top and bottom. The dashed circle is the wall margin, and the kernels are the heavy metal in each particle."
         )
         st.plotly_chart(
             build_fuel_preview(fuel_rows, specs, mixed),

@@ -110,6 +110,13 @@ def same_layers(left: list[dict], right: list[dict]) -> bool:
     return True
 
 
+def same_material_names(left: list[dict], right: list[dict]) -> bool:
+    """True when both stacks list the same materials in the same order."""
+    names_left = [str(row.get("name", "")).strip() for row in left]
+    names_right = [str(row.get("name", "")).strip() for row in right]
+    return bool(names_left) and names_left == names_right
+
+
 def bump_layer_widgets() -> None:
     """Drop the current layer widgets so the next run builds them from groups."""
     st.session_state.layer_epoch = int(st.session_state.get("layer_epoch", 0)) + 1

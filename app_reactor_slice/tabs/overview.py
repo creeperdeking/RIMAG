@@ -22,23 +22,43 @@ def render_overview_tab(
     n_slices: float | None,
     layer_cm: float | None,
     stack_m: float,
+    merge_reflector: bool = False,
+    reflector_thickness: float = 0.0,
+    moderator_thickness: float = 0.0,
 ) -> None:
     chart_col, result_col = st.columns([2, 1], vertical_alignment="top")
     with chart_col:
         st.plotly_chart(build_figure(layout, show_dims, columns), width="stretch")
+        if merge_reflector:
+            st.caption(
+                "Reflector and shield moderator use the same materials, so the reflector "
+                f"({reflector_thickness:.2f} m) is folded into the shield moderator "
+                f"({moderator_thickness:.2f} m → {moderator_thickness + reflector_thickness:.2f} m) "
+                "and omitted as a separate core sector."
+            )
     with result_col:
         with st.container(border=True):
             st.subheader("Results")
-            rows = (
+            shield_label = (
+                "Shield moderator (+ reflector)"
+                if merge_reflector
+                else "Shield moderator"
+            )
+            rows = [
                 ("Thermal", "—" if thermal_power is None else format_power(thermal_power)),
                 ("Stack", "—" if stack_power is None else format_power(stack_power)),
                 ("Fuel", f"{layout.fuel_area * columns:.3g} m²"),
-                ("Reflector", f"{layout.reflector_area * columns:.3g} m²"),
-                ("TPV", f"{opposite_area * columns:.3g} m²"),
-                ("Shield moderator", f"{layout.gap_area * columns:.3g} m²"),
-                ("Shield absorber", f"{layout.absorber_area * columns:.3g} m²"),
-                ("Disk", f"{layout.total_area * columns:.3g} m²"),
-                ("Diameter", f"{2 * layout.r_outer:.3g} m"),
+            ]
+            if not merge_reflector:
+                rows.append(("Reflector", f"{layout.reflector_area * columns:.3g} m²"))
+            rows.extend(
+                [
+                    ("TPV", f"{opposite_area * columns:.3g} m²"),
+                    (shield_label, f"{layout.gap_area * columns:.3g} m²"),
+                    ("Shield absorber", f"{layout.absorber_area * columns:.3g} m²"),
+                    ("Disk", f"{layout.total_area * columns:.3g} m²"),
+                    ("Diameter", f"{2 * layout.r_outer:.3g} m"),
+                ]
             )
             lines = "".join(
                 f"<div><span>{label}</span><b>{value}</b></div>" for label, value in rows

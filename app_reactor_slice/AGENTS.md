@@ -15,7 +15,7 @@ R_o = R_i + w
 
 The curved absorber in the hole already has radial thickness `absorber`, so the diameter is not grown further.
 
-Around the rim, fuel is centered at the top. On each side the order is fuel, reflector, shield moderator, shield absorber, TPV. TPV is the zone opposite the fuel.
+Around the rim, fuel is centered at the top. On each side the order is fuel, reflector, shield moderator, shield absorber, TPV. TPV is the zone opposite the fuel. When the reflector and shield moderator layer stacks use the same materials, the core drops the separate reflector sector and adds the reflector thickness to the shield moderator thickness instead.
 
 `a` is the shield moderator thickness. `absorber` is the shield absorber thickness (slider `abs`, 0.01–0.5 m). `reflector` is the reflector thickness (slider `refl`, 0.1–1 m). `b` is a percentage of `a` (slider `b_pct`, 1–100). The fuel/TPV slider (`ratio_pct`, 10–50) is the fuel area divided by the TPV area, not a share of the whole disk. `percent_fuel_for_ratio` turns that ratio into the fuel angle at the diameter being solved.
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -71,8 +73,15 @@ def build_compact_section(
     """Two fuel compacts in cross section, to scale in millimetres."""
     graphite = material_fact("Graphite", specs, mixed)
     uranium = material_fact("Uranium Dioxide", specs, mixed)
-    graphite_color = graphite["color"] if graphite else "black"
+    # Library graphite is black; use a mid gray so the matrix between particles reads
+    # as a fill, not an empty hole.
+    wall_color = "#292524"
+    matrix_color = "#78716c"
+    if graphite and graphite["color"] not in (None, "black"):
+        matrix_color = graphite["color"]
+        wall_color = graphite["color"]
     uranium_color = uranium["color"] if uranium else "green"
+    coating_color = "#a8a29e"
     diameter = float(diameter_mm)
     spacing = max(float(spacing_mm), 0.0)
     margin = max(float(wall_margin_mm), 0.0)
@@ -87,7 +96,7 @@ def build_compact_section(
             y=[None],
             mode="markers",
             name="Graphite",
-            marker=dict(size=12, color=graphite_color),
+            marker=dict(size=12, color=matrix_color),
             hoverinfo="skip",
         )
     )
@@ -103,17 +112,46 @@ def build_compact_section(
     )
     width = diameter + pitch
     centers = (radius, radius + pitch)
-    for center in centers:
-        fig.add_shape(
-            type="circle",
-            x0=center - radius,
-            y0=0,
-            x1=center + radius,
-            y1=diameter,
-            fillcolor=graphite_color,
-            line=dict(color="#d4d4d4", width=1),
-            layer="below",
+    left, right = centers
+    # Capsule: left outer semicircle, bottom flat, right outer semicircle, top flat.
+    # That fills the gap between the cylinders with flat graphite faces.
+    steps = 64
+    outline_x: list[float] = []
+    outline_y: list[float] = []
+    for index in range(steps):
+        angle = math.pi / 2 + math.pi * index / (steps - 1)
+        outline_x.append(left + radius * math.cos(angle))
+        outline_y.append(radius + radius * math.sin(angle))
+    for index in range(steps):
+        angle = -math.pi / 2 + math.pi * index / (steps - 1)
+        outline_x.append(right + radius * math.cos(angle))
+        outline_y.append(radius + radius * math.sin(angle))
+    outline_x.append(left)
+    outline_y.append(diameter)
+    fig.add_trace(
+        go.Scatter(
+            x=outline_x,
+            y=outline_y,
+            fill="toself",
+            fillcolor=wall_color,
+            mode="lines",
+            line=dict(color="#d4d4d4", width=1.5),
+            hoverinfo="skip",
+            showlegend=False,
         )
+    )
+    for center in centers:
+        if usable > 0:
+            fig.add_shape(
+                type="circle",
+                x0=center - usable,
+                y0=radius - usable,
+                x1=center + usable,
+                y1=radius + usable,
+                fillcolor=matrix_color,
+                line=dict(color=matrix_color, width=0),
+                layer="above",
+            )
         for x_pos, y_pos, particle_r, kernel_r in particles:
             fig.add_shape(
                 type="circle",
@@ -121,9 +159,9 @@ def build_compact_section(
                 y0=radius + y_pos - particle_r,
                 x1=center + x_pos + particle_r,
                 y1=radius + y_pos + particle_r,
-                fillcolor="#52525b",
-                line=dict(color="#52525b", width=0),
-                layer="below",
+                fillcolor=coating_color,
+                line=dict(color="#57534e", width=0.5),
+                layer="above",
             )
             if kernel_r > 0:
                 fig.add_shape(
@@ -134,7 +172,7 @@ def build_compact_section(
                     y1=radius + y_pos + kernel_r,
                     fillcolor=uranium_color,
                     line=dict(color=uranium_color, width=0),
-                    layer="below",
+                    layer="above",
                 )
         if usable > 0:
             fig.add_shape(
@@ -145,7 +183,7 @@ def build_compact_section(
                 y1=radius + usable,
                 fillcolor="rgba(0,0,0,0)",
                 line=dict(color="#fbbf24", width=1.5, dash="dash"),
-                layer="below",
+                layer="above",
             )
     hover_x = list(centers)
     hover_y = [radius, radius]
@@ -156,7 +194,13 @@ def build_compact_section(
     if spacing > 0:
         hover_x.append(radius + diameter / 2 + spacing / 2)
         hover_y.append(radius)
-        hover_text.append(f"Compact spacing {spacing:.1f} mm")
+        hover_text.append(
+            f"Structural graphite<br>Compact spacing {spacing:.1f} mm"
+        )
+    else:
+        hover_x.append((centers[0] + centers[1]) / 2)
+        hover_y.append(radius)
+        hover_text.append("Structural graphite between the cylinders")
     if particles:
         sample = particles[0]
         hover_text.append(

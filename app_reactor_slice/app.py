@@ -10,15 +10,22 @@ import sys
 
 import streamlit as st
 
-# The running server keeps local modules after the first import, so a signature
-# change would stay invisible until restart. Drop geometry before each script run.
-sys.modules.pop("geometry", None)
+# The running server keeps local modules after the first import, so edits to
+# helpers would stay invisible until restart. Drop them before each script run.
+for _name in list(sys.modules):
+    if _name == "geometry" or _name == "constants" or _name.startswith(("ui.", "tabs.")):
+        sys.modules.pop(_name, None)
 
 from geometry import compute_layout_for_ratio
 from tabs.designer import render_designer_tab
 from tabs.fuel import render_fuel_tab
 from tabs.overview import render_overview_tab
-from ui.layers import group_thicknesses, shared_thickness, sync_groups_from_widgets
+from ui.layers import (
+    group_thicknesses,
+    same_material_names,
+    shared_thickness,
+    sync_groups_from_widgets,
+)
 from ui.sidebar import inject_styles, render_sidebar
 
 st.set_page_config(page_title="Hollow disk zones", layout="wide")
@@ -31,12 +38,25 @@ layer_cm = shared_thickness(layer_totals)
 with st.sidebar:
     side = render_sidebar(layer_cm, layer_totals)
 
+# When the reflector and shield moderator stacks use the same materials, the
+# core has no separate reflector sector: its thickness is added to the shield.
+groups = st.session_state.groups
+merge_reflector = same_material_names(
+    groups.get("reflector") or [],
+    groups.get("shield_moderator") or [],
+)
+shield_a = side["moderator"]
+reflector = side["reflector"]
+if merge_reflector:
+    shield_a = side["moderator"] + side["reflector"]
+    reflector = 0.0
+
 layout = compute_layout_for_ratio(
-    side["moderator"],
+    shield_a,
     side["b"],
     side["w"],
     side["ratio_pct"] / 100,
-    side["reflector"],
+    reflector,
     side["absorber"],
 )
 
@@ -71,6 +91,9 @@ with overview_tab:
         n_slices=n_slices,
         layer_cm=layer_cm,
         stack_m=side["stack_m"],
+        merge_reflector=merge_reflector,
+        reflector_thickness=side["reflector"],
+        moderator_thickness=side["moderator"],
     )
 
 with fuel_tab:
