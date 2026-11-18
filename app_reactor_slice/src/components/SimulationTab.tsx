@@ -10,6 +10,7 @@ import {
   type RunMode,
   type WeightWindows,
 } from "../constants";
+import type { Setup } from "../configurations";
 
 export type SimulationParams = {
   run_mode: RunMode;
@@ -20,6 +21,7 @@ export type SimulationParams = {
   particle_type: ParticleType;
   weight_windows: WeightWindows;
   dose_time: number;
+  print_core_characteristics: boolean;
 };
 
 export const DEFAULT_SIMULATION_PARAMS: SimulationParams = {
@@ -31,22 +33,25 @@ export const DEFAULT_SIMULATION_PARAMS: SimulationParams = {
   particle_type: "neutron",
   weight_windows: "no",
   dose_time: 10,
+  print_core_characteristics: true,
 };
 
 type Props = {
   params: SimulationParams;
   onChange: (next: SimulationParams) => void;
+  setup: Setup;
 };
 
 function stamp(): string {
   return new Date().toLocaleTimeString("en-GB", { hour12: false });
 }
 
-const SimulationTab: React.FC<Props> = ({ params, onChange }) => {
+const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
   const [running, setRunning] = useState(false);
   const [output, setOutput] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const logRef = useRef<HTMLPreElement>(null);
-  const timersRef = useRef<number[]>([]);
+  const sourceRef = useRef<EventSource | null>(null);
 
   const setField = <K extends keyof SimulationParams>(key: K, value: SimulationParams[K]) => {
     onChange({ ...params, [key]: value });
@@ -56,56 +61,93 @@ const SimulationTab: React.FC<Props> = ({ params, onChange }) => {
     setOutput((prev) => `${prev}${prev ? "\n" : ""}[${stamp()}] ${line}`);
   };
 
-  const clearTimers = () => {
-    for (const id of timersRef.current) window.clearTimeout(id);
-    timersRef.current = [];
+  const closeStream = () => {
+    sourceRef.current?.close();
+    sourceRef.current = null;
   };
 
-  useEffect(() => () => clearTimers(), []);
+  useEffect(() => () => closeStream(), []);
 
   useEffect(() => {
     const node = logRef.current;
     if (node) node.scrollTop = node.scrollHeight;
   }, [output]);
 
-  const onStart = () => {
-    if (running) return;
-    clearTimers();
-    setRunning(true);
-    setOutput("");
+  const openStream = () => {
+    closeStream();
+    const source = new EventSource("/api/simulation/stream");
+    sourceRef.current = source;
+    source.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data) as { type: string; line?: string; code?: number; running?: boolean };
+        if (payload.type === "log" && payload.line) {
+          append(payload.line);
+          if (payload.line.startsWith("[runner] done exit=")) {
+            setRunning(false);
+            closeStream();
+          }
+        } else if (payload.type === "done") {
+          setRunning(false);
+          closeStream();
+        } else if (payload.type === "ready" && payload.running) {
+          setRunning(true);
+        }
+      } catch {
+        append(event.data);
+      }
+    };
+    source.onerror = () => {
+      // Browser retries EventSource; leave it unless we intentionally closed.
+      if (!sourceRef.current) return;
+    };
+  };
 
-    const payload = {
-      nsm_material: params.nsm_material,
-      nsm_thickness: params.nsm_thickness,
-      conical_pitch: params.conical_pitch,
-      n_batches: params.n_batches,
-      run_mode: params.run_mode,
-      particle_type: params.particle_type,
-      weight_windows: params.weight_windows,
-      dose_time: params.dose_time,
+  const onStart = async () => {
+    if (running) return;
+    setError(null);
+    setOutput("");
+    setRunning(true);
+    openStream();
+
+    const body = {
+      setup,
+      simulation: params,
     };
 
-    const steps: Array<[number, string]> = [
-      [0, "Simulation start requested (dummy — no RIMAG process yet)."],
-      [200, `Parameters: ${JSON.stringify(payload)}`],
-      [500, "Would write params JSON and call: docker compose run --rm rimag python simulation_paper.py <params.json>"],
-      [900, "Waiting for stdout…"],
-      [1400, "(stub) No process attached. Wire this button to the RIMAG runner next."],
-      [1800, "Done."],
-    ];
+    try {
+      const response = await fetch("/api/simulation/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok) {
+        setError(data.error || `Start failed (${response.status})`);
+        setRunning(false);
+        closeStream();
+        append(data.error || `Start failed (${response.status})`);
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      setRunning(false);
+      closeStream();
+      append(message);
+    }
+  };
 
-    for (const [delay, message] of steps) {
-      const id = window.setTimeout(() => {
-        append(message);
-        if (message === "Done.") setRunning(false);
-      }, delay);
-      timersRef.current.push(id);
+  const onStop = async () => {
+    try {
+      await fetch("/api/simulation/stop", { method: "POST" });
+    } catch {
+      // The stream will still report process exit if the kill worked.
     }
   };
 
   const onClear = () => {
     if (running) return;
     setOutput("");
+    setError(null);
   };
 
   return (
@@ -114,8 +156,8 @@ const SimulationTab: React.FC<Props> = ({ params, onChange }) => {
         <div className="border rounded p-3 bg-white h-100">
           <h2 className="h6 mb-3">RIMAG run parameters</h2>
           <p className="small text-secondary mb-3">
-            Values written into the parameter file passed to <code>simulation_paper.py</code>. Geometry still comes from
-            the current calculator setup once the runner is wired.
+            Starts <code>simulation_app_slice.py</code> in Docker with the current calculator setup (zones, layers,
+            enrichment, columns) plus these run knobs. Output streams below.
           </p>
 
           <Form.Group className="mb-2">
@@ -180,6 +222,7 @@ const SimulationTab: React.FC<Props> = ({ params, onChange }) => {
                 if (Number.isFinite(next) && next >= 0) setField("nsm_thickness", next);
               }}
             />
+            <div className="small text-secondary mt-1">Stored for the run config; app-slice CSG uses the zone layout.</div>
           </Form.Group>
 
           <Form.Group className="mb-2">
@@ -197,6 +240,9 @@ const SimulationTab: React.FC<Props> = ({ params, onChange }) => {
                 if (Number.isFinite(next) && next >= 0) setField("conical_pitch", next);
               }}
             />
+            <div className="small text-secondary mt-1">
+              Layer bounds become cones about the disk axis (0° = flat disks).
+            </div>
           </Form.Group>
 
           <Form.Group className="mb-2">
@@ -231,7 +277,7 @@ const SimulationTab: React.FC<Props> = ({ params, onChange }) => {
             </Form.Select>
           </Form.Group>
 
-          <Form.Group className="mb-3">
+          <Form.Group className="mb-2">
             <Form.Label className="small mb-1">Dose time (years)</Form.Label>
             <Form.Control
               size="sm"
@@ -247,18 +293,36 @@ const SimulationTab: React.FC<Props> = ({ params, onChange }) => {
             />
           </Form.Group>
 
+          <Form.Check
+            type="checkbox"
+            id="print-core-characteristics"
+            className="small mb-3"
+            label="Print core characteristics"
+            checked={params.print_core_characteristics}
+            disabled={running}
+            onChange={(event) => setField("print_core_characteristics", event.target.checked)}
+          />
+
           <div className="d-flex gap-2">
-            <Button variant="primary" className="flex-grow-1" disabled={running} onClick={onStart}>
+            <Button variant="primary" className="flex-grow-1" disabled={running} onClick={() => void onStart()}>
               {running ? "Running…" : "Start simulation"}
+            </Button>
+            <Button variant="outline-danger" disabled={!running} onClick={() => void onStop()}>
+              Stop
             </Button>
             <Button variant="outline-secondary" disabled={running || !output} onClick={onClear}>
               Clear
             </Button>
           </div>
 
+          {error && (
+            <Alert variant="danger" className="py-2 px-3 small mt-3 mb-0">
+              {error}
+            </Alert>
+          )}
           {running && (
             <Alert variant="info" className="py-2 px-3 small mt-3 mb-0">
-              Dummy run in progress. Output below is simulated.
+              Streaming Docker / RIMAG output. Requires Docker Desktop and a built <code>rimag</code> image.
             </Alert>
           )}
         </div>

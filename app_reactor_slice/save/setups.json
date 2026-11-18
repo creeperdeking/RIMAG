@@ -14,8 +14,9 @@
     "wall_margin_mm": 0.5,
     "compact_spacing_mm": 1,
     "tpv_eff_pct": 33,
+    "fuel_temp_c": 1250,
     "stack_m": 10,
-    "columns": 3,
+    "columns": 1,
     "reload_fraction": "1/4",
     "dims": true,
     "layers": {

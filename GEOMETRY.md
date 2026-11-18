@@ -385,6 +385,21 @@ common_lib/
 
 ---
 
+## App-slice path (web calculator → OpenMC)
+
+The reactor-slice web app can start a simulation without going through `paper_geometry_definition.py`:
+
+1. UI posts `{ setup, simulation }` to `/api/simulation/start`.
+2. Vite runner writes `runs/default/app_slice_run.json` and syncs `app_slice_design/` + `simulation_app_slice.py` into the run directory.
+3. Docker runs `python simulation_app_slice.py app_slice_run.json`.
+4. `app_slice_design.make_app_slice_geometry` builds a flat hollow-disk CSG and returns `bounding_box` / `render_view`. Hierarchy:
+   - one shared `slice_universe` (one pitch: radial zones + axial materials)
+   - one `column_universe` = `n_slices` cells all filled with that same `slice_universe` (from `stack_m / pitch`)
+   - root instantiates the same `column_universe` once per reactor cylinder
+5. `start_program(..., geometry_settings=None, bounding_box=..., render_view=...)` runs the usual modes while streaming logs back over SSE.
+
+`conical_pitch` tilts each material bound: `0°` uses `ZPlane`s; otherwise `ZConeOneSided` about the disk axis (same idea as the paper frustum), so layers angle toward the cylinder center.
+
 ## Mental model (short)
 
 1. **Write 1D recipes** for hot (fuel), cold (TPV), and shield materials that share the same thickness and emitter slots.  

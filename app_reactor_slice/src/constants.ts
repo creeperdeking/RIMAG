@@ -35,7 +35,7 @@ export const LAYER_FALLBACK_COLORS: Record<string, string> = {
   "Uranium Dioxide": "green",
 };
 
-export const TAB_KEYS = ["overview", "fuel", "designer", "simulation"] as const;
+export const TAB_KEYS = ["overview", "fuel", "designer", "thermodynamic", "simulation"] as const;
 export type TabKey = (typeof TAB_KEYS)[number];
 
 /** Materials accepted as neutron shield moderator in simulation_paper.py runs. */

@@ -4,6 +4,13 @@ import react from "@vitejs/plugin-react";
 import type { Connect, Plugin } from "vite";
 import { defineConfig } from "vite";
 import { BlenderClipboardError, copyColumnsToBlender } from "./server/blenderClipboard";
+import {
+  isSimulationRunning,
+  RimagRunnerError,
+  startSimulation,
+  stopSimulation,
+  subscribe,
+} from "./server/rimagRunner";
 
 const SETUPS_FILE = path.resolve("save/setups.json");
 
@@ -131,8 +138,83 @@ function setupStore(): Plugin {
   };
 }
 
+function simulationApi(): Plugin {
+  const handle: Connect.NextHandleFunction = (req, res, next) => {
+    const url = req.url?.split("?")[0];
+    if (!url?.startsWith("/api/simulation")) {
+      next();
+      return;
+    }
+
+    if (url === "/api/simulation/status" && req.method === "GET") {
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ running: isSimulationRunning() }));
+      return;
+    }
+
+    if (url === "/api/simulation/stop" && req.method === "POST") {
+      const stopped = stopSimulation();
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ stopped }));
+      return;
+    }
+
+    if (url === "/api/simulation/stream" && req.method === "GET") {
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      });
+      res.write(`data: ${JSON.stringify({ type: "ready", running: isSimulationRunning() })}\n\n`);
+      const unsubscribe = subscribe((line) => {
+        res.write(`data: ${JSON.stringify({ type: "log", line })}\n\n`);
+        if (line.startsWith("[runner] done exit=")) {
+          const code = Number(line.slice("[runner] done exit=".length));
+          res.write(`data: ${JSON.stringify({ type: "done", code: Number.isFinite(code) ? code : 1 })}\n\n`);
+        }
+      });
+      req.on("close", () => unsubscribe());
+      return;
+    }
+
+    if (url === "/api/simulation/start" && req.method === "POST") {
+      void readJsonBody(req)
+        .then((body) => {
+          startSimulation(body);
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ ok: true, running: true }));
+        })
+        .catch((error: unknown) => {
+          const message =
+            error instanceof RimagRunnerError
+              ? error.message
+              : error instanceof Error
+                ? error.message
+                : "Could not start the simulation.";
+          res.statusCode = error instanceof RimagRunnerError ? 409 : 400;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ error: message }));
+        });
+      return;
+    }
+
+    res.statusCode = 405;
+    res.end();
+  };
+
+  return {
+    name: "reactor-slice-simulation",
+    configureServer(server) {
+      server.middlewares.use(handle);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(handle);
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), setupStore(), blenderClipboard()],
+  plugins: [react(), setupStore(), blenderClipboard(), simulationApi()],
   server: {
     host: true,
     port: 3001,

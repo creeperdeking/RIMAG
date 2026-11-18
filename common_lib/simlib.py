@@ -443,16 +443,20 @@ def stochastic_volume_calculation(
     cells: List[openmc.Cell],
     geometry: openmc.Geometry,
     materials_dict: Dict[str, openmc.Material],
-    geometry_settings: GeometrySettings,
+    geometry_settings: GeometrySettings = None,
     samples: int = 10000000,
+    bounding_box=None,
 ):
     """
     Stochastic volume calculation, adds volume information to the cells
     """
     if any(c.volume is None for c in cells):
-        lower_left_corner, upper_right_corner = get_geometry_bounding_box(
-            geometry_settings
-        )
+        if bounding_box is not None:
+            lower_left_corner, upper_right_corner = bounding_box
+        else:
+            lower_left_corner, upper_right_corner = get_geometry_bounding_box(
+                geometry_settings
+            )
         # 1e5 samples per cell is usually enough for <1 % error
         volcalc = openmc.VolumeCalculation(
             domains=cells,

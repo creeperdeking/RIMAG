@@ -34,9 +34,10 @@ const TAB_STORAGE_KEY = "reactor-slice-active-tab";
 const SETUPS_URL = "/api/setups";
 
 const TAB_LABELS: Record<TabKey, string> = {
-  overview: "Zones overview",
+  overview: "Geometry",
   fuel: "Fuel setup",
   designer: "Layer designer",
+  thermodynamic: "Thermodynamic",
   simulation: "Simulation",
 };
 
@@ -410,6 +411,7 @@ const Explorer: React.FC = () => {
     params.set("ratio_pct", setup.ratio_pct.toFixed(0));
     params.set("tpv_density", setup.tpv_density.toFixed(2));
     params.set("tpv_eff_pct", setup.tpv_eff_pct.toFixed(0));
+    params.set("fuel_temp_c", setup.fuel_temp_c.toFixed(0));
     params.set("enrichment_pct", setup.enrichment_pct.toFixed(1));
     params.set("packing_pct", setup.packing_pct.toFixed(0));
     params.set("hm_particle_pct", setup.hm_particle_pct.toFixed(0));
@@ -714,12 +716,33 @@ const Explorer: React.FC = () => {
     </div>
   );
 
-  const simulationTab = <SimulationTab params={simParams} onChange={setSimParams} />;
+  const thermodynamicTab = (
+    <Row className="g-4">
+      <Col lg={6}>
+        <div className="border rounded p-3 bg-white">
+          <h2 className="h6 mb-3">TPV and fuel temperature</h2>
+          <p className="small text-secondary mb-3">
+            Electrical TPV cell loading and conversion efficiency, plus the hot-side fuel temperature used for radiative
+            heat balance in RIMAG core characteristics.
+          </p>
+          {renderSlider("tpv_density", "TPV power density (W/cm²)", fixed(2))}
+          {renderSlider("tpv_eff_pct", "TPV efficiency", fixed(0, "%"))}
+          {renderSlider("fuel_temp_c", "Fuel temperature (°C)", fixed(0))}
+          <div className="small text-secondary mt-2">
+            Fuel temperature is sent to the simulation as {Math.round(setup.fuel_temp_c + 273)} K.
+          </div>
+        </div>
+      </Col>
+    </Row>
+  );
+
+  const simulationTab = <SimulationTab params={simParams} onChange={setSimParams} setup={setup} />;
 
   const tabContent: Record<TabKey, React.ReactNode> = {
     overview: overviewTab,
     fuel: fuelTab,
     designer: designerTab,
+    thermodynamic: thermodynamicTab,
     simulation: simulationTab,
   };
 
@@ -733,15 +756,11 @@ const Explorer: React.FC = () => {
           {renderSlider("b_pct", "b (%)", fixed(0, "%"))}
           {renderSlider("w", "w (rim width)", fixed(1))}
           {renderSlider("ratio_pct", "fuel / TPV", fixed(0, "%"))}
-          {renderSlider("tpv_density", "TPV power density (W/cm²)", fixed(2))}
-          {renderSlider("tpv_eff_pct", "TPV efficiency", fixed(0, "%"))}
-          {layerCm === null ? (
+          {layerCm === null && (
             <Alert variant="warning" className="py-2 px-3 small my-2">
               <div className="fw-semibold">Layers must have the same thickness</div>
               {thicknessWarning(layerTotals)}
             </Alert>
-          ) : (
-            <div className="small text-secondary my-1">Layer thickness {layerCm.toFixed(2)} cm</div>
           )}
           {renderSlider("stack_m", "stack height (m)", fixed(1))}
           {renderSlider("columns", "columns", fixed(0))}
