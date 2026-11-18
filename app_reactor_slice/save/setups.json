@@ -3,19 +3,19 @@
     "a": 2.7,
     "abs": 0.1,
     "refl": 0.3,
-    "b_pct": 50.0,
+    "b_pct": 50,
     "w": 1.7,
-    "ratio_pct": 40.0,
+    "ratio_pct": 40,
     "tpv_density": 0.89,
     "enrichment_pct": 9.7,
-    "packing_pct": 20.0,
-    "hm_particle_pct": 30.0,
-    "cylinder_diameter_mm": 10.0,
+    "packing_pct": 20,
+    "hm_particle_pct": 30,
+    "cylinder_diameter_mm": 10,
     "wall_margin_mm": 0.5,
-    "compact_spacing_mm": 1.0,
-    "tpv_eff_pct": 33.0,
-    "stack_m": 10.0,
-    "columns": 3.0,
+    "compact_spacing_mm": 1,
+    "tpv_eff_pct": 33,
+    "stack_m": 10,
+    "columns": 3,
     "reload_fraction": "1/4",
     "dims": true,
     "layers": {
@@ -50,19 +50,19 @@
       "reflector": [
         {
           "name": "Graphite",
-          "cm": 1.0
+          "cm": 1
         }
       ],
       "shield_moderator": [
         {
           "name": "Graphite",
-          "cm": 1.0
+          "cm": 1
         }
       ],
       "shield_absorber": [
         {
           "name": "Boron Carbide",
-          "cm": 1.0
+          "cm": 1
         }
       ],
       "tpv": [

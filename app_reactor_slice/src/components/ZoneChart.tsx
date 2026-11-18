@@ -92,7 +92,7 @@ type Props = {
 };
 
 const ZoneChart: React.FC<Props> = ({ layout, showDims, columns }) => {
-  const { paths, lines, dots, dot, labels, reach, legend } = useMemo(() => {
+  const { paths, lines, dots, dot, labels, reach, legend, home } = useMemo(() => {
     const fuelHalf = (layout.fuelAngle * 180) / Math.PI / 2;
     const oppHalf = (layout.oppositeAngle * 180) / Math.PI / 2;
     const ri = layout.rInner;
@@ -298,13 +298,37 @@ const ZoneChart: React.FC<Props> = ({ layout, showDims, columns }) => {
       }
     }
 
-    return { paths: drawn, lines: strokeLines, dots, dot, labels: dimLabels, reach: box, legend: legendItems };
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    const include = (x: number, y: number) => {
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+    };
+    for (const [px, py] of columnPoses(columns, ro)) {
+      include(px - ro, py - ro);
+      include(px + ro, py + ro);
+    }
+    for (const line of strokeLines) {
+      include(line.x1, line.y1);
+      include(line.x2, line.y2);
+    }
+    for (const label of dimLabels) include(label.x, label.y);
+    const pad = ro * 0.08;
+    // The drawing is flipped to math y-up, so the view's top is the highest math y.
+    const home = {
+      x: minX - pad,
+      y: -(maxY + pad),
+      w: maxX - minX + pad * 2,
+      h: maxY - minY + pad * 2,
+    };
+
+    return { paths: drawn, lines: strokeLines, dots, dot, labels: dimLabels, reach: box, legend: legendItems, home };
   }, [layout, showDims, columns]);
 
-  const home = useMemo(
-    () => ({ x: -reach, y: -reach, w: reach * 2, h: reach * 2 }),
-    [reach],
-  );
   const [frame, setFrame] = useState<typeof home | null>(null);
   const [panning, setPanning] = useState(false);
   const view = frame ?? home;

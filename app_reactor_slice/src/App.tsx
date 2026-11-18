@@ -4,6 +4,7 @@ import { Navigate, Route, Routes, useSearchParams } from "react-router-dom";
 import CompactSection from "./components/CompactSection";
 import LayerChart from "./components/LayerChart";
 import LayerEditor from "./components/LayerEditor";
+import SimulationTab, { DEFAULT_SIMULATION_PARAMS, type SimulationParams } from "./components/SimulationTab";
 import ZoneChart, { columnPoses } from "./components/ZoneChart";
 import { LAYER_GROUPS, LAYER_MATCH_NOTE, TAB_KEYS, type LayerGroupId, type TabKey } from "./constants";
 import {
@@ -27,7 +28,7 @@ import {
   thicknessWarning,
   type Groups,
 } from "./layers";
-import { materialLibrary, materialLines, materialNames } from "./materials";
+import { materialLibrary, materialLines } from "./materials";
 
 const TAB_STORAGE_KEY = "reactor-slice-active-tab";
 const SETUPS_URL = "/api/setups";
@@ -36,6 +37,7 @@ const TAB_LABELS: Record<TabKey, string> = {
   overview: "Zones overview",
   fuel: "Fuel setup",
   designer: "Layer designer",
+  simulation: "Simulation",
 };
 
 /** Stable reference so LayerChart's memo does not recompute on every render. */
@@ -259,6 +261,7 @@ const Explorer: React.FC = () => {
   const [notice, setNotice] = useState<Notice | null>(null);
   const [copying, setCopying] = useState(false);
   const [copyNote, setCopyNote] = useState<Notice | null>(null);
+  const [simParams, setSimParams] = useState<SimulationParams>(DEFAULT_SIMULATION_PARAMS);
 
   const savedNames = useMemo(() => Object.keys(saved).sort((a, b) => a.localeCompare(b)), [saved]);
 
@@ -372,7 +375,6 @@ const Explorer: React.FC = () => {
 
   // -- Fuel / materials -----------------------------------------------------
   const { specs, mixed } = useMemo(() => materialLibrary(setup.enrichment_pct), [setup.enrichment_pct]);
-  const materialOptions = useMemo(() => materialNames(specs, mixed), [specs, mixed]);
   const burnup = (setup.enrichment_pct / 100) * 1200;
 
   const burnupSummary = useMemo((): { time: string; note: string | null } => {
@@ -583,21 +585,26 @@ const Explorer: React.FC = () => {
               <p>{resultNote}</p>
             </div>
           </div>
+          <div className="mt-3">
+            <Button variant="outline-secondary" disabled={copying} onClick={() => void onCopyBlender()}>
+              {copying ? "Copying…" : "Copy 3D model"}
+            </Button>
+            <div className="small text-secondary mt-2">
+              64 side faces, one cylinder per column. Paste in Blender's 3D View with Ctrl+V.
+            </div>
+            {copyNote && (
+              <Alert
+                variant={copyNote.kind}
+                dismissible
+                className="py-2 px-3 small mt-2 mb-0"
+                onClose={() => setCopyNote(null)}
+              >
+                {copyNote.text}
+              </Alert>
+            )}
+          </div>
         </Col>
       </Row>
-      <div className="d-flex flex-wrap align-items-center gap-3 mt-3">
-        <Button variant="outline-secondary" disabled={copying} onClick={() => void onCopyBlender()}>
-          {copying ? "Copying…" : "Copy 3D model"}
-        </Button>
-        <span className="small text-secondary">
-          64 side faces, one cylinder per column. Paste in Blender's 3D View with Ctrl+V.
-        </span>
-      </div>
-      {copyNote && (
-        <Alert variant={copyNote.kind} dismissible className="py-2 px-3 small mt-2 mb-0" onClose={() => setCopyNote(null)}>
-          {copyNote.text}
-        </Alert>
-      )}
     </>
   );
 
@@ -676,46 +683,44 @@ const Explorer: React.FC = () => {
     ...LAYER_GROUPS.filter(([id]) => id !== "fuel").map(([id, title]): [LayerGroupId, string] => [id, title]),
   ];
 
+  const renderEditor = (id: LayerGroupId, title: string) => (
+    <LayerEditor
+      key={id}
+      title={title}
+      fallback={title}
+      rows={groups[id]}
+      lines={materialLines(groups[id], specs, mixed)}
+      onChange={(rows) => setGroupRows(id, rows)}
+    />
+  );
+
   const designerTab = (
-    <Row className="g-3">
-      <Col lg={7}>
+    <div className="designer-layout">
+      <div>
         <div className="small text-secondary mb-2">
-          {LAYER_MATCH_NOTE} That thickness is the slice pitch. The top row is the bottom of the bar.
+          {LAYER_MATCH_NOTE} That thickness is the slice pitch. Drag a handle to reorder a material. The top row is
+          the bottom of the bar.
         </div>
+        {renderEditor(editorGroups[0][0], editorGroups[0][1])}
         {layerCm === null && (
           <Alert variant="warning">
             <Alert.Heading className="h6">Layers must have the same thickness</Alert.Heading>
             {thicknessWarning(layerTotals)}
           </Alert>
         )}
-        {editorGroups.map(([id, title]) => (
-          <div key={id}>
-            <LayerEditor
-              title={title}
-              rows={groups[id]}
-              materialOptions={materialOptions}
-              onChange={(rows) => setGroupRows(id, rows)}
-            />
-            <div className="mb-3 px-1">
-              {materialLines(groups[id], specs, mixed).map((line) => (
-                <div key={line} className="small text-secondary">
-                  {line}
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </Col>
-      <Col lg={5}>
-        <LayerChart groups={groups} layerCm={layerCm} specs={specs} mixed={mixed} />
-      </Col>
-    </Row>
+        {editorGroups.slice(1).map(([id, title]) => renderEditor(id, title))}
+      </div>
+      <LayerChart groups={groups} layerCm={layerCm} specs={specs} mixed={mixed} />
+    </div>
   );
+
+  const simulationTab = <SimulationTab params={simParams} onChange={setSimParams} />;
 
   const tabContent: Record<TabKey, React.ReactNode> = {
     overview: overviewTab,
     fuel: fuelTab,
     designer: designerTab,
+    simulation: simulationTab,
   };
 
   return (

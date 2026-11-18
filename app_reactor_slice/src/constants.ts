@@ -35,5 +35,32 @@ export const LAYER_FALLBACK_COLORS: Record<string, string> = {
   "Uranium Dioxide": "green",
 };
 
-export const TAB_KEYS = ["overview", "fuel", "designer"] as const;
+export const TAB_KEYS = ["overview", "fuel", "designer", "simulation"] as const;
 export type TabKey = (typeof TAB_KEYS)[number];
+
+/** Materials accepted as neutron shield moderator in simulation_paper.py runs. */
+export const NSM_MATERIALS = [
+  "Graphite",
+  "Beryllium Oxide",
+  "High Density PolyEthylene",
+  "Titanium Hydride",
+  "Light Water",
+  "Lithium Oxide",
+] as const;
+export type NsmMaterial = (typeof NSM_MATERIALS)[number];
+
+export const RUN_MODES = [
+  "keff",
+  "keff_notallies",
+  "render",
+  "depletion",
+  "keff_emitter_gamma_source",
+  "norun",
+] as const;
+export type RunMode = (typeof RUN_MODES)[number];
+
+export const PARTICLE_TYPES = ["neutron", "photon"] as const;
+export type ParticleType = (typeof PARTICLE_TYPES)[number];
+
+export const WEIGHT_WINDOWS = ["no", "use", "generate"] as const;
+export type WeightWindows = (typeof WEIGHT_WINDOWS)[number];

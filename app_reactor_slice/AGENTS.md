@@ -2,7 +2,9 @@
 
 React calculator for one hollow-disk reactor slice. Same stack as FV-0: React 18, TypeScript, Vite, Bootstrap. `README.md` only explains how to run the app. Trust `src/geometry.ts` for the layout math.
 
-Run from this directory: `npm start` (http://localhost:3001). `src/App.tsx` is the entry UI: sidebar, power totals, and the three tabs. Shared helpers live under `src/`. Charts are SVG. Configurations use `GET`/`PUT /api/setups` against `save/setups.json`. Copy 3D model posts to `/api/blender-clipboard`, which runs Blender in the background and writes `copybuffer.blend` so Ctrl+V in Blender's 3D View pastes one cylinder per column (diameter = disk diameter, height = stack height, 64 side faces). Both routes are Vite middleware in `vite.config.ts`.
+Run from this directory: `npm start` (http://localhost:3001). `src/App.tsx` is the entry UI: sidebar, power totals, and the four tabs (Zones overview, Fuel setup, Layer designer, Simulation). Shared helpers live under `src/`. Charts are SVG. Configurations use `GET`/`PUT /api/setups` against `save/setups.json`. Copy 3D model posts to `/api/blender-clipboard`, which runs Blender in the background and writes `copybuffer.blend` so Ctrl+V in Blender's 3D View pastes one cylinder per column (diameter = disk diameter, height = stack height, 64 side faces). Both routes are Vite middleware in `vite.config.ts`.
+
+The Simulation tab (`src/components/SimulationTab.tsx`) edits the RIMAG run parameters that `simulation_paper.py` reads from JSON (`run_mode`, `n_batches`, `nsm_material`, `nsm_thickness`, `conical_pitch`, plus particle type, weight windows, and dose time). Start is currently a dummy that streams placeholder lines into the output console; wire it to the real runner later.
 
 ## Layout
 

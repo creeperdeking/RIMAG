@@ -31,7 +31,11 @@ const LayerChart: React.FC<Props> = ({ groups, layerCm, specs, mixed, only, incl
       ] as LayerRow[];
       const segments: Segment[] = stacked.map((layer, i) => {
         const fact = materialFact(layer.name, specs, mixed);
-        const color = fact?.color ?? LAYER_FALLBACK_COLORS[layer.name] ?? colors[i % colors.length];
+        let color = fact?.color ?? LAYER_FALLBACK_COLORS[layer.name] ?? colors[i % colors.length];
+        // Library graphite is black. The fuel preview uses the same mid gray as the compact.
+        if (!includeDisk && layer.name === "Graphite" && (color === "black" || !color)) {
+          color = "#78716c";
+        }
         let detail = "";
         if (fact?.composition) {
           detail = fact.composition;
@@ -51,14 +55,15 @@ const LayerChart: React.FC<Props> = ({ groups, layerCm, specs, mixed, only, incl
     };
   }, [groups, specs, mixed, only, includeDisk]);
 
-  const height = includeDisk ? 420 : 300;
-  const barWidth = columns.length === 1 ? 160 : 56;
+  const preview = !includeDisk && columns.length === 1;
+  const height = includeDisk ? 420 : 220;
+  const barWidth = preview ? 168 : columns.length === 1 ? 160 : 56;
   const gap = 28;
-  const left = 64;
-  const bottom = 48;
-  const top = 16;
+  const left = 56;
+  const bottom = preview ? 28 : 48;
+  const top = 8;
   const plotH = height - top - bottom;
-  const width = left + Math.max(columns.length, 1) * (barWidth + gap) + 24;
+  const width = preview ? 520 : left + Math.max(columns.length, 1) * (barWidth + gap) + 24;
   const heading =
     title ?? (layerCm != null ? `Layer thickness ${layerCm.toFixed(2)} cm` : "Layers do not match");
   const tickCount = 5;
