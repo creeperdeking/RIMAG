@@ -368,15 +368,16 @@ def make_sim_settings(
     settings.photon_transport = particle_type == "photon"
     settings.source = source
     building_ww = weight_windows in ("generate", "seed", "refine")
-    # Seed/refine use fixed source: MAGIC only needs flux shape, and eigenvalue
-    # fission sites amplify periodic-cone find() failures.
+    # Periodic z-cones + WW particle splits (on-the-fly MAGIC or applied
+    # windows) lose particles after boundary jumps in this geometry. Seed uses
+    # offline MAGIC (tally then generate). Refine/use keep applied windows but
+    # also keep offline generation so splits are only from the loaded windows.
     if building_ww:
-        settings.run_mode = "fixed source"
-        settings.inactive = 0
-        ww_batches = max(2 * UPDATE_INTERVAL, 16)
-        if int(batches) > ww_batches:
-            ww_batches = int(batches)
-        settings.batches = ww_batches
+        # MAGIC needs active batches after fission source convergence.
+        ww_active = max(2 * UPDATE_INTERVAL, 16)
+        settings.batches = settings.inactive + ww_active
+        if int(batches) > settings.batches:
+            settings.batches = int(batches)
         WEIGHT_WINDOWS_BATCHES = settings.batches
     else:
         WEIGHT_WINDOWS_BATCHES = max(8, int(batches / 10))
@@ -384,7 +385,7 @@ def make_sim_settings(
     print(
         f"batches {settings.batches}"
         + (
-            f" (fixed-source WW, all {settings.batches} active)"
+            f" (inactive {settings.inactive}, active {settings.batches - settings.inactive})"
             if building_ww
             else ""
         )
@@ -405,8 +406,7 @@ def make_sim_settings(
     settings.rel_max_lost_particles = 0.01
     settings.confidence_intervals = True
 
-    gen_per_batch = 1 if building_ww else settings.generations_per_batch
-    if 1 / (settings.particles * gen_per_batch) >= 1 / (math.sqrt(settings.batches)):
+    if 1 / (settings.particles * settings.generations_per_batch) >= 1 / (math.sqrt(settings.batches)):
         raise ValueError("The number of particles per generation per batch is too low to achieve the desired confidence interval. Increase the number of particles per generation per batch or increase the number of batches.")
 
     if not deterministic:
@@ -421,13 +421,15 @@ def make_sim_settings(
             lower_left_corner, upper_right_corner, cell_dimension=ww_mesh_cm
         )
         check_ww_mesh_is_inside_geometry(ww_mesh, geometry)
+        # on_the_fly=False: tally during analog/biased transport, write WW at
+        # end. on_the_fly=True + periodic z-cones aborts with lost particles.
         wwg = openmc.WeightWindowGenerator(
             method="magic",
             mesh=ww_mesh,
             energy_bounds=ww_energy_bounds(ww_energy_groups),
-            max_realizations=max(1, settings.batches),
+            max_realizations=max(1, settings.batches - settings.inactive),
             update_interval=UPDATE_INTERVAL,
-            on_the_fly=True,
+            on_the_fly=False,
         )
         settings.weight_window_generators = wwg
         if weight_windows == "refine":
@@ -444,12 +446,17 @@ def make_sim_settings(
             settings.weight_windows = openmc.hdf5_to_wws(WW_FILE)
             settings.survival_biasing = False
             settings.cutoff = {"weight": 1e-4, "weight_avg": 1.0}
+            # Cap splits: WW+periodic-cone secondary bank is fragile.
+            settings.max_history_splits = min(settings.max_history_splits, 500)
+            settings.rel_max_lost_particles = max(
+                settings.rel_max_lost_particles, 0.05
+            )
             print(f"Weight windows: refining from existing {WW_FILE}")
         else:
-            print("Weight windows: seeding MAGIC from analog transport")
+            print("Weight windows: seeding MAGIC (offline, after analog transport)")
         print(
-            f"Weight windows: {settings.particles} particles/batch, "
-            f"rel_max_lost={settings.rel_max_lost_particles}"
+            f"Weight windows: {settings.particles} particles/gen, "
+            f"rel_max_lost={settings.rel_max_lost_particles}, on_the_fly=False"
         )
     elif weight_windows == "use":
         if not Path(WW_FILE).is_file():
@@ -464,6 +471,9 @@ def make_sim_settings(
         settings.weight_windows = openmc.hdf5_to_wws(WW_FILE)
         settings.survival_biasing = False  # WW handles weights
         settings.cutoff = {"weight": 1e-4, "weight_avg": 1.0}  # RR safety
+        settings.max_history_splits = min(settings.max_history_splits, 500)
+        # Applied WW splits on periodic z-cones can lose a few particles.
+        settings.rel_max_lost_particles = max(settings.rel_max_lost_particles, 0.05)
 
     return settings
 

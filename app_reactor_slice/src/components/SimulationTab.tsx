@@ -168,7 +168,7 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
   const onStart = () => void startWith({});
 
   const onSeedWw = () => {
-    append("Weight windows: seeding MAGIC from analog transport…");
+    append("Weight windows: seeding MAGIC (offline after analog keff)…");
     void startWith({
       weight_windows: "seed",
       run_mode: "keff_notallies",
@@ -420,8 +420,10 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
               <div>
                 <p className="small text-secondary mb-2">
                   For deep shields (~10 orders of magnitude to the InGaAs), seed once, then refine until the TPV
-                  tallies get scores. Each refine pass applies the previous <code>weight_windows.h5</code> and
-                  regenerates it. Then set tally mode to <em>use</em> and start a normal run.
+                  tallies get scores. Seed runs analog keff then writes MAGIC windows offline (on-the-fly MAGIC
+                  loses particles on periodic cones). Each refine applies the previous{" "}
+                  <code>weight_windows.h5</code> and regenerates it. Then set tally mode to <em>use</em> and
+                  start a normal run.
                 </p>
                 <Form.Group className="mb-2">
                   <Form.Label className="small mb-1">Mesh cell (cm)</Form.Label>
