@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Button, Col, Collapse, Form, Row } from "react-bootstrap";
+import React, { useCallback, useEffect, useId, useRef, useState } from "react";
+import { Alert, Button, Col, Collapse, Form, OverlayTrigger, ProgressBar, Row, Tooltip } from "react-bootstrap";
 import {
   NSM_MATERIALS,
   PARTICLE_TYPES,
@@ -20,6 +20,45 @@ import {
 export type { SimulationParams };
 export { DEFAULT_SIMULATION_PARAMS };
 
+function InfoTip({ text }: { text: React.ReactNode }) {
+  const tipId = useId();
+  return (
+    <OverlayTrigger
+      placement="right"
+      overlay={
+        <Tooltip id={tipId} className="simulation-info-tooltip">
+          {text}
+        </Tooltip>
+      }
+    >
+      <button type="button" className="simulation-info-btn" aria-label="More information" tabIndex={0}>
+        <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" strokeWidth="1.5" />
+          <circle cx="8" cy="5" r="1" fill="currentColor" />
+          <path d="M8 7.2v4.3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      </button>
+    </OverlayTrigger>
+  );
+}
+
+function FieldLabel({
+  children,
+  info,
+  className = "small mb-0",
+}: {
+  children: React.ReactNode;
+  info?: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <Form.Label className={`${className} simulation-field-label d-inline-flex align-items-center gap-1`}>
+      <span>{children}</span>
+      {info != null ? <InfoTip text={info} /> : null}
+    </Form.Label>
+  );
+}
+
 type Props = {
   params: SimulationParams;
   onChange: (next: SimulationParams) => void;
@@ -35,6 +74,54 @@ type WwStatus = {
   energyGroups: number | null;
   batches: number | null;
   updatedAt: string | null;
+  spatialCoverage: number | null;
+  energyCoverage: number | null;
+  outerCoverage: number | null;
+  decades: number | null;
+  reachYCm: number | null;
+  meshRMaxCm: number | null;
+};
+
+type KeffLive = {
+  value: number | null;
+  uncertainty: number | null;
+  batch: number | null;
+  totalBatches: number | null;
+  generation: number | null;
+  generationsPerBatch: number | null;
+  phase: "inactive" | "active" | null;
+  percent: number | null;
+  eta: string | null;
+  source: "progress" | "final" | null;
+  finalRank: number;
+};
+
+const EMPTY_KEFF: KeffLive = {
+  value: null,
+  uncertainty: null,
+  batch: null,
+  totalBatches: null,
+  generation: null,
+  generationsPerBatch: null,
+  phase: null,
+  percent: null,
+  eta: null,
+  source: null,
+  finalRank: -1,
+};
+
+/** Matches simlib._OpenMCProgressReporter lines. */
+const OPENMC_PROGRESS_RE =
+  /\[OpenMC\]\s+\|[^|]*\|\s+([\d.]+)%\s+batch\s+(\d+)\/(\d+)\s+gen\s+(\d+)\/(\d+)(?:\s+(inactive|active))?(?:\s+k=([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)(?:\s+\+\/-\s+([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?))?)?(?:\s+ETA\s+(\S+))?/;
+
+const KEFF_FINAL_RE =
+  /k-effective\s+\((Combined|Collision|Track-length|Absorption)\)\s*=\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\s*\+\/-\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)/i;
+
+const FINAL_KEFF_RANK: Record<string, number> = {
+  Combined: 4,
+  Collision: 3,
+  Absorption: 2,
+  "Track-length": 1,
 };
 
 function stamp(): string {
@@ -48,12 +135,67 @@ function formatBytes(bytes: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function formatKeff(value: number | null, uncertainty: number | null): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  const k = value.toFixed(5);
+  if (uncertainty == null || !Number.isFinite(uncertainty)) return k;
+  return `${k} ± ${uncertainty.toFixed(5)}`;
+}
+
+function parseKeffFromLine(line: string, prev: KeffLive): KeffLive | null {
+  const progress = OPENMC_PROGRESS_RE.exec(line);
+  if (progress) {
+    const kRaw = progress[7] != null ? Number(progress[7]) : NaN;
+    const uncRaw = progress[8] != null ? Number(progress[8]) : NaN;
+    const phase =
+      progress[6] === "inactive" || progress[6] === "active"
+        ? progress[6]
+        : prev.phase;
+    return {
+      value: Number.isFinite(kRaw) ? kRaw : prev.value,
+      uncertainty: Number.isFinite(uncRaw) ? uncRaw : null,
+      batch: Number(progress[2]),
+      totalBatches: Number(progress[3]),
+      generation: Number(progress[4]),
+      generationsPerBatch: Number(progress[5]),
+      phase,
+      percent: Number(progress[1]),
+      eta: progress[9] ?? prev.eta,
+      source: "progress",
+      finalRank: -1,
+    };
+  }
+
+  const finalMatch = KEFF_FINAL_RE.exec(line);
+  if (finalMatch) {
+    const kind = finalMatch[1];
+    const value = Number(finalMatch[2]);
+    const uncertainty = Number(finalMatch[3]);
+    if (!Number.isFinite(value)) return null;
+    const rank = FINAL_KEFF_RANK[kind] ?? 0;
+    if (prev.source === "final" && rank < prev.finalRank) return null;
+    return {
+      ...prev,
+      value,
+      uncertainty: Number.isFinite(uncertainty) ? uncertainty : null,
+      percent: 100,
+      eta: "0:00",
+      source: "final",
+      phase: "active",
+      finalRank: rank,
+    };
+  }
+
+  return null;
+}
+
 const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
   const [running, setRunning] = useState(false);
   const [output, setOutput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [wwOpen, setWwOpen] = useState(false);
   const [wwStatus, setWwStatus] = useState<WwStatus | null>(null);
+  const [keffLive, setKeffLive] = useState<KeffLive>(EMPTY_KEFF);
   const logRef = useRef<HTMLPreElement>(null);
   const sourceRef = useRef<EventSource | null>(null);
 
@@ -62,7 +204,9 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
   };
 
   const append = (line: string) => {
-    setOutput((prev) => `${prev}${prev ? "\n" : ""}[${stamp()}] ${line}`);
+    const cleaned = line.replace(/\r/g, "");
+    setOutput((prev) => `${prev}${prev ? "\n" : ""}[${stamp()}] ${cleaned}`);
+    setKeffLive((prev) => parseKeffFromLine(cleaned, prev) ?? prev);
   };
 
   const closeStream = () => {
@@ -97,6 +241,7 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
         if (payload.type === "ready") {
           if (clearOnReady) {
             setOutput("");
+            setKeffLive(EMPTY_KEFF);
             clearOnReady = false;
           }
           setRunning(Boolean(payload.running));
@@ -139,6 +284,7 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
     if (running) return;
     setError(null);
     setOutput("");
+    setKeffLive(EMPTY_KEFF);
     setRunning(true);
     openStream(true);
 
@@ -219,8 +365,17 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
   const onClear = () => {
     if (running) return;
     setOutput("");
+    setKeffLive(EMPTY_KEFF);
     setError(null);
   };
+
+  const showKeffPanel = running || keffLive.value != null || keffLive.percent != null;
+  const progressPercent =
+    keffLive.percent != null && Number.isFinite(keffLive.percent)
+      ? Math.max(0, Math.min(100, keffLive.percent))
+      : running
+        ? 0
+        : null;
 
   const wwSummary = (() => {
     if (!wwStatus) return "Checking…";
@@ -230,6 +385,16 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
     if (wwStatus.lastPass) bits.push(`last=${wwStatus.lastPass}`);
     if (wwStatus.meshCm != null) bits.push(`mesh ${wwStatus.meshCm} cm`);
     if (wwStatus.energyGroups != null) bits.push(`${wwStatus.energyGroups} groups`);
+    if (wwStatus.spatialCoverage != null) {
+      bits.push(`spatial ${(100 * wwStatus.spatialCoverage).toFixed(0)}%`);
+    }
+    if (wwStatus.outerCoverage != null) {
+      bits.push(`outer ${(100 * wwStatus.outerCoverage).toFixed(0)}%`);
+    }
+    if (wwStatus.decades != null) bits.push(`${wwStatus.decades.toFixed(1)} decades`);
+    if (wwStatus.reachYCm != null && wwStatus.meshRMaxCm != null) {
+      bits.push(`reach +y ${wwStatus.reachYCm.toFixed(0)}/${wwStatus.meshRMaxCm.toFixed(0)} cm`);
+    }
     const size = formatBytes(wwStatus.sizeBytes);
     if (size) bits.push(size);
     return bits.join(" · ");
@@ -241,12 +406,11 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
         <div className="border rounded p-3 bg-white h-100">
           <h2 className="h6 mb-3">RIMAG run parameters</h2>
           <p className="small text-secondary mb-3">
-            Starts <code>simulation_app_slice.py</code> in Docker with the current calculator setup (zones, layers,
-            enrichment, columns) plus these run knobs. Output streams below.
+            Starts <code>simulation_app_slice.py</code> in Docker with the current calculator setup
           </p>
 
-          <Form.Group className="mb-2">
-            <Form.Label className="small mb-1">Run mode</Form.Label>
+          <Form.Group className="simulation-field">
+            <Form.Label className="small mb-0 simulation-field-label">Run mode</Form.Label>
             <Form.Select
               size="sm"
               value={params.run_mode}
@@ -261,8 +425,8 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
             </Form.Select>
           </Form.Group>
 
-          <Form.Group className="mb-2">
-            <Form.Label className="small mb-1">Batches</Form.Label>
+          <Form.Group className="simulation-field">
+            <Form.Label className="small mb-0 simulation-field-label">Batches</Form.Label>
             <Form.Control
               size="sm"
               type="number"
@@ -277,8 +441,10 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
             />
           </Form.Group>
 
-          <Form.Group className="mb-2">
-            <Form.Label className="small mb-1">OpenMP threads</Form.Label>
+          <Form.Group className="simulation-field">
+            <FieldLabel info={<>Passed to OpenMC as <code>RIMAG_THREADS</code> / <code>simsettings.json</code>.</>}>
+              OpenMP threads
+            </FieldLabel>
             <Form.Control
               size="sm"
               type="number"
@@ -292,13 +458,10 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
                 setField("n_threads", next);
               }}
             />
-            <div className="small text-secondary mt-1">
-              Passed to OpenMC as <code>RIMAG_THREADS</code> / <code>simsettings.json</code>.
-            </div>
           </Form.Group>
 
-          <Form.Group className="mb-2">
-            <Form.Label className="small mb-1">Neutron shield moderator</Form.Label>
+          <Form.Group className="simulation-field">
+            <Form.Label className="small mb-0 simulation-field-label">Neutron shield moderator</Form.Label>
             <Form.Select
               size="sm"
               value={params.nsm_material}
@@ -313,8 +476,10 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
             </Form.Select>
           </Form.Group>
 
-          <Form.Group className="mb-2">
-            <Form.Label className="small mb-1">NSM thickness (cm)</Form.Label>
+          <Form.Group className="simulation-field">
+            <FieldLabel info="Stored for the run config; app-slice CSG uses the zone layout.">
+              NSM thickness (cm)
+            </FieldLabel>
             <Form.Control
               size="sm"
               type="number"
@@ -327,11 +492,12 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
                 if (Number.isFinite(next) && next >= 0) setField("nsm_thickness", next);
               }}
             />
-            <div className="small text-secondary mt-1">Stored for the run config; app-slice CSG uses the zone layout.</div>
           </Form.Group>
 
-          <Form.Group className="mb-2">
-            <Form.Label className="small mb-1">Boron concentration (ppm)</Form.Label>
+          <Form.Group className="simulation-field">
+            <FieldLabel info="Elemental boron by mass in the graphite of the fuel layer. Reflector, disk, and shield graphite stay pure carbon.">
+              Boron concentration (ppm)
+            </FieldLabel>
             <Form.Control
               size="sm"
               type="number"
@@ -344,13 +510,12 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
                 if (Number.isFinite(next) && next >= 0) setField("boron_concentration_ppm", next);
               }}
             />
-            <div className="small text-secondary mt-1">
-              Elemental boron by mass in the graphite of the fuel layer. Reflector, disk, and shield graphite stay pure carbon.
-            </div>
           </Form.Group>
 
-          <Form.Group className="mb-2">
-            <Form.Label className="small mb-1">Conical pitch (°)</Form.Label>
+          <Form.Group className="simulation-field">
+            <FieldLabel info="Layer bounds become cones about the disk axis (0° = flat disks). Increasing the conical pitch increases simulation time significantly.">
+              Conical pitch (°)
+            </FieldLabel>
             <Form.Control
               size="sm"
               type="number"
@@ -364,13 +529,10 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
                 if (Number.isFinite(next) && next >= 0) setField("conical_pitch", next);
               }}
             />
-            <div className="small text-secondary mt-1">
-              Layer bounds become cones about the disk axis (0° = flat disks). Increasing the conical pitch increases simulation time significantly.
-            </div>
           </Form.Group>
 
-          <Form.Group className="mb-2">
-            <Form.Label className="small mb-1">Particle type</Form.Label>
+          <Form.Group className="simulation-field">
+            <Form.Label className="small mb-0 simulation-field-label">Particle type</Form.Label>
             <Form.Select
               size="sm"
               value={params.particle_type}
@@ -387,7 +549,19 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
 
           <div className="border rounded p-2 mb-3 bg-light-subtle">
             <div className="d-flex justify-content-between align-items-center gap-2">
-              <Form.Label className="small mb-0 fw-semibold">Weight windows</Form.Label>
+              <FieldLabel
+                className="small mb-0 fw-semibold"
+                info={
+                  <>
+                    For deep shields (~10 orders of magnitude to the InGaAs), seed once, then refine until the TPV
+                    tallies get scores. Seed runs analog keff then writes MAGIC windows offline. Each refine applies
+                    the previous <code>weight_windows.h5</code> and regenerates it. Then set tally mode to{" "}
+                    <em>use</em> and start a normal run.
+                  </>
+                }
+              >
+                Weight windows
+              </FieldLabel>
               <Button
                 size="sm"
                 variant="link"
@@ -400,8 +574,8 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
             </div>
             <div className="small text-secondary mt-1 mb-2">{wwSummary}</div>
 
-            <Form.Group className="mb-2">
-              <Form.Label className="small mb-1">Tally mode</Form.Label>
+            <Form.Group className="simulation-field">
+              <Form.Label className="small mb-0 simulation-field-label">Tally mode</Form.Label>
               <Form.Select
                 size="sm"
                 value={params.weight_windows}
@@ -418,15 +592,10 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
 
             <Collapse in={wwOpen}>
               <div>
-                <p className="small text-secondary mb-2">
-                  For deep shields (~10 orders of magnitude to the InGaAs), seed once, then refine until the TPV
-                  tallies get scores. Seed runs analog keff then writes MAGIC windows offline (on-the-fly MAGIC
-                  loses particles on periodic cones). Each refine applies the previous{" "}
-                  <code>weight_windows.h5</code> and regenerates it. Then set tally mode to <em>use</em> and
-                  start a normal run.
-                </p>
-                <Form.Group className="mb-2">
-                  <Form.Label className="small mb-1">Mesh cell (cm)</Form.Label>
+                <Form.Group className="simulation-field">
+                  <FieldLabel info="Start coarse (40 cm). Finer cells resolve the shield better but make seed/refine much slower.">
+                    Mesh cell (cm)
+                  </FieldLabel>
                   <Form.Control
                     size="sm"
                     type="number"
@@ -439,12 +608,9 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
                       if (Number.isFinite(next) && next > 0) setField("ww_mesh_cm", next);
                     }}
                   />
-                  <div className="small text-secondary mt-1">
-                    Start coarse (40 cm). Finer cells resolve the shield better but make seed/refine much slower.
-                  </div>
                 </Form.Group>
-                <Form.Group className="mb-2">
-                  <Form.Label className="small mb-1">Energy groups</Form.Label>
+                <Form.Group className="simulation-field">
+                  <Form.Label className="small mb-0 simulation-field-label">Energy groups</Form.Label>
                   <Form.Control
                     size="sm"
                     type="number"
@@ -489,8 +655,8 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
             onChange={(event) => setField("survival_biasing", event.target.checked)}
           />
 
-          <Form.Group className="mb-2">
-            <Form.Label className="small mb-1">Dose time (years)</Form.Label>
+          <Form.Group className="simulation-field">
+            <Form.Label className="small mb-0 simulation-field-label">Dose time (years)</Form.Label>
             <Form.Control
               size="sm"
               type="number"
@@ -518,16 +684,17 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
           <Form.Check
             type="checkbox"
             id="ddd-tallies-only"
-            className="small mb-1"
-            label="Photovoltaic DDD tallies only"
+            className="small mb-3"
+            label={
+              <span className="d-inline-flex align-items-center gap-1">
+                Photovoltaic DDD tallies only
+                <InfoTip text="When on, keff keeps only the SR-NIEL flux tally on the InGaAs cells (keff itself still comes from the eigenvalue solve). Turn off for heating, tritium, C-14, IFP, and the rest." />
+              </span>
+            }
             checked={params.ddd_tallies_only}
             disabled={running}
             onChange={(event) => setField("ddd_tallies_only", event.target.checked)}
           />
-          <div className="small text-secondary mb-3">
-            When on, keff keeps only the SR-NIEL flux tally on the InGaAs cells (keff itself still comes from the
-            eigenvalue solve). Turn off for heating, tritium, C-14, IFP, and the rest.
-          </div>
 
           <div className="d-flex gap-2">
             <Button variant="primary" className="flex-grow-1" disabled={running} onClick={() => void onStart()}>
@@ -560,6 +727,52 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
             <h2 className="h6 mb-0">Simulation output</h2>
             <span className="small text-secondary">{running ? "live" : output ? "idle" : "empty"}</span>
           </div>
+          {showKeffPanel && (
+            <div className="simulation-keff-panel mb-2" aria-live="polite">
+              <div className="d-flex flex-wrap justify-content-between align-items-baseline gap-2 mb-1">
+                <div className="simulation-keff-value">
+                  <span className="simulation-keff-label">keff</span>{" "}
+                  <span className="font-monospace fw-semibold">
+                    {formatKeff(keffLive.value, keffLive.uncertainty)}
+                  </span>
+                  {keffLive.uncertainty == null && keffLive.value != null && keffLive.phase === "inactive" && (
+                    <span className="small text-secondary ms-2">inactive (no σ yet)</span>
+                  )}
+                  {keffLive.source === "final" && (
+                    <span className="small text-secondary ms-2">final</span>
+                  )}
+                </div>
+                <div className="small text-secondary font-monospace">
+                  {keffLive.batch != null && keffLive.totalBatches != null && (
+                    <>
+                      batch {keffLive.batch}/{keffLive.totalBatches}
+                      {keffLive.generation != null && keffLive.generationsPerBatch != null && (
+                        <>
+                          {" "}
+                          · gen {keffLive.generation}/{keffLive.generationsPerBatch}
+                        </>
+                      )}
+                      {keffLive.phase && <> · {keffLive.phase}</>}
+                    </>
+                  )}
+                  {keffLive.eta != null && (
+                    <>
+                      {(keffLive.batch != null ? " · " : "") + `ETA ${keffLive.eta}`}
+                    </>
+                  )}
+                </div>
+              </div>
+              <ProgressBar
+                now={progressPercent ?? 0}
+                animated={running && (progressPercent == null || progressPercent < 100)}
+                striped={running}
+                label={
+                  progressPercent != null ? `${progressPercent.toFixed(1)}%` : running ? "…" : undefined
+                }
+                className="simulation-keff-bar"
+              />
+            </div>
+          )}
           <pre ref={logRef} className="simulation-output mb-0" aria-live="polite">
             {output || "Start a simulation to stream RIMAG stdout here."}
           </pre>

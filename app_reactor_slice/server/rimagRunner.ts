@@ -173,7 +173,18 @@ export type WeightWindowsStatus = {
   energyGroups: number | null;
   batches: number | null;
   updatedAt: string | null;
+  spatialCoverage: number | null;
+  energyCoverage: number | null;
+  outerCoverage: number | null;
+  decades: number | null;
+  reachYCm: number | null;
+  meshRMaxCm: number | null;
 };
+
+function metaNumber(meta: Record<string, unknown>, key: string): number | null {
+  const value = meta[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
 
 export function weightWindowsStatus(): WeightWindowsStatus {
   const filePath = path.join(RUN_DIR, WW_FILE);
@@ -193,6 +204,12 @@ export function weightWindowsStatus(): WeightWindowsStatus {
   let energyGroups: number | null = null;
   let batches: number | null = null;
   let updatedAt: string | null = null;
+  let spatialCoverage: number | null = null;
+  let energyCoverage: number | null = null;
+  let outerCoverage: number | null = null;
+  let decades: number | null = null;
+  let reachYCm: number | null = null;
+  let meshRMaxCm: number | null = null;
   if (fs.existsSync(metaPath)) {
     try {
       const meta = JSON.parse(fs.readFileSync(metaPath, "utf8")) as Record<string, unknown>;
@@ -202,11 +219,32 @@ export function weightWindowsStatus(): WeightWindowsStatus {
       energyGroups = typeof meta.energy_groups === "number" ? meta.energy_groups : null;
       batches = typeof meta.batches === "number" ? meta.batches : null;
       updatedAt = typeof meta.updated_at === "string" ? meta.updated_at : null;
+      spatialCoverage = metaNumber(meta, "spatial_coverage");
+      energyCoverage = metaNumber(meta, "energy_coverage");
+      outerCoverage = metaNumber(meta, "outer_coverage");
+      decades = metaNumber(meta, "decades");
+      reachYCm = metaNumber(meta, "reach_y_cm");
+      meshRMaxCm = metaNumber(meta, "mesh_r_max_cm");
     } catch {
       // ignore corrupt meta
     }
   }
-  return { present, sizeBytes, passes, lastPass, meshCm, energyGroups, batches, updatedAt };
+  return {
+    present,
+    sizeBytes,
+    passes,
+    lastPass,
+    meshCm,
+    energyGroups,
+    batches,
+    updatedAt,
+    spatialCoverage,
+    energyCoverage,
+    outerCoverage,
+    decades,
+    reachYCm,
+    meshRMaxCm,
+  };
 }
 
 export function clearWeightWindows(): boolean {
@@ -275,7 +313,7 @@ export function startSimulation(payload: unknown): void {
 
     const forward = (chunk: Buffer) => {
       const text = chunk.toString("utf8");
-      for (const line of text.split(/\r?\n/)) {
+      for (const line of text.split(/\r\n|\n|\r/)) {
         if (line.length) emit(line);
       }
     };

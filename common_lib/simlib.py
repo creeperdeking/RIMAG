@@ -112,11 +112,24 @@ def _format_duration(seconds: float) -> str:
 
 
 class _OpenMCProgressReporter:
-    _BATCH_GEN_RE = re.compile(r"^\s*(\d+)/(\d+)\s+([\d.+-]+)")
+    # OpenMC batch table: "batch/gen  k_instant  [k_avg +/- std]"
+    _BATCH_GEN_RE = re.compile(
+        r"^\s*(\d+)/(\d+)\s+([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)"
+        r"(?:\s+([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)"
+        r"\s+\+/-\s+([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?))?"
+    )
+    # Inactive batches skip tallies and usually finish ~2× faster than active ones.
+    _INACTIVE_SPEEDUP = 2.0
 
-    def __init__(self, total_batches: int | None, generations_per_batch: int):
+    def __init__(
+        self,
+        total_batches: int | None,
+        generations_per_batch: int,
+        inactive_batches: int = 0,
+    ):
         self.total_batches = total_batches
         self.generations_per_batch = generations_per_batch
+        self.inactive_batches = max(0, int(inactive_batches or 0))
         self.total_steps = (
             total_batches * generations_per_batch if total_batches else None
         )
@@ -125,7 +138,27 @@ class _OpenMCProgressReporter:
         self._last_render = 0.0
         self._current_step = 0
         self._last_k = None
+        self._last_k_unc = None
         self._active = False
+        self._lost_bc_warnings = 0
+
+    def _step_weight(self, step: int) -> float:
+        if step <= 0 or not self.generations_per_batch:
+            return 1.0
+        batch = (step - 1) // self.generations_per_batch + 1
+        if batch <= self.inactive_batches:
+            return 1.0 / self._INACTIVE_SPEEDUP
+        return 1.0
+
+    def _work_through(self, step: int) -> float:
+        if not self.total_steps or step <= 0:
+            return 0.0
+        step = min(step, self.total_steps)
+        inactive_steps = min(
+            step, self.inactive_batches * self.generations_per_batch
+        )
+        active_steps = step - inactive_steps
+        return inactive_steps / self._INACTIVE_SPEEDUP + active_steps
 
     def feed_line(self, line: str) -> None:
         if not line.strip():
@@ -139,11 +172,31 @@ class _OpenMCProgressReporter:
         if match and self.total_steps:
             batch = int(match.group(1))
             generation = int(match.group(2))
-            self._last_k = match.group(3)
+            # Prefer the running average once OpenMC starts printing it.
+            if match.group(4) is not None:
+                self._last_k = match.group(4)
+                self._last_k_unc = match.group(5)
+            else:
+                self._last_k = match.group(3)
+                self._last_k_unc = None
             self._current_step = (batch - 1) * self.generations_per_batch + generation
             self._active = True
             self._render()
             return
+
+        # Keep non-progress OpenMC output visible (RESULTS, warnings, …).
+        # Rate-limit periodic-BC lost-particle spam: each line also tends to
+        # coincide with expensive particle.h5 dumps and floods the SSE UI.
+        if self._active and line.strip():
+            if "Couldn't find particle after hitting periodic boundary" in line:
+                self._lost_bc_warnings += 1
+                n = self._lost_bc_warnings
+                if n <= 5 or n % 200 == 0:
+                    self._output.write(f"{line}  [#{n}]\n")
+                    self._output.flush()
+            else:
+                self._output.write(line + "\n")
+                self._output.flush()
 
         if self.total_steps is None:
             self._active = True
@@ -156,10 +209,12 @@ class _OpenMCProgressReporter:
         if not self.total_steps:
             return
 
-        progress = min(self._current_step / self.total_steps, 1.0)
+        done_work = self._work_through(self._current_step)
+        total_work = self._work_through(self.total_steps)
+        progress = min(done_work / total_work, 1.0) if total_work > 0 else 0.0
         elapsed = time.time() - self._start_time
-        if self._current_step > 0:
-            eta = elapsed * (self.total_steps - self._current_step) / self._current_step
+        if done_work > 0:
+            eta = elapsed * (total_work - done_work) / done_work
         else:
             eta = 0.0
 
@@ -168,34 +223,44 @@ class _OpenMCProgressReporter:
         bar_width = 30
         filled = int(bar_width * progress)
         bar = "#" * filled + "-" * (bar_width - filled)
+        phase = "inactive" if batch <= self.inactive_batches else "active"
 
         message = (
-            f"\r[OpenMC] |{bar}| {progress * 100:5.1f}%  "
+            f"[OpenMC] |{bar}| {progress * 100:5.1f}%  "
             f"batch {batch}/{self.total_batches}  "
-            f"gen {generation}/{self.generations_per_batch}"
+            f"gen {generation}/{self.generations_per_batch}  "
+            f"{phase}"
         )
         if self._last_k is not None:
             message += f"  k={self._last_k}"
+            if self._last_k_unc is not None:
+                message += f" +/- {self._last_k_unc}"
         message += f"  ETA {_format_duration(eta)}"
-        self._output.write(message)
+        # Newline (not \\r): the web SSE logger is line-based.
+        self._output.write(message + "\n")
         self._output.flush()
         self._last_render = time.time()
 
     def _render_indeterminate(self) -> None:
         elapsed = time.time() - self._start_time
         self._output.write(
-            f"\r[OpenMC] running... elapsed {_format_duration(elapsed)}"
+            f"[OpenMC] running... elapsed {_format_duration(elapsed)}\n"
         )
         self._output.flush()
 
     def finish(self) -> None:
+        if self._lost_bc_warnings:
+            self._output.write(
+                f"[OpenMC] periodic-BC lost-particle warnings: "
+                f"{self._lost_bc_warnings} total "
+                f"(log rate-limited; see max_write_lost_particles)\n"
+            )
+            self._output.flush()
         if self._active:
             if self.total_steps and self._current_step > 0:
                 self._render()
             elif self.total_steps is None:
                 self._render_indeterminate()
-        self._output.write("\n")
-        self._output.flush()
 
 
 class _OpenMCProgressStream:
@@ -230,7 +295,10 @@ def run_sim(geometry, settings, materials_dict, tallies=None, quiet=False):
     if quiet:
         total_batches = getattr(settings, "batches", None)
         generations_per_batch = getattr(settings, "generations_per_batch", 10)
-        reporter = _OpenMCProgressReporter(total_batches, generations_per_batch)
+        inactive_batches = getattr(settings, "inactive", 0) or 0
+        reporter = _OpenMCProgressReporter(
+            total_batches, generations_per_batch, inactive_batches=inactive_batches
+        )
         progress_stream = _OpenMCProgressStream(reporter)
         old_stdout = sys.stdout
         old_stderr = sys.stderr
@@ -291,6 +359,195 @@ def ww_energy_bounds(n_groups: int) -> np.ndarray:
     return np.logspace(-5.0, math.log10(2.0e7), groups + 1)
 
 
+def load_weight_windows_list(ww_path: str | Path = WW_FILE):
+    """Load all WeightWindows sets from an HDF5 file."""
+    path = Path(ww_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"{path} not found")
+    try:
+        return openmc.WeightWindowsList.from_hdf5(str(path))
+    except Exception:
+        return openmc.hdf5_to_wws(str(path))
+
+
+def latest_weight_windows(ww_path: str | Path = WW_FILE):
+    """Return only the newest MAGIC set.
+
+    Refine appends a new WeightWindows object beside the previous ones; transport
+    and depth stats must use the last entry, not the original seed.
+    """
+    wws = load_weight_windows_list(ww_path)
+    if not wws:
+        raise ValueError(f"{ww_path} contains no weight windows")
+    return wws[-1]
+
+
+def prune_weight_windows_file(ww_path: str | Path = WW_FILE) -> int:
+    """Keep only the latest WW set so refine does not stack forever."""
+    path = Path(ww_path)
+    wws = load_weight_windows_list(path)
+    n = len(wws)
+    if n <= 1:
+        return n
+    openmc.WeightWindowsList([wws[-1]]).export_to_hdf5(str(path))
+    print(f"Weight windows: pruned {n} sets → 1 (kept latest)")
+    return 1
+
+
+def summarize_weight_windows(ww_path: str | Path = WW_FILE) -> dict:
+    """Coverage / dynamic-range stats for a MAGIC weight-windows file.
+
+    Used after seed/refine to judge how far windows have pushed into the shield:
+    empty outer voxels and a small log-span mean another refine is needed.
+    """
+    path = Path(ww_path)
+    wws = load_weight_windows_list(path)
+    if not wws:
+        raise ValueError(f"{path} contains no weight windows")
+
+    # Always score the newest set (refine appends rather than replacing).
+    ww = wws[-1]
+    n_sets = len(wws)
+    lo = np.asarray(ww.lower_ww_bounds, dtype=float)
+    mesh = ww.mesh
+    ll = np.asarray(mesh.lower_left, dtype=float)
+    ur = np.asarray(mesh.upper_right, dtype=float)
+    nx, ny, nz = (int(v) for v in mesh.dimension)
+    # OpenMC stores (nx, ny, nz, n_energy).
+    if lo.ndim != 4:
+        lo = lo.reshape(nx, ny, nz, -1)
+    positive = np.isfinite(lo) & (lo > 0.0)
+    spatial_any = np.any(positive, axis=3)
+    spatial_coverage = float(spatial_any.mean()) if spatial_any.size else 0.0
+    energy_coverage = float(positive.mean()) if positive.size else 0.0
+
+    decades = None
+    lo_min = None
+    lo_max = None
+    if np.any(positive):
+        vals = lo[positive]
+        lo_min = float(vals.min())
+        lo_max = float(vals.max())
+        if lo_min > 0.0:
+            decades = float(math.log10(lo_max / lo_min))
+
+    # Outer-third of the XY mesh (by radius from mesh centre): proxy for shield/TPV.
+    cx = 0.5 * (ll[0] + ur[0])
+    cy = 0.5 * (ll[1] + ur[1])
+    dx = (ur[0] - ll[0]) / max(nx, 1)
+    dy = (ur[1] - ll[1]) / max(ny, 1)
+    xs = ll[0] + (np.arange(nx) + 0.5) * dx
+    ys = ll[1] + (np.arange(ny) + 0.5) * dy
+    xx, yy = np.meshgrid(xs, ys, indexing="ij")
+    radius = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
+    # Broadcast over z if needed.
+    if nz > 1:
+        radius = np.repeat(radius[:, :, np.newaxis], nz, axis=2)
+    else:
+        radius = radius[:, :, np.newaxis]
+    r_max = float(radius.max()) if radius.size else 0.0
+    outer_mask = radius >= (2.0 / 3.0) * r_max if r_max > 0 else np.zeros_like(spatial_any, dtype=bool)
+    outer_total = int(outer_mask.sum())
+    outer_hit = int(np.logical_and(outer_mask, spatial_any).sum()) if outer_total else 0
+    outer_coverage = float(outer_hit / outer_total) if outer_total else 0.0
+
+    # Lineout along +y through mesh centre (fuel mid ≈ world origin for app-slice).
+    ix = nx // 2
+    iz = 0
+    line_lo = []
+    line_r = []
+    for iy in range(ny):
+        cell_vals = lo[ix, iy, iz, :]
+        cell_pos = cell_vals[np.isfinite(cell_vals) & (cell_vals > 0.0)]
+        line_r.append(float(ys[iy] - cy))
+        line_lo.append(float(cell_pos.max()) if cell_pos.size else 0.0)
+    # How far along +y do we still have windows?
+    reach_y = None
+    for r_cm, w in zip(reversed(line_r), reversed(line_lo)):
+        if w > 0.0:
+            reach_y = float(r_cm)
+            break
+
+    return {
+        "n_sets": n_sets,
+        "spatial_coverage": spatial_coverage,
+        "energy_coverage": energy_coverage,
+        "lower_min": lo_min,
+        "lower_max": lo_max,
+        "decades": decades,
+        "outer_coverage": outer_coverage,
+        "outer_hit": outer_hit,
+        "outer_total": outer_total,
+        "reach_y_cm": reach_y,
+        "mesh_r_max_cm": r_max,
+        "voxels_hit": int(spatial_any.sum()),
+        "voxels_total": int(spatial_any.size),
+        "lineout_y_r_cm": line_r,
+        "lineout_y_lower": line_lo,
+    }
+
+
+def print_weight_windows_depth_summary(stats: dict) -> None:
+    """Human-readable shield-penetration summary for the Simulation log."""
+    spat = 100.0 * float(stats.get("spatial_coverage") or 0.0)
+    ener = 100.0 * float(stats.get("energy_coverage") or 0.0)
+    outer = 100.0 * float(stats.get("outer_coverage") or 0.0)
+    decades = stats.get("decades")
+    lo_min = stats.get("lower_min")
+    lo_max = stats.get("lower_max")
+    reach = stats.get("reach_y_cm")
+    r_max = stats.get("mesh_r_max_cm")
+    hit = stats.get("voxels_hit")
+    total = stats.get("voxels_total")
+
+    print("-------- Weight-window depth --------")
+    n_sets = stats.get("n_sets")
+    if n_sets and int(n_sets) > 1:
+        print(f"(using latest of {n_sets} WW sets in file)")
+    print(
+        f"Spatial coverage: {spat:.1f}% of voxels "
+        f"({hit}/{total} with any energy window)"
+    )
+    print(f"Energy×voxel coverage: {ener:.1f}%")
+    if decades is not None and lo_min is not None and lo_max is not None:
+        print(
+            f"Lower-bound span: {decades:.2f} decades "
+            f"({lo_min:.3e} … {lo_max:.3e})"
+        )
+    else:
+        print("Lower-bound span: n/a (no positive windows)")
+    print(
+        f"Outer-third coverage: {outer:.1f}% "
+        f"({stats.get('outer_hit')}/{stats.get('outer_total')} voxels)"
+    )
+    if reach is not None and r_max:
+        print(
+            f"Farthest +y window: r≈{reach:.0f} cm "
+            f"(mesh radial extent ≈{r_max:.0f} cm)"
+        )
+    # Compact radial profile: 6 bins from centre to +y edge.
+    line_r = stats.get("lineout_y_r_cm") or []
+    line_lo = stats.get("lineout_y_lower") or []
+    pos = [(r, w) for r, w in zip(line_r, line_lo) if r >= 0.0]
+    if pos:
+        n_bins = min(6, len(pos))
+        edges = np.linspace(0.0, pos[-1][0] if pos[-1][0] > 0 else 1.0, n_bins + 1)
+        parts = []
+        for i in range(n_bins):
+            lo_r, hi_r = edges[i], edges[i + 1]
+            chunk = [w for r, w in pos if (r >= lo_r and (r < hi_r or i == n_bins - 1))]
+            if not chunk or max(chunk) <= 0.0:
+                parts.append(f"{hi_r:.0f}cm:·")
+            else:
+                parts.append(f"{hi_r:.0f}cm:{max(chunk):.1e}")
+        print("Lineout +y (max lower WW): " + " | ".join(parts))
+    print(
+        "Tip: low outer coverage / few decades → refine again; "
+        "then run keff with weight_windows=use for DDD."
+    )
+    print("------------------------------------")
+
+
 def write_ww_meta(
     *,
     pass_kind: str,
@@ -316,6 +573,21 @@ def write_ww_meta(
         "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "file": WW_FILE,
     }
+    try:
+        depth = summarize_weight_windows(WW_FILE)
+        payload["spatial_coverage"] = depth["spatial_coverage"]
+        payload["energy_coverage"] = depth["energy_coverage"]
+        payload["outer_coverage"] = depth["outer_coverage"]
+        payload["decades"] = depth["decades"]
+        payload["lower_min"] = depth["lower_min"]
+        payload["lower_max"] = depth["lower_max"]
+        payload["reach_y_cm"] = depth["reach_y_cm"]
+        payload["mesh_r_max_cm"] = depth["mesh_r_max_cm"]
+        print_weight_windows_depth_summary(depth)
+        # Drop older MAGIC generations so the next refine/use loads only the latest.
+        prune_weight_windows_file(WW_FILE)
+    except Exception as exc:
+        print(f"Weight-window depth summary skipped: {exc}")
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     print(
         f"Weight windows: {pass_kind} pass #{passes} → {WW_FILE} "
@@ -383,12 +655,8 @@ def make_sim_settings(
         WEIGHT_WINDOWS_BATCHES = max(8, int(batches / 10))
         settings.batches = batches
     print(
-        f"batches {settings.batches}"
-        + (
-            f" (inactive {settings.inactive}, active {settings.batches - settings.inactive})"
-            if building_ww
-            else ""
-        )
+        f"batches {settings.batches} "
+        f"(inactive {settings.inactive}, active {settings.batches - settings.inactive})"
     )
 
     settings.particles = 10000
@@ -443,7 +711,7 @@ def make_sim_settings(
                 "surface": False,
             }
             settings.weight_windows_on = True
-            settings.weight_windows = openmc.hdf5_to_wws(WW_FILE)
+            settings.weight_windows = [latest_weight_windows(WW_FILE)]
             settings.survival_biasing = False
             settings.cutoff = {"weight": 1e-4, "weight_avg": 1.0}
             # Cap splits: WW+periodic-cone secondary bank is fragile.
@@ -451,9 +719,13 @@ def make_sim_settings(
             settings.rel_max_lost_particles = max(
                 settings.rel_max_lost_particles, 0.05
             )
-            print(f"Weight windows: refining from existing {WW_FILE}")
+            # Default -1 writes an HDF5 dump per lost particle — kills refine runtime.
+            # OpenMC's Python API requires > 0; 1 keeps a single diagnostic dump.
+            settings.max_write_lost_particles = 1
+            print(f"Weight windows: refining from latest set in {WW_FILE}")
         else:
             print("Weight windows: seeding MAGIC (offline, after analog transport)")
+            settings.max_write_lost_particles = 1
         print(
             f"Weight windows: {settings.particles} particles/gen, "
             f"rel_max_lost={settings.rel_max_lost_particles}, on_the_fly=False"
@@ -468,12 +740,13 @@ def make_sim_settings(
             "surface": False,
         }
         settings.weight_windows_on = True
-        settings.weight_windows = openmc.hdf5_to_wws(WW_FILE)
+        settings.weight_windows = [latest_weight_windows(WW_FILE)]
         settings.survival_biasing = False  # WW handles weights
         settings.cutoff = {"weight": 1e-4, "weight_avg": 1.0}  # RR safety
         settings.max_history_splits = min(settings.max_history_splits, 500)
         # Applied WW splits on periodic z-cones can lose a few particles.
         settings.rel_max_lost_particles = max(settings.rel_max_lost_particles, 0.05)
+        settings.max_write_lost_particles = 1
 
     return settings
 

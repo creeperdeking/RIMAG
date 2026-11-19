@@ -319,6 +319,72 @@ h1, h2, .fw-semibold {
   min-height: 28rem;
 }
 
+.simulation-keff-panel {
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.4rem;
+  background: #f4f6f9;
+  border: 1px solid #e2e6ee;
+}
+
+.simulation-keff-label {
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #6c757d;
+  font-weight: 600;
+}
+
+.simulation-keff-bar {
+  height: 1.15rem;
+  font-size: 0.7rem;
+}
+
+.simulation-keff-bar .progress-bar {
+  transition: width 0.35s ease;
+}
+
+.simulation-field {
+  display: grid;
+  grid-template-columns: minmax(7.5rem, 1.2fr) minmax(0, 1fr);
+  column-gap: 0.65rem;
+  align-items: center;
+  margin-bottom: 0.4rem;
+}
+
+.simulation-field-label {
+  margin-bottom: 0;
+  line-height: 1.2;
+}
+
+.simulation-info-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: #6c757d;
+  line-height: 1;
+  cursor: help;
+}
+
+.simulation-info-btn:hover,
+.simulation-info-btn:focus-visible {
+  color: #495057;
+  outline: none;
+}
+
+.simulation-info-tooltip {
+  --bs-tooltip-max-width: 16rem;
+}
+
+.simulation-info-tooltip .tooltip-inner {
+  text-align: left;
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
 .simulation-output {
   flex: 1 1 auto;
   min-height: 24rem;
