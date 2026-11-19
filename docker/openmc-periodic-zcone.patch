@@ -1,0 +1,161 @@
+diff --git a/openmc/surface.py b/openmc/surface.py
+index c2afeb6..3d3390f 100644
+--- a/openmc/surface.py
++++ b/openmc/surface.py
+@@ -167,6 +167,7 @@ class Surface(IDManagerMixin, ABC):
+         self.name = name
+         self.boundary_type = boundary_type
+         self.albedo = albedo
++        self._periodic_surface = None
+ 
+         # A dictionary of the quadratic surface coefficients
+         # Key      - coefficient name
+@@ -226,6 +227,24 @@ class Surface(IDManagerMixin, ABC):
+         check_value('boundary type', boundary_type, _BOUNDARY_TYPES)
+         self._boundary_type = boundary_type
+ 
++    @property
++    def periodic_surface(self):
++        return self._periodic_surface
++
++    @periodic_surface.setter
++    def periodic_surface(self, periodic_surface):
++        # Planes keep the historical pairing rules via PlaneMixin. Z-cones are
++        # paired here; the C++ side accepts two coaxial cones of equal aperture.
++        if isinstance(self, ZCone):
++            check_type('periodic surface', periodic_surface, ZCone)
++        else:
++            raise TypeError(
++                "Periodic boundary conditions are supported for planes and "
++                f"z-cones, not {type(self).__name__}."
++            )
++        self._periodic_surface = periodic_surface
++        periodic_surface._periodic_surface = self
++
+     @property
+     def albedo(self):
+         return self._albedo
+@@ -438,6 +457,9 @@ class Surface(IDManagerMixin, ABC):
+         element.set("coeffs", ' '.join([str(self._coefficients.setdefault(key, 0.0))
+                                         for key in self._coeff_keys]))
+ 
++        if self.boundary_type == 'periodic' and self._periodic_surface is not None:
++            element.set("periodic_surface_id", str(self._periodic_surface.id))
++
+         return element
+ 
+     @staticmethod
+@@ -2216,6 +2238,13 @@ class ZCone(QuadricMixin, Surface):
+         z = point[2] - self.z0
+         return x*x + y*y - self.r2*z*z
+ 
++    def to_xml_element(self):
++        # QuadricMixin rewrites every cone as a generic quadric. A periodic
++        # z-cone has to stay a z-cone so the solver can pair the apexes.
++        if self.boundary_type != 'periodic':
++            return super().to_xml_element()
++        return Surface.to_xml_element(self)
++
+ 
+ class Quadric(QuadricMixin, Surface):
+     """A surface of the form :math:`Ax^2 + By^2 + Cz^2 + Dxy + Eyz + Fxz + Gx + Hy +
+diff --git a/src/boundary_condition.cpp b/src/boundary_condition.cpp
+index d166f12..05e4308 100644
+--- a/src/boundary_condition.cpp
++++ b/src/boundary_condition.cpp
+@@ -1,5 +1,7 @@
+ #include "openmc/boundary_condition.h"
+ 
++#include <algorithm>
++#include <cmath>
+ #include <exception>
+ 
+ #include <fmt/core.h>
+@@ -77,6 +79,38 @@ TranslationalPeriodicBC::TranslationalPeriodicBC(int i_surf, int j_surf)
+   Surface& surf1 {*model::surfaces[i_surf_]};
+   Surface& surf2 {*model::surfaces[j_surf_]};
+ 
++  // Coaxial z-cones of equal opening angle are translates of each other
++  // along z. The particle jump is the same translation already used for planes.
++  if (auto* cone1 = dynamic_cast<const SurfaceZCone*>(&surf1)) {
++    auto* cone2 = dynamic_cast<const SurfaceZCone*>(&surf2);
++    if (cone2 == nullptr) {
++      fatal_error(fmt::format(
++        "Surface {} is a z-cone with a periodic boundary, but its partner "
++        "surface {} is not a z-cone.",
++        surf1.id_, surf2.id_));
++    }
++    if (std::abs(cone1->x0_ - cone2->x0_) > FP_COINCIDENT ||
++        std::abs(cone1->y0_ - cone2->y0_) > FP_COINCIDENT) {
++      fatal_error(fmt::format(
++        "Periodic z-cones {} and {} must share the same axis.", surf1.id_,
++        surf2.id_));
++    }
++    double rscale = std::max(1.0, std::abs(cone1->radius_sq_));
++    if (std::abs(cone1->radius_sq_ - cone2->radius_sq_) >
++        FP_REL_PRECISION * rscale) {
++      fatal_error(fmt::format(
++        "Periodic z-cones {} and {} must have the same opening angle.",
++        surf1.id_, surf2.id_));
++    }
++    if (std::abs(cone1->z0_ - cone2->z0_) <= FP_COINCIDENT) {
++      fatal_error(fmt::format(
++        "Periodic z-cones {} and {} must have different apex positions.",
++        surf1.id_, surf2.id_));
++    }
++    translation_ = Position(0.0, 0.0, cone2->z0_ - cone1->z0_);
++    return;
++  }
++
+   // Make sure the first surface has an appropriate type.
+   if (const auto* ptr = dynamic_cast<const SurfaceXPlane*>(&surf1)) {
+   } else if (const auto* ptr = dynamic_cast<const SurfaceYPlane*>(&surf1)) {
+diff --git a/src/surface.cpp b/src/surface.cpp
+index 81b756d..730240b 100644
+--- a/src/surface.cpp
++++ b/src/surface.cpp
+@@ -1345,6 +1345,18 @@ void prepare_boundary_conditions(std::set<std::pair<int, int>>& periodic_pairs,
+     Surface& surf1 {*model::surfaces[i_surf]};
+     Surface& surf2 {*model::surfaces[j_surf]};
+ 
++    bool surf1_zcone = dynamic_cast<const SurfaceZCone*>(&surf1) != nullptr;
++    bool surf2_zcone = dynamic_cast<const SurfaceZCone*>(&surf2) != nullptr;
++    if (surf1_zcone || surf2_zcone) {
++      if (!(surf1_zcone && surf2_zcone)) {
++        fatal_error(
++          "A periodic z-cone must be paired with another z-cone.");
++      }
++      // Validity of the pair (shared axis, equal opening angle) is checked
++      // when the translational condition is constructed.
++      surf1.bc_ = make_unique<TranslationalPeriodicBC>(i_surf, j_surf);
++      surf2.bc_ = make_unique<TranslationalPeriodicBC>(j_surf, i_surf);
++    } else {
+     // Compute the dot product of the surface normals
+     Direction norm1 = surf1.normal({0, 0, 0});
+     Direction norm2 = surf2.normal({0, 0, 0});
+@@ -1402,6 +1414,7 @@ void prepare_boundary_conditions(std::set<std::pair<int, int>>& periodic_pairs,
+       surf2.bc_ = make_unique<RotationalPeriodicBC>(
+         j_sign * (j_surf + 1), i_sign * (i_surf + 1), axis);
+     }
++    }
+ 
+     // If albedo data is present in albedo map, set the boundary albedo.
+     if (albedo_map.count(surf1.id_)) {
+diff --git a/tests/unit_tests/test_surface.py b/tests/unit_tests/test_surface.py
+index f5c0b8f..1cb8e02 100644
+--- a/tests/unit_tests/test_surface.py
++++ b/tests/unit_tests/test_surface.py
+@@ -295,6 +295,13 @@ def test_periodic():
+     with pytest.raises(TypeError):
+         x.periodic_surface = openmc.Sphere()
+ 
++    lo = openmc.ZCone(z0=-20.0, r2=4.0, boundary_type='periodic')
++    hi = openmc.ZCone(z0=-10.0, r2=4.0, boundary_type='periodic')
++    lo.periodic_surface = hi
++    assert hi.periodic_surface == lo
++    with pytest.raises(TypeError):
++        lo.periodic_surface = openmc.ZPlane()
++
+ 
+ def test_ycylinder():
+     x, z, r = 3, 5, 2

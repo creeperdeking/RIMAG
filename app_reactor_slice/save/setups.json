@@ -80,6 +80,20 @@
           "cm": 0.02
         }
       ]
+    },
+    "simulation": {
+      "run_mode": "keff",
+      "n_batches": 20,
+      "n_threads": 12,
+      "nsm_material": "Graphite",
+      "nsm_thickness": 270,
+      "conical_pitch": 2,
+      "particle_type": "neutron",
+      "weight_windows": "no",
+      "survival_biasing": false,
+      "dose_time": 10,
+      "print_core_characteristics": true,
+      "boron_concentration_ppm": 200
     }
   }
 }

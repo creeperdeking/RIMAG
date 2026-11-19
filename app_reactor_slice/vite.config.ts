@@ -5,11 +5,18 @@ import type { Connect, Plugin } from "vite";
 import { defineConfig } from "vite";
 import { BlenderClipboardError, copyColumnsToBlender } from "./server/blenderClipboard";
 import {
+  GeometryPlotError,
+  geometryStatus,
+  plotGeometrySlice,
+} from "./server/geometryPlot";
+import {
+  clearWeightWindows,
   isSimulationRunning,
   RimagRunnerError,
   startSimulation,
   stopSimulation,
   subscribe,
+  weightWindowsStatus,
 } from "./server/rimagRunner";
 
 const SETUPS_FILE = path.resolve("save/setups.json");
@@ -198,6 +205,31 @@ function simulationApi(): Plugin {
       return;
     }
 
+    if (url === "/api/simulation/weight-windows" && req.method === "GET") {
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify(weightWindowsStatus()));
+      return;
+    }
+
+    if (url === "/api/simulation/weight-windows" && req.method === "DELETE") {
+      try {
+        const removed = clearWeightWindows();
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ ok: true, removed, ...weightWindowsStatus() }));
+      } catch (error: unknown) {
+        const message =
+          error instanceof RimagRunnerError
+            ? error.message
+            : error instanceof Error
+              ? error.message
+              : "Could not clear weight windows.";
+        res.statusCode = error instanceof RimagRunnerError ? 409 : 500;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: message }));
+      }
+      return;
+    }
+
     res.statusCode = 405;
     res.end();
   };
@@ -213,8 +245,62 @@ function simulationApi(): Plugin {
   };
 }
 
+function geometryApi(): Plugin {
+  const handle: Connect.NextHandleFunction = (req, res, next) => {
+    const url = req.url?.split("?")[0];
+    if (!url?.startsWith("/api/geometry")) {
+      next();
+      return;
+    }
+
+    if (url === "/api/geometry/status" && req.method === "GET") {
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify(geometryStatus()));
+      return;
+    }
+
+    if (url === "/api/geometry/plot" && req.method === "POST") {
+      void readJsonBody(req)
+        .then(async (body) => {
+          const pngPath = await plotGeometrySlice(body);
+          const data = fs.readFileSync(pngPath);
+          res.statusCode = 200;
+          res.setHeader("Content-Type", "image/png");
+          res.setHeader("Cache-Control", "no-store");
+          res.end(data);
+        })
+        .catch((error: unknown) => {
+          const message =
+            error instanceof GeometryPlotError
+              ? error.message
+              : error instanceof Error
+                ? error.message
+                : "Could not plot geometry.";
+          const status = error instanceof GeometryPlotError ? error.status : 400;
+          res.statusCode = status;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ error: message }));
+        });
+      return;
+    }
+
+    res.statusCode = 405;
+    res.end();
+  };
+
+  return {
+    name: "reactor-slice-geometry-plot",
+    configureServer(server) {
+      server.middlewares.use(handle);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(handle);
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), setupStore(), blenderClipboard(), simulationApi()],
+  plugins: [react(), setupStore(), blenderClipboard(), simulationApi(), geometryApi()],
   server: {
     host: true,
     port: 3001,

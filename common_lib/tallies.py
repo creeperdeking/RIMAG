@@ -432,24 +432,28 @@ def calculate_C14_production(
     # Using T_1/2 = 5730 y gives ~62.43 Ci/mol
     curie_per_mol_c14 = 62.432885931801984
 
-    # Get the tally
     t = sp.get_tally(name=tally_name)
+    # App-slice coolant can be an empty cell list (no Void-2 region). OpenMC
+    # still writes the tally, but get_pandas_dataframe() divides by zero on an
+    # empty CellFilter. Treat that as zero production, same as tritium.
+    if any(len(getattr(filt, "bins", [])) == 0 for filt in t.filters):
+        return 0.0, 0.0
+    if getattr(t, "mean", None) is None or t.mean.size == 0:
+        return 0.0, 0.0
 
-    # Pull results as a DataFrame so we can mask on (nuclide, score) pairs
-    df = t.get_pandas_dataframe()
+    # Must match create_C14_production_tally score names (OpenMC uses (n,a)/(n,3He)).
+    valid_pairs = (
+        ("N14", "(n,p)"),    # 14N(n,p)14C
+        ("O17", "(n,a)"),    # 17O(n,α)14C
+        ("N15", "(n,d)"),    # 15N(n,d)14C
+        ("O16", "(n,3He)"),  # 16O(n,3He)14C
+    )  # could not add C13 because not in library
 
-    # Valid parent/reaction pairs that produce 14C
-    valid_pairs = {
-        ("N14", "(n,p)"),      # 14N(n,p)14C
-        ("O17", "(n,alpha)"),  # 17O(n,α)14C
-        ("N15", "(n,d)"),      # 15N(n,d)14C   (usually small)
-        ("O16", "(n,He3)"),    # 16O(n,3He)14C (usually small)
-    }  # could not add C13 because not in library
-
-    mask = df.apply(lambda r: (r["nuclide"], r["score"]) in valid_pairs, axis=1)
-
-    mean_val = df.loc[mask, "mean"].to_numpy().sum()
-    std_val  = df.loc[mask, "std. dev."].to_numpy().sum()
+    mean_val = 0.0
+    std_val = 0.0
+    for nuclide, score in valid_pairs:
+        mean_val += t.get_values(nuclides=[nuclide], scores=[score], value="mean").sum()
+        std_val += t.get_values(nuclides=[nuclide], scores=[score], value="std_dev").sum()
 
     # Convert reactions/source → (Ci/year)/GWe, matching your tritium normalization
     factor = (
@@ -461,7 +465,7 @@ def calculate_C14_production(
         * curie_per_mol_c14    # Ci/mol for C-14
     )
 
-    c14_production    = mean_val * factor
+    c14_production = mean_val * factor
     c14_production_sd = std_val * factor
     return c14_production, c14_production_sd
 
@@ -573,6 +577,63 @@ def print_N16_production(sp: openmc.StatePoint, source_strength, electric_power)
     )
 
 
+def _write_ddd_resultsim(
+    yearly_ddd_photovoltaic: float,
+    yearly_ddd_photovoltaic_ci95_pct: float,
+    batches: int,
+) -> None:
+    ddd_ci95p = (
+        yearly_ddd_photovoltaic_ci95_pct / 100
+        if np.isfinite(yearly_ddd_photovoltaic_ci95_pct)
+        else None
+    )
+    with open("resultsim.json", "w") as f:
+        f.write("{\n")
+        f.write(f'  "ddd": [{yearly_ddd_photovoltaic:.4e}],\n')
+        if ddd_ci95p is None:
+            f.write('  "ddd_ci95p": null,\n')
+        else:
+            f.write(f'  "ddd_ci95p": {ddd_ci95p},\n')
+        f.write(f'  "n_batches": {batches}\n')
+        f.write("}\n")
+
+
+def _print_photovoltaic_ddd(
+    sp: openmc.StatePoint,
+    source_strength,
+    photovoltaic_slice_volume,
+    dose_time,
+    batches,
+) -> None:
+    ddd_photovoltaic = sp.get_tally(name="photovoltaic_ddd")
+    normalized_ddd_photovoltaic = float(
+        ddd_photovoltaic.get_values(scores=["flux"], value="mean")
+    )
+    normalized_ddd_photovoltaic_sd = float(
+        ddd_photovoltaic.get_values(scores=["flux"], value="std_dev")
+    )
+    absolute_ddd_photovoltaic = (
+        normalized_ddd_photovoltaic * source_strength / photovoltaic_slice_volume
+    )  # MeV/g/s
+    yearly_ddd_photovoltaic = absolute_ddd_photovoltaic * dose_time
+    yearly_ddd_photovoltaic_ci95_pct = (
+        100 * 1.96 * normalized_ddd_photovoltaic_sd / normalized_ddd_photovoltaic
+        if normalized_ddd_photovoltaic != 0
+        else float("nan")
+    )
+    print("--------------------------------")
+    print(f"Keff: {sp.keff:.6e}")
+    print(f"Source strength: {source_strength:.4e} neutrons/second")
+    print("--------------------------------")
+    print("photovoltaic")
+    print(
+        f"Displacement damage: {yearly_ddd_photovoltaic:.4e} MeV/g/year "
+        f"(± {yearly_ddd_photovoltaic_ci95_pct:.2f}%, 95% CI)"
+    )
+    print("--------------------------------")
+    _write_ddd_resultsim(yearly_ddd_photovoltaic, yearly_ddd_photovoltaic_ci95_pct, batches)
+
+
 def print_tallies(
     source_strength,
     emitter_cells,
@@ -582,9 +643,17 @@ def print_tallies(
     electric_power,
     batches,
     dose_time,
+    ddd_tallies_only: bool = False,
 ):
     sp = openmc.StatePoint(f"statepoint.{batches}.h5")
     k_eff = sp.keff  # keff (mean)
+
+    if ddd_tallies_only:
+        _print_photovoltaic_ddd(
+            sp, source_strength, photovoltaic_slice_volume, dose_time, batches
+        )
+        return
+
     photovolatic = sp.get_tally(name="photovoltaic")
     ddd_photovoltaic = sp.get_tally(name="photovoltaic_ddd")
     fluence_emitter = sp.get_tally(name="emitter")
@@ -729,17 +798,4 @@ def print_tallies(
     )
     print("--------------------------------")
 
-    ddd_ci95p = (
-        yearly_ddd_photovoltaic_ci95_pct / 100
-        if np.isfinite(yearly_ddd_photovoltaic_ci95_pct)
-        else None
-    )
-    with open("resultsim.json", "w") as f:
-        f.write("{\n")
-        f.write(f'  "ddd": [{yearly_ddd_photovoltaic:.4e}],\n')
-        if ddd_ci95p is None:
-            f.write('  "ddd_ci95p": null,\n')
-        else:
-            f.write(f'  "ddd_ci95p": {ddd_ci95p},\n')
-        f.write(f'  "n_batches": {batches}\n')
-        f.write("}\n")
+    _write_ddd_resultsim(yearly_ddd_photovoltaic, yearly_ddd_photovoltaic_ci95_pct, batches)

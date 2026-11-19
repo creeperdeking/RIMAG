@@ -8,6 +8,8 @@ const APP_ROOT = path.resolve(HERE, "..");
 const REPO_ROOT = path.resolve(APP_ROOT, "..");
 const RUN_DIR = path.resolve(REPO_ROOT, "runs", "default");
 const PARAMS_FILE = "app_slice_run.json";
+/** Fixed name so Stop can send SIGINT into the one-off container (Ctrl+C). */
+const CONTAINER_NAME = "rimag-app-sim";
 
 export class RimagRunnerError extends Error {}
 
@@ -24,6 +26,35 @@ const job: JobState = {
   running: false,
   lastLines: [],
 };
+
+function runDocker(args: string[]): Promise<number> {
+  return new Promise((resolve) => {
+    const child = spawn("docker", args, {
+      cwd: REPO_ROOT,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stderr = "";
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString("utf8");
+    });
+    child.on("error", (error) => {
+      emit(`[runner] docker ${args.join(" ")} failed: ${error.message}`);
+      resolve(1);
+    });
+    child.on("close", (code) => {
+      if (code !== 0 && stderr.trim()) {
+        emit(`[runner] docker ${args.join(" ")}: ${stderr.trim()}`);
+      }
+      resolve(code ?? 1);
+    });
+  });
+}
+
+/** Remove a leftover named container so the next run can reuse the name. */
+async function removeSimContainer() {
+  await runDocker(["rm", "-f", CONTAINER_NAME]);
+}
 
 function emit(line: string) {
   job.lastLines.push(line);
@@ -51,6 +82,7 @@ export function syncRimagSourcesIntoRunDir() {
   }
   const pairs: Array<[string, string]> = [
     ["simulation_app_slice.py", "simulation_app_slice.py"],
+    ["plot_geometry_slice.py", "plot_geometry_slice.py"],
     ["app_slice_design", "app_slice_design"],
     ["common_lib", "common_lib"],
     ["one_layer_disk_design", "one_layer_disk_design"],
@@ -86,9 +118,28 @@ export function subscribe(listener: (line: string) => void) {
   return () => job.listeners.delete(listener);
 }
 
-export function stopSimulation() {
-  if (!job.child) return false;
-  job.child.kill("SIGTERM");
+/**
+ * Interrupt like Ctrl+C: SIGINT to PID 1 inside the container.
+ * On Windows, kill() on the compose client does not send Unix signals.
+ */
+export function stopSimulation(): boolean {
+  if (!job.running && !job.child) return false;
+  emit("[runner] Stop: sending SIGINT to container (same as Ctrl+C)…");
+  void (async () => {
+    const code = await runDocker(["kill", "--signal=SIGINT", CONTAINER_NAME]);
+    if (code !== 0) {
+      emit("[runner] SIGINT did not reach the container; forcing docker kill…");
+      await runDocker(["kill", CONTAINER_NAME]);
+    }
+    // Also drop the local compose client if it is still attached.
+    if (job.child && !job.child.killed) {
+      try {
+        job.child.kill();
+      } catch {
+        // ignore
+      }
+    }
+  })();
   return true;
 }
 
@@ -97,12 +148,95 @@ function dockerComposeCommand(): { command: string; prefix: string[] } {
   return { command: "docker", prefix: ["compose"] };
 }
 
+function threadsFromPayload(payload: unknown): number {
+  const root = payload && typeof payload === "object" && !Array.isArray(payload)
+    ? (payload as Record<string, unknown>)
+    : {};
+  const simulation =
+    root.simulation && typeof root.simulation === "object" && !Array.isArray(root.simulation)
+      ? (root.simulation as Record<string, unknown>)
+      : root;
+  const raw = Number(simulation.n_threads);
+  if (!Number.isFinite(raw)) return 10;
+  return Math.max(1, Math.min(256, Math.round(raw)));
+}
+
+const WW_FILE = "weight_windows.h5";
+const WW_META_FILE = "weight_windows_meta.json";
+
+export type WeightWindowsStatus = {
+  present: boolean;
+  sizeBytes: number | null;
+  passes: number | null;
+  lastPass: string | null;
+  meshCm: number | null;
+  energyGroups: number | null;
+  batches: number | null;
+  updatedAt: string | null;
+};
+
+export function weightWindowsStatus(): WeightWindowsStatus {
+  const filePath = path.join(RUN_DIR, WW_FILE);
+  const metaPath = path.join(RUN_DIR, WW_META_FILE);
+  const present = fs.existsSync(filePath);
+  let sizeBytes: number | null = null;
+  if (present) {
+    try {
+      sizeBytes = fs.statSync(filePath).size;
+    } catch {
+      sizeBytes = null;
+    }
+  }
+  let passes: number | null = null;
+  let lastPass: string | null = null;
+  let meshCm: number | null = null;
+  let energyGroups: number | null = null;
+  let batches: number | null = null;
+  let updatedAt: string | null = null;
+  if (fs.existsSync(metaPath)) {
+    try {
+      const meta = JSON.parse(fs.readFileSync(metaPath, "utf8")) as Record<string, unknown>;
+      passes = typeof meta.passes === "number" ? meta.passes : null;
+      lastPass = typeof meta.last_pass === "string" ? meta.last_pass : null;
+      meshCm = typeof meta.mesh_cm === "number" ? meta.mesh_cm : null;
+      energyGroups = typeof meta.energy_groups === "number" ? meta.energy_groups : null;
+      batches = typeof meta.batches === "number" ? meta.batches : null;
+      updatedAt = typeof meta.updated_at === "string" ? meta.updated_at : null;
+    } catch {
+      // ignore corrupt meta
+    }
+  }
+  return { present, sizeBytes, passes, lastPass, meshCm, energyGroups, batches, updatedAt };
+}
+
+export function clearWeightWindows(): boolean {
+  if (job.running) {
+    throw new RimagRunnerError("Stop the simulation before clearing weight windows.");
+  }
+  let removed = false;
+  for (const name of [WW_FILE, WW_META_FILE]) {
+    const target = path.join(RUN_DIR, name);
+    if (fs.existsSync(target)) {
+      fs.unlinkSync(target);
+      removed = true;
+    }
+  }
+  return removed;
+}
+
 export function startSimulation(payload: unknown): void {
   if (job.running) {
     throw new RimagRunnerError("A simulation is already running.");
   }
 
   writeRunParams(payload);
+  const threads = threadsFromPayload(payload);
+  // Entrypoint writes simsettings.json from RIMAG_THREADS before Python starts.
+  fs.writeFileSync(
+    path.join(RUN_DIR, "simsettings.json"),
+    `${JSON.stringify({ threads }, null, 2)}\n`,
+    "utf8",
+  );
   job.lastLines = [];
   job.running = true;
 
@@ -110,7 +244,11 @@ export function startSimulation(payload: unknown): void {
   const args = [
     ...prefix,
     "run",
+    "--name",
+    CONTAINER_NAME,
     "--rm",
+    "-e",
+    `RIMAG_THREADS=${threads}`,
     "rimag",
     "python",
     "simulation_app_slice.py",
@@ -119,38 +257,42 @@ export function startSimulation(payload: unknown): void {
 
   emit(`[runner] repo=${REPO_ROOT}`);
   emit(`[runner] run_dir=${RUN_DIR}`);
+  emit(`[runner] threads=${threads}`);
   emit(`[runner] ${command} ${args.join(" ")}`);
 
-  const child = spawn(command, args, {
-    cwd: REPO_ROOT,
-    env: {
-      ...process.env,
-      RIMAG_RUN_DIR: RUN_DIR,
-      PYTHONUNBUFFERED: "1",
-    },
-    windowsHide: true,
-  });
-  job.child = child;
+  void removeSimContainer().then(() => {
+    const child = spawn(command, args, {
+      cwd: REPO_ROOT,
+      env: {
+        ...process.env,
+        RIMAG_RUN_DIR: RUN_DIR,
+        RIMAG_THREADS: String(threads),
+        PYTHONUNBUFFERED: "1",
+      },
+      windowsHide: true,
+    });
+    job.child = child;
 
-  const forward = (chunk: Buffer) => {
-    const text = chunk.toString("utf8");
-    for (const line of text.split(/\r?\n/)) {
-      if (line.length) emit(line);
-    }
-  };
+    const forward = (chunk: Buffer) => {
+      const text = chunk.toString("utf8");
+      for (const line of text.split(/\r?\n/)) {
+        if (line.length) emit(line);
+      }
+    };
 
-  child.stdout.on("data", forward);
-  child.stderr.on("data", forward);
-  child.on("error", (error) => {
-    emit(`[runner] failed to start: ${error.message}`);
-    job.running = false;
-    job.child = null;
-    emit("[runner] done exit=1");
-  });
-  child.on("close", (code, signal) => {
-    emit(`[runner] process closed code=${code ?? "null"} signal=${signal ?? "null"}`);
-    job.running = false;
-    job.child = null;
-    emit(`[runner] done exit=${code ?? 1}`);
+    child.stdout.on("data", forward);
+    child.stderr.on("data", forward);
+    child.on("error", (error) => {
+      emit(`[runner] failed to start: ${error.message}`);
+      job.running = false;
+      job.child = null;
+      emit("[runner] done exit=1");
+    });
+    child.on("close", (code, signal) => {
+      emit(`[runner] process closed code=${code ?? "null"} signal=${signal ?? "null"}`);
+      job.running = false;
+      job.child = null;
+      emit(`[runner] done exit=${code ?? 1}`);
+    });
   });
 }

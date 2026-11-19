@@ -35,7 +35,14 @@ export const LAYER_FALLBACK_COLORS: Record<string, string> = {
   "Uranium Dioxide": "green",
 };
 
-export const TAB_KEYS = ["overview", "fuel", "designer", "thermodynamic", "simulation"] as const;
+export const TAB_KEYS = [
+  "overview",
+  "fuel",
+  "designer",
+  "thermodynamic",
+  "simulation",
+  "visualisation",
+] as const;
 export type TabKey = (typeof TAB_KEYS)[number];
 
 /** Materials accepted as neutron shield moderator in simulation_paper.py runs. */
@@ -62,5 +69,10 @@ export type RunMode = (typeof RUN_MODES)[number];
 export const PARTICLE_TYPES = ["neutron", "photon"] as const;
 export type ParticleType = (typeof PARTICLE_TYPES)[number];
 
-export const WEIGHT_WINDOWS = ["no", "use", "generate"] as const;
+/** Off / use for tallies. Seed+refine are triggered from the WW submenu, not this list. */
+export const WEIGHT_WINDOWS = ["no", "use"] as const;
 export type WeightWindows = (typeof WEIGHT_WINDOWS)[number];
+
+/** Full set accepted by the Python runner (includes build passes). */
+export const WEIGHT_WINDOWS_RUN = ["no", "use", "generate", "seed", "refine"] as const;
+export type WeightWindowsRun = (typeof WEIGHT_WINDOWS_RUN)[number];

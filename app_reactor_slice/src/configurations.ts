@@ -1,5 +1,17 @@
-import type { LayerGroupId } from "./constants";
+import {
+  NSM_MATERIALS,
+  PARTICLE_TYPES,
+  RUN_MODES,
+  WEIGHT_WINDOWS,
+  type LayerGroupId,
+  type NsmMaterial,
+  type ParticleType,
+  type RunMode,
+  type WeightWindows,
+} from "./constants";
 import type { LayerRow } from "./geometry";
+
+export type { WeightWindowsRun } from "./constants";
 
 export const NUMERIC_FIELDS = {
   a: [1.0, 4.0, 0.1, 2.0],
@@ -44,13 +56,111 @@ export const LAYER_TITLES: Record<LayerGroupId, string> = {
   tpv: "TPV layer",
 };
 
+export type SimulationParams = {
+  run_mode: RunMode;
+  n_batches: number;
+  n_threads: number;
+  nsm_material: NsmMaterial;
+  nsm_thickness: number;
+  conical_pitch: number;
+  particle_type: ParticleType;
+  weight_windows: WeightWindows;
+  survival_biasing: boolean;
+  dose_time: number;
+  print_core_characteristics: boolean;
+  boron_concentration_ppm: number;
+  ddd_tallies_only: boolean;
+  ww_mesh_cm: number;
+  ww_energy_groups: number;
+};
+
+export const DEFAULT_SIMULATION_PARAMS: SimulationParams = {
+  run_mode: "render",
+  n_batches: 200,
+  n_threads: 10,
+  nsm_material: "Graphite",
+  nsm_thickness: 25,
+  conical_pitch: 15,
+  particle_type: "neutron",
+  weight_windows: "no",
+  survival_biasing: false,
+  dose_time: 10,
+  print_core_characteristics: true,
+  boron_concentration_ppm: 0,
+  ddd_tallies_only: true,
+  ww_mesh_cm: 40,
+  ww_energy_groups: 10,
+};
+
+function pickBoolean(value: unknown, fallback: boolean): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    return ["1", "true", "yes"].includes(value.trim().toLowerCase());
+  }
+  return fallback;
+}
+
 export type Setup = {
   [K in NumericKey]: number;
 } & {
   reload_fraction: ReloadFraction;
   dims: boolean;
   layers: Record<LayerGroupId, LayerRow[]>;
+  simulation: SimulationParams;
 };
+
+function pickEnum<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
+  return typeof value === "string" && (allowed as readonly string[]).includes(value)
+    ? (value as T)
+    : fallback;
+}
+
+export function normalizeSimulation(raw: unknown): SimulationParams {
+  const source = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const batches = Number(source.n_batches);
+  const threads = Number(source.n_threads);
+  const nsmThickness = Number(source.nsm_thickness);
+  const conicalPitch = Number(source.conical_pitch);
+  const doseTime = Number(source.dose_time);
+  const boronPpm = Number(source.boron_concentration_ppm);
+  const wwMesh = Number(source.ww_mesh_cm);
+  const wwGroups = Number(source.ww_energy_groups);
+  // Legacy "generate" in saved setups maps to "use" for the tally dropdown;
+  // seed/refine are started from the WW submenu, not stored as the tally mode.
+  const rawWw = typeof source.weight_windows === "string" ? source.weight_windows : "";
+  const weightWindows: WeightWindows =
+    rawWw === "use" || rawWw === "generate"
+      ? "use"
+      : pickEnum(source.weight_windows, WEIGHT_WINDOWS, DEFAULT_SIMULATION_PARAMS.weight_windows);
+  return {
+    run_mode: pickEnum(source.run_mode, RUN_MODES, DEFAULT_SIMULATION_PARAMS.run_mode),
+    n_batches: Number.isFinite(batches) ? Math.max(1, Math.round(batches)) : DEFAULT_SIMULATION_PARAMS.n_batches,
+    n_threads: Number.isFinite(threads)
+      ? Math.max(1, Math.min(256, Math.round(threads)))
+      : DEFAULT_SIMULATION_PARAMS.n_threads,
+    nsm_material: pickEnum(source.nsm_material, NSM_MATERIALS, DEFAULT_SIMULATION_PARAMS.nsm_material),
+    nsm_thickness: Number.isFinite(nsmThickness) && nsmThickness >= 0 ? nsmThickness : DEFAULT_SIMULATION_PARAMS.nsm_thickness,
+    conical_pitch: Number.isFinite(conicalPitch) && conicalPitch >= 0 ? conicalPitch : DEFAULT_SIMULATION_PARAMS.conical_pitch,
+    particle_type: pickEnum(source.particle_type, PARTICLE_TYPES, DEFAULT_SIMULATION_PARAMS.particle_type),
+    weight_windows: weightWindows,
+    survival_biasing: pickBoolean(source.survival_biasing, DEFAULT_SIMULATION_PARAMS.survival_biasing),
+    dose_time: Number.isFinite(doseTime) && doseTime >= 0 ? doseTime : DEFAULT_SIMULATION_PARAMS.dose_time,
+    print_core_characteristics: pickBoolean(
+      source.print_core_characteristics,
+      DEFAULT_SIMULATION_PARAMS.print_core_characteristics,
+    ),
+    boron_concentration_ppm:
+      Number.isFinite(boronPpm) && boronPpm >= 0
+        ? boronPpm
+        : DEFAULT_SIMULATION_PARAMS.boron_concentration_ppm,
+    ddd_tallies_only: pickBoolean(source.ddd_tallies_only, DEFAULT_SIMULATION_PARAMS.ddd_tallies_only),
+    ww_mesh_cm:
+      Number.isFinite(wwMesh) && wwMesh > 0 ? wwMesh : DEFAULT_SIMULATION_PARAMS.ww_mesh_cm,
+    ww_energy_groups: Number.isFinite(wwGroups)
+      ? Math.max(1, Math.min(200, Math.round(wwGroups)))
+      : DEFAULT_SIMULATION_PARAMS.ww_energy_groups,
+  };
+}
 
 export function snap(value: number, low: number, high: number, step: number): number {
   let next = Math.min(high, Math.max(low, value));
@@ -88,6 +198,7 @@ export function defaultSetup(): Setup {
   values.reload_fraction = "1/4";
   values.dims = true;
   values.layers = normalizeLayers(null);
+  values.simulation = { ...DEFAULT_SIMULATION_PARAMS };
   return values;
 }
 
@@ -119,6 +230,7 @@ export function normalizeSetup(data: unknown): Setup {
     values.dims = Boolean(dims);
   }
   values.layers = normalizeLayers(raw.layers);
+  values.simulation = normalizeSimulation(raw.simulation);
   return values;
 }
 

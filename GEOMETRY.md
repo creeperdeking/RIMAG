@@ -394,11 +394,13 @@ The reactor-slice web app can start a simulation without going through `paper_ge
 3. Docker runs `python simulation_app_slice.py app_slice_run.json`.
 4. `app_slice_design.make_app_slice_geometry` builds a flat hollow-disk CSG and returns `bounding_box` / `render_view`. Hierarchy:
    - one shared `slice_universe` (one pitch: radial zones + axial materials)
-   - one `column_universe` = `n_slices` cells all filled with that same `slice_universe` (from `stack_m / pitch`)
-   - root instantiates the same `column_universe` once per reactor cylinder
+   - `conical_pitch = 0`: a `column_universe` of `boundary_layer_*` fills inside periodic `ZPlane`s
+   - `conical_pitch ≠ 0`: one shell per column, clipped by a periodic `ZCone` pair on the root (same axis and opening angle, apexes one period apart). The fill is not stacked
+   - root instantiates that fill once per reactor cylinder
+   - `stack_m` stays an engineering length for inventory / UI
 5. `start_program(..., geometry_settings=None, bounding_box=..., render_view=...)` runs the usual modes while streaming logs back over SSE.
 
-`conical_pitch` tilts each material bound: `0°` uses `ZPlane`s; otherwise `ZConeOneSided` about the disk axis (same idea as the paper frustum), so layers angle toward the cylinder center.
+`conical_pitch` tilts each material bound: `0°` uses `ZPlane`s; otherwise `ZConeOneSided` about the disk axis (same idea as the paper frustum), and the periodic boundary is the cone pair itself.
 
 ## Mental model (short)
 

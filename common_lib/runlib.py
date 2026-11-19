@@ -20,6 +20,7 @@ from common_lib.simlib import (
     run_keff_sim,
     run_sim_with_tallies,
     stochastic_volume_calculation,
+    write_ww_meta,
 )
 
 type RunMode = Literal[
@@ -31,7 +32,7 @@ type RunMode = Literal[
     "norun",
 ]
 
-type UseWeightWindows = Literal["use", "generate", "no"]
+type UseWeightWindows = Literal["use", "generate", "no", "seed", "refine"]
 type ParticleType = Literal["photon", "neutron"]
 
 
@@ -57,6 +58,10 @@ def start_program(
     deterministic=False,
     bounding_box=None,
     render_view: Optional[Dict[str, Any]] = None,
+    survival_biasing: bool = True,
+    ww_mesh_cm: float = 10.0,
+    ww_energy_groups: int = 10,
+    ddd_tallies_only: bool = False,
 ):
     ### Calculate core characteristics
 
@@ -65,8 +70,15 @@ def start_program(
 
     core_characteristics = None
     if run_mode != "keff_notallies" and run_mode != "render" or print_characteristics:
+        # Only material cells need volumes (mass / power). Universe-filled parents
+        # (boundary_layer, column, …) are large/thin wedges of the sample box.
+        material_cells = [
+            cell
+            for _, cell in geometry.get_all_cells().items()
+            if isinstance(cell.fill, openmc.Material)
+        ]
         geometry = stochastic_volume_calculation(
-            [cell for _, cell in geometry.get_all_cells().items()],
+            material_cells,
             geometry,
             materials_dict,
             geometry_settings,
@@ -108,7 +120,7 @@ def start_program(
             raise ValueError("geometry_settings or bounding_box is required")
         lower_left_corner, upper_right_corner = get_geometry_bounding_box(geometry_settings)
 
-    if weight_windows == "generate":
+    if weight_windows in ("generate", "seed", "refine"):
         settings = make_sim_settings(
             deterministic=deterministic,
             batches=batches,
@@ -117,8 +129,25 @@ def start_program(
             upper_right_corner=upper_right_corner,
             geometry=geometry,
             particle_type=particle_type,
+            survival_biasing=survival_biasing,
+            ww_mesh_cm=ww_mesh_cm,
+            ww_energy_groups=ww_energy_groups,
         )
         run_keff_sim(geometry, settings, materials_dict)
+        write_ww_meta(
+            pass_kind="seed" if weight_windows in ("generate", "seed") else "refine",
+            mesh_cm=ww_mesh_cm,
+            energy_groups=ww_energy_groups,
+            batches=int(settings.batches),
+        )
+        # seed / refine stop here so the UI can iterate deep shields.
+        # generate keeps the old one-shot behaviour: seed then tally with WW.
+        if weight_windows in ("seed", "refine"):
+            print(
+                "Weight-window pass finished. "
+                "Run refine again to push deeper, or set weight_windows=use for tallies."
+            )
+            return
         weight_windows = "use"
 
     settings = make_sim_settings(
@@ -129,6 +158,9 @@ def start_program(
         upper_right_corner=upper_right_corner,
         geometry=geometry,
         particle_type=particle_type,
+        survival_biasing=survival_biasing,
+        ww_mesh_cm=ww_mesh_cm,
+        ww_energy_groups=ww_energy_groups,
     )
 
     ### Run simulation
@@ -158,6 +190,7 @@ def start_program(
             monitored_nuclide=monitored_nuclide,
             coolant_cells=cells_for(material_choice.coolant),
             dose_time=dose_time,
+            ddd_tallies_only=ddd_tallies_only,
         )
 
     if run_mode == "keff_notallies":
@@ -194,6 +227,7 @@ def start_program(
             particle_type="photon",
             monitored_nuclide=monitored_nuclide,
             dose_time=dose_time,
+            ddd_tallies_only=ddd_tallies_only,
         )
 
     if run_mode == "render":

@@ -1,6 +1,8 @@
 from common_lib.materials import (
     atoms,
     borated_water_atom_proportions_from_boron_ppm,
+    graphite_boron_weight_fractions,
+    graphite_material_base_name,
 )
 
 
@@ -34,6 +36,34 @@ def test_borated_water_monotonic_with_ppm():
     props_low = borated_water_atom_proportions_from_boron_ppm(500.0)
     props_high = borated_water_atom_proportions_from_boron_ppm(2000.0)
     assert _boron_mass_fraction(props_low) < _boron_mass_fraction(props_high)
+
+
+def test_graphite_boron_weight_fraction_matches_ppm():
+    carbon, boron = graphite_boron_weight_fractions(0.0)
+    assert carbon == 1.0
+    assert boron == 0.0
+    carbon, boron = graphite_boron_weight_fractions(250.0)
+    assert abs(boron - 250.0 / 1e6) < 1e-15
+    assert abs(carbon + boron - 1.0) < 1e-15
+
+
+def test_graphite_boron_weight_fraction_rejects_pure_boron():
+    try:
+        graphite_boron_weight_fractions(1_000_000.0)
+        assert False, "Expected ValueError at 1e6 ppm"
+    except ValueError:
+        pass
+    try:
+        graphite_boron_weight_fractions(-1.0)
+        assert False, "Expected ValueError for negative ppm"
+    except ValueError:
+        pass
+
+
+def test_graphite_material_base_name():
+    assert graphite_material_base_name("Graphite") == "Graphite"
+    assert graphite_material_base_name("Graphite 2") == "Graphite"
+    assert graphite_material_base_name("Low Density Graphite") == "Low Density Graphite"
 
 
 def test_borated_water_raises_when_ppm_exceeds_pure_boric_acid_limit():

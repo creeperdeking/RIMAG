@@ -49,13 +49,21 @@ class AppSliceSimulationParams(BaseModel):
         "norun",
     ] = "render"
     n_batches: int = 200
+    n_threads: int = 10
     nsm_material: str = "Graphite"
     nsm_thickness: float = 25.0
     conical_pitch: float = 15.0
     particle_type: Literal["neutron", "photon"] = "neutron"
-    weight_windows: Literal["no", "use", "generate"] = "no"
+    weight_windows: Literal["no", "use", "generate", "seed", "refine"] = "no"
+    survival_biasing: bool = False
     dose_time: float = 10.0
     print_core_characteristics: bool = True
+    boron_concentration_ppm: float = Field(default=0.0, ge=0)
+    # When true, keff tallies are only the photovoltaic SR-NIEL DDD flux tally.
+    ddd_tallies_only: bool = True
+    # MAGIC weight-window mesh / groups for seed and refine passes.
+    ww_mesh_cm: float = Field(default=40.0, gt=0)
+    ww_energy_groups: int = Field(default=10, ge=1, le=200)
 
 
 class AppSliceRunConfig(BaseModel):

@@ -4,7 +4,8 @@ import { Navigate, Route, Routes, useSearchParams } from "react-router-dom";
 import CompactSection from "./components/CompactSection";
 import LayerChart from "./components/LayerChart";
 import LayerEditor from "./components/LayerEditor";
-import SimulationTab, { DEFAULT_SIMULATION_PARAMS, type SimulationParams } from "./components/SimulationTab";
+import SimulationTab from "./components/SimulationTab";
+import VisualisationTab from "./components/VisualisationTab";
 import ZoneChart, { columnPoses } from "./components/ZoneChart";
 import { LAYER_GROUPS, LAYER_MATCH_NOTE, TAB_KEYS, type LayerGroupId, type TabKey } from "./constants";
 import {
@@ -17,6 +18,7 @@ import {
   type NumericKey,
   type ReloadFraction,
   type Setup,
+  type SimulationParams,
 } from "./configurations";
 import { burnupDays, computeLayoutForRatio, formatBurnupTime, uraniumInventoryKg, type LayerRow } from "./geometry";
 import {
@@ -39,6 +41,7 @@ const TAB_LABELS: Record<TabKey, string> = {
   designer: "Layer designer",
   thermodynamic: "Thermodynamic",
   simulation: "Simulation",
+  visualisation: "Visualisation",
 };
 
 /** Stable reference so LayerChart's memo does not recompute on every render. */
@@ -100,10 +103,10 @@ function hydratePlaceholders(layers: Groups, from: Setup): Groups {
 }
 
 function urlHasState(params: URLSearchParams): boolean {
-  return params.has("layers") || NUMERIC_KEYS.some((key) => params.has(key));
+  return params.has("layers") || params.has("simulation") || NUMERIC_KEYS.some((key) => params.has(key));
 }
 
-/** Restore numeric fields, dims, reload fraction, and layers from the page address. */
+/** Restore numeric fields, dims, reload fraction, layers, and run params from the page address. */
 function parseUrlSetup(params: URLSearchParams): Setup {
   const raw: Record<string, unknown> = {};
   for (const key of NUMERIC_KEYS) {
@@ -120,6 +123,14 @@ function parseUrlSetup(params: URLSearchParams): Setup {
       raw.layers = JSON.parse(layers) as unknown;
     } catch {
       // Ignore a damaged address and keep the default stacks.
+    }
+  }
+  const simulation = params.get("simulation");
+  if (simulation) {
+    try {
+      raw.simulation = JSON.parse(simulation) as unknown;
+    } catch {
+      // Ignore a damaged simulation blob.
     }
   }
   return normalizeSetup(raw);
@@ -262,7 +273,6 @@ const Explorer: React.FC = () => {
   const [notice, setNotice] = useState<Notice | null>(null);
   const [copying, setCopying] = useState(false);
   const [copyNote, setCopyNote] = useState<Notice | null>(null);
-  const [simParams, setSimParams] = useState<SimulationParams>(DEFAULT_SIMULATION_PARAMS);
 
   const savedNames = useMemo(() => Object.keys(saved).sort((a, b) => a.localeCompare(b)), [saved]);
 
@@ -428,6 +438,7 @@ const Explorer: React.FC = () => {
     params.set("stack_m", setup.stack_m.toFixed(1));
     params.set("columns", String(columns));
     params.set("dims", setup.dims ? "1" : "0");
+    params.set("simulation", JSON.stringify(setup.simulation));
     if (loadedCfg) params.set("cfg", loadedCfg);
     params.set("tab", tab);
     writeParams.current(params, { replace: true });
@@ -736,7 +747,13 @@ const Explorer: React.FC = () => {
     </Row>
   );
 
-  const simulationTab = <SimulationTab params={simParams} onChange={setSimParams} setup={setup} />;
+  const onSimulationChange = (simulation: SimulationParams) => {
+    setSetup((prev) => ({ ...prev, simulation }));
+  };
+
+  const simulationTab = (
+    <SimulationTab params={setup.simulation} onChange={onSimulationChange} setup={setup} />
+  );
 
   const tabContent: Record<TabKey, React.ReactNode> = {
     overview: overviewTab,
@@ -744,6 +761,7 @@ const Explorer: React.FC = () => {
     designer: designerTab,
     thermodynamic: thermodynamicTab,
     simulation: simulationTab,
+    visualisation: <VisualisationTab />,
   };
 
   return (
@@ -830,7 +848,8 @@ const Explorer: React.FC = () => {
               if (isTabKey(key)) setTab(key);
             }}
             mountOnEnter
-            unmountOnExit
+            // Keep mounted tabs alive so Simulation can keep streaming output.
+            unmountOnExit={false}
             className="mb-0"
           >
             {TAB_KEYS.map((key) => (

@@ -2,5 +2,6 @@
     "nsm_material": "Graphite",
     "nsm_thickness": 290,
     "conical_pitch": 2,
-    "n_batches": 200
+    "n_batches": 200,
+    "run_mode": "keff"
 }

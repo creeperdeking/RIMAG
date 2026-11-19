@@ -63,6 +63,16 @@ def _annulus(r_in_cm: float, r_out_cm: float) -> openmc.Region:
     return outer & +openmc.ZCylinder(r=r_in_cm)
 
 
+def _sector_area_cm2(
+    spans: List[Tuple[float, float]],
+    r_in_cm: float,
+    r_out_cm: float,
+) -> float:
+    """Horizontal area of annular sectors. Spans are CCW radians, not wrapping."""
+    radial = 0.5 * (r_out_cm * r_out_cm - r_in_cm * r_in_cm)
+    return sum(radial * (phi1 - phi0) for phi0, phi1 in spans)
+
+
 def _z_scaling(conical_pitch_deg: float) -> float:
     """Map material-stack thickness to vertical period (paper get_z_scaling)."""
     if abs(conical_pitch_deg) < 1e-12:
@@ -101,9 +111,30 @@ def _layer_surface(
     )
 
 
-def _slab(z0: float, z1: float, conical_pitch_deg: float = 0.0) -> openmc.Region:
-    """Region between two axial bounds (planes or cones) in material z."""
-    return +_layer_surface(z0, conical_pitch_deg) & -_layer_surface(z1, conical_pitch_deg)
+def _axial_region(
+    z0: float,
+    z1: float,
+    conical_pitch_deg: float = 0.0,
+    *,
+    open_bottom: bool = False,
+    open_top: bool = False,
+) -> Optional[openmc.Region]:
+    """Region between two material-z bounds.
+
+    Open ends are used when the root cell already clips that side with a
+    periodic cone, so the fill does not carry a second coincident surface.
+    """
+    parts: List[openmc.Region] = []
+    if not open_bottom:
+        parts.append(+_layer_surface(z0, conical_pitch_deg))
+    if not open_top:
+        parts.append(-_layer_surface(z1, conical_pitch_deg))
+    if not parts:
+        return None
+    region = parts[0]
+    for part in parts[1:]:
+        region = region & part
+    return region
 
 
 def _zone_phi_spans(layout: ZoneLayout) -> Dict[str, List[Tuple[float, float]]]:
@@ -178,16 +209,18 @@ def _fill_name_for_zone(
 ) -> str:
     """Map a calculator layer onto the post-make_materials MaterialChoice name."""
     resolved = resolve_material_name(layer_name)
+    # TPV gaps are the coolant role (often Void 2 after material de-duplication).
+    # Check that before the generic Void → void mapping used by disk voids.
+    if zone_id == "tpv":
+        if resolved == "InGaAs":
+            return material_choice.photovoltaic
+        return material_choice.coolant
     if resolved == "Void":
         return material_choice.void
     if zone_id == "fuel":
         if resolved == "Uranium Dioxide":
             return material_choice.fuel
         return material_choice.fuel_cladding
-    if zone_id == "tpv":
-        if resolved == "InGaAs":
-            return material_choice.photovoltaic
-        return material_choice.coolant
     if zone_id == "reflector":
         return material_choice.neutron_reflector
     if zone_id == "shield_moderator":
@@ -206,10 +239,15 @@ def _add_cell(
     fill_name: str,
     region: openmc.Region,
     name: str,
+    volume: Optional[float] = None,
 ) -> None:
     if fill_name not in materials_dict:
         raise ValueError(f"Material '{fill_name}' not in materials_dict")
     cell = openmc.Cell(name=name, region=region, fill=materials_dict[fill_name])
+    if volume is not None:
+        # One column. make_app_slice_geometry multiplies by the column count,
+        # because the same cell is instantiated once per cylinder.
+        cell.volume = volume
     cells.append(cell)
     tracked[fill_name].append(cell)
 
@@ -227,6 +265,7 @@ def _build_zone_stack_cells(
     tracked: Dict[str, List[openmc.Cell]],
     cells: List[openmc.Cell],
     conical_pitch_deg: float,
+    open_period: bool,
 ) -> None:
     if not spans:
         return
@@ -234,22 +273,34 @@ def _build_zone_stack_cells(
     if sector is None:
         return
     ring = _annulus(r_in_cm, r_out_cm) & sector
+    # Parallel cone sheets are a constant vertical gap apart: t / cos(pitch).
+    # That makes the sheet volume exact, so the sampler never has to hit a
+    # 0.05 cm gap inside the tilted-shell box.
+    sheet_area = _sector_area_cm2(spans, r_in_cm, r_out_cm)
+    z_scale = _z_scaling(conical_pitch_deg)
     rows = stack_with_disk(zone_rows, disk_rows)
+    active = [(index, row) for index, row in enumerate(rows) if row.cm > 0]
     z = z_bot
     zone_count = len(zone_rows)
-    for index, row in enumerate(rows):
-        if row.cm <= 0:
-            continue
+    for place, (index, row) in enumerate(active):
         layer_zone = zone_id if index < zone_count else "disk"
-        slab = _slab(z, z + row.cm, conical_pitch_deg)
+        slab = _axial_region(
+            z,
+            z + row.cm,
+            conical_pitch_deg,
+            open_bottom=open_period and place == 0,
+            open_top=open_period and place == len(active) - 1,
+        )
+        region = ring if slab is None else ring & slab
         fill_name = _fill_name_for_zone(layer_zone, row.name, material_choice)
         _add_cell(
             cells,
             tracked,
             materials_dict,
             fill_name,
-            ring & slab,
+            region,
             name=f"{zone_id}_{index}_{fill_name}",
+            volume=sheet_area * row.cm * z_scale,
         )
         z += row.cm
 
@@ -262,13 +313,25 @@ def _build_hole_cells(
     tracked: Dict[str, List[openmc.Cell]],
     cells: List[openmc.Cell],
     conical_pitch_deg: float,
+    open_period: bool,
 ) -> None:
     """Approximate hole fills with chord planes (fuel at +y)."""
     cuts = center_cuts(layout)
     r_in_cm = layout.r_inner * 100.0
     z_bot = -pitch_cm / 2.0
     z_top = pitch_cm / 2.0
-    inside = -openmc.ZCylinder(r=r_in_cm) & _slab(z_bot, z_top, conical_pitch_deg)
+    # When the root cell already clips with periodic cones, leave the hole
+    # axially open — a coincident transmission slab would merge into the
+    # periodic surfaces and lose particles after the boundary jump.
+    hole = -openmc.ZCylinder(r=r_in_cm)
+    slab_region = _axial_region(
+        z_bot,
+        z_top,
+        conical_pitch_deg,
+        open_bottom=open_period,
+        open_top=open_period,
+    )
+    inside = hole if slab_region is None else hole & slab_region
 
     opp_half = layout.opposite_angle / 2.0
     tpv_phi0 = math.pi / 2.0 + math.pi - opp_half
@@ -338,6 +401,7 @@ def _one_disk_universe(
     materials_dict: Dict[str, openmc.Material],
     material_choice: MaterialChoice,
     conical_pitch_deg: float,
+    open_period: bool = False,
 ) -> Tuple[openmc.Universe, Dict[str, List[openmc.Cell]], List[openmc.Cell]]:
     tracked: Dict[str, List[openmc.Cell]] = defaultdict(list)
     cells: List[openmc.Cell] = []
@@ -368,6 +432,7 @@ def _one_disk_universe(
             tracked,
             cells,
             conical_pitch_deg,
+            open_period,
         )
 
     _build_hole_cells(
@@ -378,55 +443,106 @@ def _one_disk_universe(
         tracked,
         cells,
         conical_pitch_deg,
+        open_period,
     )
 
-    # Outer void padding inside the disk universe footprint (for transforms).
-    pad = 2.0
-    outside = (
-        -openmc.ZCylinder(r=r_out_cm + pad)
-        & +openmc.ZCylinder(r=r_out_cm)
-        & _slab(z_bot, z_bot + pitch_cm, conical_pitch_deg)
-    )
-    _add_cell(
-        cells,
-        tracked,
-        materials_dict,
-        material_choice.void,
-        outside,
-        "disk_outer_void",
-    )
+    # No radial pad outside r_out: multi-column layouts place centers 2*r_out
+    # apart, and any outer shell would overlap the neighbor column cell.
 
     return openmc.Universe(cells=cells), dict(tracked), cells
 
 
 def _slice_count(stack_m: float, period_cm: float) -> int:
-    """How many identical pitch-tall slice universes fit in the stack height."""
+    """How many identical pitch-tall slices fit in the engineering stack height."""
     if period_cm <= 0:
         raise ValueError("period_cm must be positive")
     return max(1, int(round((stack_m * 100.0) / period_cm)))
 
 
+def _fuel_mid_local_cm(layout: ZoneLayout) -> Tuple[float, float, float]:
+    """Mid-annulus point of the fuel sector in slice-local cm (fuel on +y)."""
+    r_mid = 0.5 * (layout.r_inner + layout.r_outer) * 100.0
+    return (0.0, r_mid, 0.0)
+
+
+def _rotate_xy(x: float, y: float, rot_deg: float) -> Tuple[float, float]:
+    """Rotate (x, y) by rot_deg about +z (same convention as OpenMC cell.rotation)."""
+    if abs(rot_deg) < 1e-12:
+        return x, y
+    phi = math.radians(rot_deg)
+    c, s = math.cos(phi), math.sin(phi)
+    return c * x - s * y, s * x + c * y
+
+
+def _fuel_mid_world_cm(
+    layout: ZoneLayout,
+    x_m: float,
+    y_m: float,
+    rot_deg: float,
+) -> Tuple[float, float, float]:
+    """World-cm coordinates of the fuel mid-point for one column pose."""
+    lx, ly, lz = _fuel_mid_local_cm(layout)
+    rx, ry = _rotate_xy(lx, ly, rot_deg)
+    return (rx + x_m * 100.0, ry + y_m * 100.0, lz)
+
+
+def _transport_layer_count(
+    period_cm: float,
+    r_out_cm: float,
+    conical_pitch_deg: float,
+) -> Tuple[int, int]:
+    """
+    How many pitch-tall shells to tile for one periodic transport unit cell.
+
+    Matches the paper: the Monte Carlo domain is only one vertical period tall.
+    Extra shells exist so conical layer surfaces still cover that unit cell
+    (including flare at the outer radius). stack_m is NOT the transport height.
+    Returns (n_layers, start_index) where start_index is the unshifted center shell.
+    """
+    if abs(conical_pitch_deg) < 1e-12 or period_cm <= 0:
+        return 1, 0
+    flare = _cone_extra_height(r_out_cm, conical_pitch_deg)
+    lower_z = -period_cm / 2.0 - flare
+    upper_z = period_cm / 2.0 + flare
+    n_above = math.ceil(0.5 - lower_z / period_cm)
+    n_below = math.ceil(0.5 + upper_z / period_cm)
+    n_layers = max(1, int(n_above + n_below + 1))
+    # Same insurance as common_lib.geometry.make_module_stack_surfaces.
+    n_layers *= 2
+    return n_layers, int(n_below)
+
+
 def _build_column_stack_universe(
     slice_universe: openmc.Universe,
     pitch_cm: float,
-    n_slices: int,
+    n_layers: int,
+    start_index: int,
     r_out_cm: float,
     conical_pitch_deg: float,
 ) -> openmc.Universe:
-    """Repeat the same slice universe upward; every vertical layer is identical."""
+    """
+    Tile the shared slice universe for one periodic period.
+
+    Parent cells are named boundary_layer_* so stochastic volume checks skip them
+    (same convention as the paper geometry).
+    """
     z_scale = _z_scaling(conical_pitch_deg)
-    half_mat = n_slices * pitch_cm / 2.0
-    col_cyl = -openmc.ZCylinder(r=r_out_cm + 1.0)
+    # Exact outer radius: centers are 2*R apart, so +padding would overlap neighbors.
+    col_cyl = -openmc.ZCylinder(r=r_out_cm)
+    # Material-z bounds: center shell spans [-pitch/2, +pitch/2].
     surfaces = [
-        _layer_surface(-half_mat + k * pitch_cm, conical_pitch_deg)
-        for k in range(n_slices + 1)
+        _layer_surface(
+            -pitch_cm / 2.0 + (k - start_index) * pitch_cm,
+            conical_pitch_deg,
+        )
+        for k in range(n_layers + 1)
     ]
     stack_cells: List[openmc.Cell] = []
-    for k in range(n_slices):
-        z_center_mat = -half_mat + pitch_cm / 2.0 + k * pitch_cm
+    for k in range(n_layers):
+        z_center_mat = (k - start_index) * pitch_cm
         region = col_cyl & +surfaces[k] & -surfaces[k + 1]
         cell = openmc.Cell(
-            name=f"slice_{k}",
+            name=f"boundary_layer_{k}",
             region=region,
             fill=slice_universe,
         )
@@ -470,9 +586,19 @@ def make_app_slice_geometry(
     period_cm = pitch_cm * z_scale
     n_slices = _slice_count(setup.stack_m, period_cm)
     stack_height_cm = n_slices * period_cm
-    half_stack = stack_height_cm / 2.0
+    half_period = period_cm / 2.0
 
-    # 1) One pitch-tall slice universe (shared by every vertical layer).
+    r_in_cm = layout.r_inner * 100.0
+    r_out_cm = layout.r_outer * 100.0
+    r_mid_cm = 0.5 * (r_in_cm + r_out_cm)
+    use_periodic_cones = abs(conical_pitch_deg) >= 1e-12
+    # Shift so the slice midplane at the fuel radius passes through world z = 0.
+    tan_pitch = math.tan(math.radians(conical_pitch_deg)) if use_periodic_cones else 0.0
+    z_shift = r_mid_cm * tan_pitch
+
+    # Open the fill's outer sheets against the root periodic cones (no second
+    # coincident surface). The hole stays axially bounded so it cannot reach
+    # the cone apex on the axis.
     slice_universe, tracked, _ = _one_disk_universe(
         layout,
         setup.layers,
@@ -480,47 +606,102 @@ def make_app_slice_geometry(
         materials_dict,
         material_choice,
         conical_pitch_deg,
+        open_period=use_periodic_cones,
     )
+    half_bc = half_period
 
-    r_out_cm = layout.r_outer * 100.0
-    # 2) One column = n_slices fills of that same slice universe.
-    column_universe = _build_column_stack_universe(
-        slice_universe,
-        pitch_cm,
-        n_slices,
-        r_out_cm,
-        conical_pitch_deg,
-    )
+    if use_periodic_cones:
+        # One shell. The periodic cones replace the flat-slab layer stack.
+        n_layers = 1
+        column_fill: openmc.Universe = slice_universe
+    else:
+        n_layers, start_index = _transport_layer_count(
+            period_cm, r_out_cm, conical_pitch_deg
+        )
+        column_fill = _build_column_stack_universe(
+            slice_universe,
+            pitch_cm,
+            n_layers,
+            start_index,
+            r_out_cm,
+            conical_pitch_deg,
+        )
 
     poses = column_poses(columns, layout.r_outer)
+    # Put world (0,0,0) at column-0 fuel mid-annulus so the default
+    # IndependentSource Point(0,0,0) starts inside fissionable fuel.
+    ox, oy, _oz = _fuel_mid_world_cm(layout, *poses[0])
+
+    shifted: List[Tuple[float, float, float]] = []
     extent = 0.0
-    for x_m, y_m, _rot in poses:
-        extent = max(extent, math.hypot(x_m, y_m) * 100.0 + r_out_cm)
+    for x_m, y_m, rot_deg in poses:
+        cx = x_m * 100.0 - ox
+        cy = y_m * 100.0 - oy
+        shifted.append((cx, cy, rot_deg))
+        extent = max(extent, math.hypot(cx, cy) + r_out_cm)
     extent += 10.0
 
-    # Periodic over the full stack height (flat ZPlanes, as in the paper).
-    # Layer tilts live on the cones inside slice_universe / column stack.
-    z_low = openmc.ZPlane(z0=-half_stack, boundary_type="periodic")
-    z_high = openmc.ZPlane(z0=half_stack, boundary_type="periodic")
-    z_low.periodic_surface = z_high
+    # Flat pitch keeps periodic planes. A cone pitch puts one periodic z-cone
+    # pair on each column, coaxial with that column. The pair is one period apart.
+    z_low = None
+    z_high = None
+    if not use_periodic_cones:
+        z_low = openmc.ZPlane(z0=-half_period, boundary_type="periodic")
+        z_high = openmc.ZPlane(z0=half_period, boundary_type="periodic")
+        z_low.periodic_surface = z_high
 
-    # 3) Root instantiates the same column_universe once per reactor cylinder.
+    # 3) Root instantiates the column fill once per reactor cylinder.
+    # Column footprints use r_out only — centers are 2*r_out apart (rims touch).
     column_cells: List[openmc.Cell] = []
-    for index, (x_m, y_m, rot_deg) in enumerate(poses):
-        cx, cy = x_m * 100.0, y_m * 100.0
-        col_cyl = -openmc.ZCylinder(x0=cx, y0=cy, r=r_out_cm + 1.0)
-        region = col_cyl & +z_low & -z_high
+    for index, (cx, cy, rot_deg) in enumerate(shifted):
+        col_cyl = -openmc.ZCylinder(x0=cx, y0=cy, r=r_out_cm)
+        if use_periodic_cones:
+            r2 = 1.0 / tan_pitch**2
+            cone_lo = openmc.ZCone(
+                x0=cx,
+                y0=cy,
+                z0=z_shift - half_bc,
+                r2=r2,
+                boundary_type="periodic",
+                name=f"period_lo_{index}",
+            )
+            cone_hi = openmc.ZCone(
+                x0=cx,
+                y0=cy,
+                z0=z_shift + half_bc,
+                r2=r2,
+                boundary_type="periodic",
+                name=f"period_hi_{index}",
+            )
+            cone_lo.periodic_surface = cone_hi
+            # Downward nappe: outside the lower-apex cone and inside the upper one.
+            region = col_cyl & +cone_lo & -cone_hi
+            translation_z = z_shift
+        else:
+            region = col_cyl & +z_low & -z_high
+            translation_z = 0.0
         cell = openmc.Cell(
             name=f"column_{index}",
             region=region,
-            fill=column_universe,
+            fill=column_fill,
         )
-        cell.translation = (cx, cy, 0.0)
+        cell.translation = (cx, cy, translation_z)
         if abs(rot_deg) > 1e-9:
             cell.rotation = (0.0, 0.0, rot_deg)
         column_cells.append(cell)
 
-    world = -openmc.ZCylinder(r=extent, boundary_type="vacuum") & +z_low & -z_high
+    if use_periodic_cones:
+        # The shell droops by R·tan(pitch). Vacuum planes sit just outside it.
+        z_min = (z_shift - half_bc) - r_out_cm * tan_pitch
+        z_max = z_shift + half_bc
+        margin = 1.0
+        z_vac_lo = openmc.ZPlane(z0=z_min - margin, boundary_type="vacuum")
+        z_vac_hi = openmc.ZPlane(z0=z_max + margin, boundary_type="vacuum")
+        world = -openmc.ZCylinder(r=extent, boundary_type="vacuum") & +z_vac_lo & -z_vac_hi
+        bound_z = (z_min - margin, z_max + margin)
+    else:
+        world = -openmc.ZCylinder(r=extent, boundary_type="vacuum") & +z_low & -z_high
+        bound_z = (-half_period, half_period)
     columns_union = column_cells[0].region
     for cell in column_cells[1:]:
         columns_union = columns_union | cell.region
@@ -532,29 +713,39 @@ def make_app_slice_geometry(
     root = openmc.Universe(cells=[*column_cells, void_cell])
     geometry = openmc.Geometry(root, merge_surfaces=True, surface_precision=5)
 
+    # Sheet volumes above are for one column. Each column instantiates the same cells.
+    seen: set[int] = set()
+    for cell_list in tracked.values():
+        for cell in cell_list:
+            ident = id(cell)
+            if cell.volume is None or ident in seen:
+                continue
+            cell.volume *= columns
+            seen.add(ident)
+
     for name in material_choice.model_dump().values():
         tracked.setdefault(name, [])
 
+    axial = "periodic z-cones" if use_periodic_cones else f"{n_layers}× boundary_layer"
     print(
-        f"App-slice stack: {n_slices}× shared slice_universe "
-        f"(material pitch {pitch_cm:.3f} cm, conical_pitch {conical_pitch_deg}°, "
-        f"vertical period {period_cm:.3f} cm) inside one column_universe; "
-        f"{columns}× column_universe instance(s); "
-        f"stack height {stack_height_cm:.3f} cm"
+        f"App-slice transport: {axial} "
+        f"over one period {period_cm:.3f} cm "
+        f"(material pitch {pitch_cm:.3f} cm, conical_pitch {conical_pitch_deg}°); "
+        f"{columns}× column(s); engineering stack {stack_height_cm:.3f} cm "
+        f"({n_slices} periods from stack_m); "
+        f"origin = column-0 fuel mid (shift {-ox:.3f}, {-oy:.3f}, 0) cm"
     )
 
-    # Bounding box grows with cone flare at the outer radius.
-    flare = _cone_extra_height(extent, conical_pitch_deg)
-    ll = (-extent, -extent, -half_stack - flare)
-    ur = (extent, extent, half_stack + flare)
+    ll = (-extent, -extent, bound_z[0])
+    ur = (extent, extent, bound_z[1])
     return MakeAppSliceGeometryResult(
         geometry=geometry,
         universe=root,
         tracked_cells=tracked,
         bounding_box=(ll, ur),
         render_radius=extent,
-        render_height=(stack_height_cm + 2.0 * flare) * 1.05,
-        render_origin=(0.0, 0.0, 0.0),
+        render_height=(bound_z[1] - bound_z[0]) * 1.05,
+        render_origin=(0.0, 0.0, 0.5 * (bound_z[0] + bound_z[1])),
         layout=layout,
         pitch_cm=pitch_cm,
         fuel_thickness_cm=fuel_thickness_cm,

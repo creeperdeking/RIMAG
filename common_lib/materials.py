@@ -202,6 +202,79 @@ def borated_water_atom_proportions_from_boron_ppm(
     ]
 
 
+def graphite_boron_weight_fractions(boron_ppm: float) -> tuple[float, float]:
+    """Carbon and elemental-boron weight fractions for graphite doped at ``boron_ppm``.
+
+    ppm is parts per million by mass. The fractions sum to 1. Zero ppm is pure
+    carbon. A value at or above 1e6 ppm would be pure boron, which is rejected.
+    """
+    if boron_ppm < 0:
+        raise ValueError(f"Boron concentration must be >= 0 ppm. Got {boron_ppm} ppm.")
+    weight_boron = boron_ppm / 1_000_000.0
+    if weight_boron >= 1.0:
+        raise ValueError(
+            f"Boron concentration must be below 1e6 ppm so the material stays graphite. "
+            f"Got {boron_ppm} ppm."
+        )
+    return 1.0 - weight_boron, weight_boron
+
+
+def graphite_material_base_name(name: str) -> str:
+    """'Graphite' for 'Graphite' and 'Graphite 2'; other names are unchanged."""
+    base, _, suffix = name.rpartition(" ")
+    if suffix.isdigit():
+        return base
+    return name
+
+
+def apply_boron_ppm_to_fuel_graphite(
+    materials_dict: Dict[str, object],
+    material_choice: MaterialChoice,
+    boron_ppm: float,
+    colors: Optional[Dict] = None,
+) -> None:
+    """Replace the fuel-layer graphite with the same graphite plus boron.
+
+    Only ``material_choice.fuel_cladding`` is changed, and only when that
+    material is graphite. Reflector, disk, and shield copies stay pure carbon.
+    Non-positive ppm leaves the material untouched.
+    """
+    ppm = float(boron_ppm)
+    if ppm <= 0:
+        return
+    weight_carbon, weight_boron = graphite_boron_weight_fractions(ppm)
+
+    name = material_choice.fuel_cladding
+    if graphite_material_base_name(name) != "Graphite":
+        print(
+            f"Boron concentration {ppm:g} ppm ignored: "
+            f"fuel-layer material is '{name}', not graphite."
+        )
+        return
+    if name not in materials_dict:
+        raise ValueError(f"Fuel-layer graphite '{name}' is not in materials_dict")
+
+    import openmc
+
+    old = materials_dict[name]
+    spec = _MATERIAL_SPECS.get("Graphite")
+    density = spec.density if spec is not None else 1.82
+    scattering = spec.scattering if spec is not None and spec.scattering else "c_Graphite"
+
+    doped = openmc.Material(name=name)
+    doped.add_element("C", weight_carbon, percent_type="wo")
+    doped.add_element("B", weight_boron, percent_type="wo")
+    doped.add_s_alpha_beta(scattering)
+    doped.set_density("g/cm3", density)
+    materials_dict[name] = doped
+    if colors is not None and old in colors:
+        colors[doped] = colors.pop(old)
+    print(
+        f"Fuel-layer graphite '{name}': {ppm:g} ppm boron by mass "
+        f"(density {density} g/cm3, {scattering})."
+    )
+
+
 def heavy_metal_density(mat, elements=None, z_min=90):
     """
     Return the heavy-metal mass density of an OpenMC Material in g/cm^3.

@@ -4,6 +4,7 @@ import openmc
 import openmc.deplete
 import os
 import time
+from pathlib import Path
 from typing import List, Dict, Literal
 from tabulate import tabulate
 import json
@@ -249,42 +250,100 @@ def run_sim(geometry, settings, materials_dict, tallies=None, quiet=False):
     # clean_directory()
 
 
-WeightWindows = Literal["generate", "use", "no"]
+WeightWindows = Literal["generate", "use", "no", "seed", "refine"]
+
+WW_META_FILE = "weight_windows_meta.json"
+WW_FILE = "weight_windows.h5"
 
 
 def make_ww_mesh(
     lower_left_corner: tuple,
     upper_right_corner: tuple,
-    cell_dimension: float = 20,
+    cell_dimension: float = 10.0,
 ):
+    cell = max(0.5, float(cell_dimension))
     ww_mesh = openmc.RegularMesh()
     dimension_x = max(
-        int((upper_right_corner[0] - lower_left_corner[0]) / cell_dimension), 1
+        int(math.ceil((upper_right_corner[0] - lower_left_corner[0]) / cell)), 1
     )
-    dimension_y = dimension_x
+    dimension_y = max(
+        int(math.ceil((upper_right_corner[1] - lower_left_corner[1]) / cell)), 1
+    )
     dimension_z = max(
-        int((upper_right_corner[2] - lower_left_corner[2]) / cell_dimension), 1
+        int(math.ceil((upper_right_corner[2] - lower_left_corner[2]) / cell)), 1
     )
     ww_mesh.dimension = (dimension_x, dimension_y, dimension_z)
     ww_mesh.lower_left = lower_left_corner
     ww_mesh.upper_right = upper_right_corner
+    print(
+        f"Weight-window mesh {ww_mesh.dimension} "
+        f"(~{cell:.2f} cm cells over "
+        f"[{lower_left_corner[0]:.1f},{upper_right_corner[0]:.1f}] × "
+        f"[{lower_left_corner[1]:.1f},{upper_right_corner[1]:.1f}] × "
+        f"[{lower_left_corner[2]:.1f},{upper_right_corner[2]:.1f}] cm)"
+    )
     return ww_mesh
 
 
+def ww_energy_bounds(n_groups: int) -> np.ndarray:
+    """Log-spaced neutron energy group edges from 1e-5 eV to 20 MeV."""
+    groups = max(1, int(n_groups))
+    return np.logspace(-5.0, math.log10(2.0e7), groups + 1)
+
+
+def write_ww_meta(
+    *,
+    pass_kind: str,
+    mesh_cm: float,
+    energy_groups: int,
+    batches: int,
+) -> None:
+    """Record how weight_windows.h5 was produced (read by the Simulation tab)."""
+    previous = 0
+    path = Path(WW_META_FILE)
+    if path.is_file():
+        try:
+            previous = int(json.loads(path.read_text(encoding="utf-8")).get("passes", 0))
+        except (json.JSONDecodeError, TypeError, ValueError):
+            previous = 0
+    passes = previous + 1 if pass_kind == "refine" else 1
+    payload = {
+        "passes": passes,
+        "last_pass": pass_kind,
+        "mesh_cm": float(mesh_cm),
+        "energy_groups": int(energy_groups),
+        "batches": int(batches),
+        "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "file": WW_FILE,
+    }
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    print(
+        f"Weight windows: {pass_kind} pass #{passes} → {WW_FILE} "
+        f"(mesh {mesh_cm:g} cm, {energy_groups} energy groups)"
+    )
+
+
 def check_ww_mesh_is_inside_geometry(mesh, geometry):
-    # geometry extents
-    ll_geom, ur_geom = geometry.bounding_box  # returns 2×3 array (x,y,z)
-    # :contentReference[oaicite:0]{index=0}
-
-    # does every coordinate lie inside the mesh?
-    inside = np.all(mesh.lower_left <= ll_geom) and np.all(mesh.upper_right >= ur_geom)
-
+    # App-slice vacuum planes leave OpenMC's auto bbox at ±inf in z.
+    # Compare only finite coordinates against the mesh we built from bounding_box.
+    ll_geom = np.asarray(geometry.bounding_box[0], dtype=float)
+    ur_geom = np.asarray(geometry.bounding_box[1], dtype=float)
+    mesh_ll = np.asarray(mesh.lower_left, dtype=float)
+    mesh_ur = np.asarray(mesh.upper_right, dtype=float)
+    finite = np.isfinite(ll_geom) & np.isfinite(ur_geom)
+    if not np.any(finite):
+        print("Weight-window mesh: geometry bbox is unbounded; using the run bounding box")
+        return
+    inside = bool(
+        np.all(mesh_ll[finite] <= ll_geom[finite])
+        and np.all(mesh_ur[finite] >= ur_geom[finite])
+    )
     if inside:
-        print("✅  mesh covers the whole geometry")
+        print("✅  mesh covers the finite geometry extents")
     else:
         print("❌  mesh misses part of the geometry")
-        print("    geometry ll:", ll_geom, "  mesh ll:", mesh.lower_left)
-        print("    geometry ur:", ur_geom, "  mesh ur:", mesh.upper_right)
+        print("    geometry ll:", ll_geom, "  mesh ll:", mesh_ll)
+        print("    geometry ur:", ur_geom, "  mesh ur:", mesh_ur)
 
 
 def make_sim_settings(
@@ -296,25 +355,40 @@ def make_sim_settings(
     geometry: openmc.Geometry = None,
     particle_type: Literal["neutron", "photon"] = "neutron",
     survival_biasing: bool = True,
+    ww_mesh_cm: float = 10.0,
+    ww_energy_groups: int = 10,
 ):
     # Define neutron source
     source = openmc.IndependentSource(space=openmc.stats.Point((0, 0, 0)))
     # Define simulation settings
     settings = openmc.Settings()
-    settings.volume_normalized_flux_tallies = False
     settings.inactive = 10
     settings.max_history_splits = 5000  # cap long histories
     UPDATE_INTERVAL = 8
-    WEIGHT_WINDOWS_BATCHES = int(
-        batches / 10
-    )  # 30 * UPDATE_INTERVAL + settings.inactive
     settings.photon_transport = particle_type == "photon"
     settings.source = source
-    if weight_windows == "generate":
-        settings.batches = WEIGHT_WINDOWS_BATCHES
+    building_ww = weight_windows in ("generate", "seed", "refine")
+    # Seed/refine use fixed source: MAGIC only needs flux shape, and eigenvalue
+    # fission sites amplify periodic-cone find() failures.
+    if building_ww:
+        settings.run_mode = "fixed source"
+        settings.inactive = 0
+        ww_batches = max(2 * UPDATE_INTERVAL, 16)
+        if int(batches) > ww_batches:
+            ww_batches = int(batches)
+        settings.batches = ww_batches
+        WEIGHT_WINDOWS_BATCHES = settings.batches
     else:
+        WEIGHT_WINDOWS_BATCHES = max(8, int(batches / 10))
         settings.batches = batches
-    print("batches", settings.batches)
+    print(
+        f"batches {settings.batches}"
+        + (
+            f" (fixed-source WW, all {settings.batches} active)"
+            if building_ww
+            else ""
+        )
+    )
 
     settings.particles = 10000
     settings.generations_per_batch = 10
@@ -331,32 +405,64 @@ def make_sim_settings(
     settings.rel_max_lost_particles = 0.01
     settings.confidence_intervals = True
 
-    if 1/(settings.particles * settings.generations_per_batch) >= 1/(math.sqrt(settings.batches)):
+    gen_per_batch = 1 if building_ww else settings.generations_per_batch
+    if 1 / (settings.particles * gen_per_batch) >= 1 / (math.sqrt(settings.batches)):
         raise ValueError("The number of particles per generation per batch is too low to achieve the desired confidence interval. Increase the number of particles per generation per batch or increase the number of batches.")
 
     if not deterministic:
         settings.seed = int(time.time())
 
-    if weight_windows == "generate":
-        ww_mesh = make_ww_mesh(lower_left_corner, upper_right_corner)
-        check_ww_mesh_is_inside_geometry(ww_mesh, geometry)
-
-        wwg = openmc.WeightWindowGenerator(
-            method="magic",  # or 'fw_cadis'
-            mesh=ww_mesh,
-            max_realizations=WEIGHT_WINDOWS_BATCHES,  # usually = # of batches
-            update_interval=UPDATE_INTERVAL,
+    if building_ww:
+        # Seed/refine are for window shape, not final tallies: fewer histories
+        # and a coarser mesh keep runtime hours → minutes.
+        settings.particles = min(settings.particles, 2000)
+        settings.rel_max_lost_particles = 0.05
+        ww_mesh = make_ww_mesh(
+            lower_left_corner, upper_right_corner, cell_dimension=ww_mesh_cm
         )
-
+        check_ww_mesh_is_inside_geometry(ww_mesh, geometry)
+        wwg = openmc.WeightWindowGenerator(
+            method="magic",
+            mesh=ww_mesh,
+            energy_bounds=ww_energy_bounds(ww_energy_groups),
+            max_realizations=max(1, settings.batches),
+            update_interval=UPDATE_INTERVAL,
+            on_the_fly=True,
+        )
         settings.weight_window_generators = wwg
+        if weight_windows == "refine":
+            if not Path(WW_FILE).is_file():
+                raise FileNotFoundError(
+                    f"{WW_FILE} not found. Run a seed pass before refine."
+                )
+            # Apply the previous windows while MAGIC regenerates deeper ones.
+            settings.weight_window_checkpoints = {
+                "collision": True,
+                "surface": False,
+            }
+            settings.weight_windows_on = True
+            settings.weight_windows = openmc.hdf5_to_wws(WW_FILE)
+            settings.survival_biasing = False
+            settings.cutoff = {"weight": 1e-4, "weight_avg": 1.0}
+            print(f"Weight windows: refining from existing {WW_FILE}")
+        else:
+            print("Weight windows: seeding MAGIC from analog transport")
+        print(
+            f"Weight windows: {settings.particles} particles/batch, "
+            f"rel_max_lost={settings.rel_max_lost_particles}"
+        )
     elif weight_windows == "use":
+        if not Path(WW_FILE).is_file():
+            raise FileNotFoundError(
+                f"{WW_FILE} not found. Seed (and refine) weight windows first."
+            )
         settings.weight_window_checkpoints = {
             "collision": True,
             "surface": False,
-        }  # apply at both
+        }
         settings.weight_windows_on = True
-        settings.weight_windows = openmc.hdf5_to_wws("weight_windows.h5")
-        settings.survival_biasing = False  # usually disable; WW handles weights
+        settings.weight_windows = openmc.hdf5_to_wws(WW_FILE)
+        settings.survival_biasing = False  # WW handles weights
         settings.cutoff = {"weight": 1e-4, "weight_avg": 1.0}  # RR safety
 
     return settings
@@ -400,7 +506,13 @@ def run_keff_sim(
     quiet: bool = True,
 ):
     print()
-    print("-------- Criticality simulation --------")
+    mode = getattr(settings, "run_mode", None) or "eigenvalue"
+    title = (
+        "Fixed-source simulation"
+        if str(mode).startswith("fixed")
+        else "Criticality simulation"
+    )
+    print(f"-------- {title} --------")
     print()
     print("Seed :", settings.seed, "\n")
     run_sim(geometry, settings, materials_dict, quiet=quiet)
@@ -450,7 +562,10 @@ def stochastic_volume_calculation(
     """
     Stochastic volume calculation, adds volume information to the cells
     """
-    if any(c.volume is None for c in cells):
+    # Annulus sheets already carry an exact volume. Sampling them inside the
+    # tilted-shell box misses thin gaps (a 0.05 cm absorber void is ~1e-5 of the box).
+    pending = [cell for cell in cells if cell.volume is None]
+    if pending:
         if bounding_box is not None:
             lower_left_corner, upper_right_corner = bounding_box
         else:
@@ -459,7 +574,7 @@ def stochastic_volume_calculation(
             )
         # 1e5 samples per cell is usually enough for <1 % error
         volcalc = openmc.VolumeCalculation(
-            domains=cells,
+            domains=pending,
             samples=samples,
             lower_left=lower_left_corner,
             upper_right=upper_right_corner,
@@ -473,14 +588,23 @@ def stochastic_volume_calculation(
         # Read uncertainty directly from HDF5 file
         all_ok = True
         with h5py.File("volume_1.h5", "r") as f:
-            for cell in cells:
+            for cell in pending:
                 cell_id = cell.id
                 vol_data = f[f"domain_{cell_id}/volume"][:]
                 volume = vol_data[0]
                 std_dev = vol_data[1]
                 rel_uncertainty = std_dev / volume * 100 if volume > 0 else float("inf")
-                if rel_uncertainty == float("inf") or "boundary_layer" in cell.name:
-                    # Ignore this cell, set its volume to zero
+                # Universe fills (boundary_layer / column parents) are not used for mass;
+                # their regions can be thin wedges of a large sample box.
+                fill = cell.fill
+                is_universe_fill = fill is not None and not isinstance(
+                    fill, openmc.Material
+                )
+                if (
+                    rel_uncertainty == float("inf")
+                    or "boundary_layer" in (cell.name or "")
+                    or is_universe_fill
+                ):
                     cell.volume = 0.0
                     continue
                 if rel_uncertainty > 5.0:
@@ -696,90 +820,96 @@ def run_sim_with_tallies(
     dose_time: float,
     particle_type: Literal["neutron", "photon"] = "neutron",
     monitored_nuclide: MonitoredNuclide = None,
+    ddd_tallies_only: bool = False,
 ):
-    tally_photovoltaic = create_photovoltaic_heating_absorption_tally(
-        photovoltaic_cells, particle_type, monitored_nuclide
-    )
     photovoltaic_flux_tally = create_photovoltaic_flux_tally(
         photovoltaic_cells, particle_type
     )
-    tally_tritium_production_moderator = create_tritium_production_tally(
-        moderator_cells, suffix="_moderator"
-    )
-    tally_tritium_production_shield = create_tritium_production_tally(
-        shield_moderator_cells, suffix="_shield_moderator"
-    )
-    tally_tritium_production_coolant = create_tritium_production_tally(
-        coolant_cells, suffix="_coolant"
-    )
-    tally_C14_production_moderator = create_C14_production_tally(
-        moderator_cells, suffix="_moderator"
-    )
-    tally_C14_production_shield = create_C14_production_tally(
-        shield_moderator_cells, suffix="_shield_moderator"
-    )
-    tally_C14_production_coolant = create_C14_production_tally(
-        coolant_cells, suffix="_coolant"
-    )
-    tally_O16_activation_moderator = create_O16_activation_tally(
-        moderator_cells, suffix="_moderator"
-    )
-    tally_O16_activation_shield = create_O16_activation_tally(
-        shield_moderator_cells, suffix="_shield_moderator"
-    )
-    tally_O16_activation_coolant = create_O16_activation_tally(
-        coolant_cells, suffix="_coolant"
-    )
-    t_flux, t_nufi, t_Enufi = create_fission_energy_weighted_flux_tally(fuel_cells)
-    tally_emitter = create_emitter_tally(
-        emitter_cells, materials_dict, particle_type, monitored_nuclide
-    )
-    tally_photovoltaic_flux_band = create_flux_band_tally(
-        photovoltaic_cells, "phi_E_photovoltaic"
-    )
-    t_heat_cells, t_heat_total, t_kapf_total = create_energy_deposition_tallies(
-        heat_deposition_cells, use_heating_local=particle_type != "photon"
-    )
-    dpa_emitter = create_dpa_tally(emitter_cells, suffix="_emitter")
-    t_heat_moderator_cells, t_heat_moderator_total, t_kapf_moderator_total = (
-        create_energy_deposition_tallies(
-            moderator_cells,
-            use_heating_local=particle_type != "photon",
-            tally_prefix="dep_moderator_",
-        )
-    )
-    # IFP tally: no filters -> global; three scores in one tally
-    tally_ifp = openmc.Tally(name="ifp-scores")
-    tally_ifp.scores = ["ifp-time-numerator", "ifp-beta-numerator", "ifp-denominator"]
 
-    tallies = openmc.Tallies(
-        [
-            tally_photovoltaic,
-            photovoltaic_flux_tally,
-            tally_emitter,
-            tally_ifp,
-            t_flux,
-            t_nufi,
-            t_Enufi,
-            tally_photovoltaic_flux_band,
-            t_heat_cells,
-            t_heat_total,
-            t_kapf_total,
-            t_heat_moderator_cells,
-            t_heat_moderator_total,
-            t_kapf_moderator_total,
-            tally_tritium_production_moderator,
-            tally_tritium_production_shield,
-            tally_tritium_production_coolant,
-            tally_C14_production_moderator,
-            tally_C14_production_shield,
-            tally_C14_production_coolant,
-            tally_O16_activation_moderator,
-            tally_O16_activation_shield,
-            tally_O16_activation_coolant,
-            dpa_emitter,
-        ]
-    )
+    if ddd_tallies_only:
+        print("Tallies: photovoltaic DDD only (SR-NIEL flux on InGaAs cells).")
+        tallies = openmc.Tallies([photovoltaic_flux_tally])
+    else:
+        tally_photovoltaic = create_photovoltaic_heating_absorption_tally(
+            photovoltaic_cells, particle_type, monitored_nuclide
+        )
+        tally_tritium_production_moderator = create_tritium_production_tally(
+            moderator_cells, suffix="_moderator"
+        )
+        tally_tritium_production_shield = create_tritium_production_tally(
+            shield_moderator_cells, suffix="_shield_moderator"
+        )
+        tally_tritium_production_coolant = create_tritium_production_tally(
+            coolant_cells, suffix="_coolant"
+        )
+        tally_C14_production_moderator = create_C14_production_tally(
+            moderator_cells, suffix="_moderator"
+        )
+        tally_C14_production_shield = create_C14_production_tally(
+            shield_moderator_cells, suffix="_shield_moderator"
+        )
+        tally_C14_production_coolant = create_C14_production_tally(
+            coolant_cells, suffix="_coolant"
+        )
+        tally_O16_activation_moderator = create_O16_activation_tally(
+            moderator_cells, suffix="_moderator"
+        )
+        tally_O16_activation_shield = create_O16_activation_tally(
+            shield_moderator_cells, suffix="_shield_moderator"
+        )
+        tally_O16_activation_coolant = create_O16_activation_tally(
+            coolant_cells, suffix="_coolant"
+        )
+        t_flux, t_nufi, t_Enufi = create_fission_energy_weighted_flux_tally(fuel_cells)
+        tally_emitter = create_emitter_tally(
+            emitter_cells, materials_dict, particle_type, monitored_nuclide
+        )
+        tally_photovoltaic_flux_band = create_flux_band_tally(
+            photovoltaic_cells, "phi_E_photovoltaic"
+        )
+        t_heat_cells, t_heat_total, t_kapf_total = create_energy_deposition_tallies(
+            heat_deposition_cells, use_heating_local=particle_type != "photon"
+        )
+        dpa_emitter = create_dpa_tally(emitter_cells, suffix="_emitter")
+        t_heat_moderator_cells, t_heat_moderator_total, t_kapf_moderator_total = (
+            create_energy_deposition_tallies(
+                moderator_cells,
+                use_heating_local=particle_type != "photon",
+                tally_prefix="dep_moderator_",
+            )
+        )
+        # IFP tally: no filters -> global; three scores in one tally
+        tally_ifp = openmc.Tally(name="ifp-scores")
+        tally_ifp.scores = ["ifp-time-numerator", "ifp-beta-numerator", "ifp-denominator"]
+
+        tallies = openmc.Tallies(
+            [
+                tally_photovoltaic,
+                photovoltaic_flux_tally,
+                tally_emitter,
+                tally_ifp,
+                t_flux,
+                t_nufi,
+                t_Enufi,
+                tally_photovoltaic_flux_band,
+                t_heat_cells,
+                t_heat_total,
+                t_kapf_total,
+                t_heat_moderator_cells,
+                t_heat_moderator_total,
+                t_kapf_moderator_total,
+                tally_tritium_production_moderator,
+                tally_tritium_production_shield,
+                tally_tritium_production_coolant,
+                tally_C14_production_moderator,
+                tally_C14_production_shield,
+                tally_C14_production_coolant,
+                tally_O16_activation_moderator,
+                tally_O16_activation_shield,
+                tally_O16_activation_coolant,
+                dpa_emitter,
+            ]
+        )
     run_sim(geometry, settings, materials_dict, tallies, quiet=True)
     print_tallies(
         source_strength,
@@ -790,6 +920,7 @@ def run_sim_with_tallies(
         electric_power,
         batches,
         dose_time,
+        ddd_tallies_only=ddd_tallies_only,
     )
 
     # clean_directory()

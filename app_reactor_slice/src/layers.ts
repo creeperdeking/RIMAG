@@ -73,15 +73,9 @@ export function applyTrisoFuel(
   };
 }
 
-export function setupFromState(
-  numeric: Omit<Setup, "layers" | "reload_fraction" | "dims"> & {
-    reload_fraction: Setup["reload_fraction"];
-    dims: boolean;
-  },
-  groups: Groups,
-): Setup {
+export function setupFromState(setup: Setup, groups: Groups): Setup {
   return {
-    ...numeric,
+    ...setup,
     layers: Object.fromEntries(
       (Object.keys(LAYER_TITLES) as LayerGroupId[]).map((id) => [
         id,

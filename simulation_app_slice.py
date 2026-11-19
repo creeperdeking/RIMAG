@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import sys
+from pathlib import Path
 
 from app_slice_design.geometry import make_app_slice_geometry
 from app_slice_design.materials_map import (
@@ -10,8 +12,9 @@ from app_slice_design.materials_map import (
     ensure_materials_available,
     material_choice_from_setup,
 )
+from app_slice_design.plot_defaults import write_plot_defaults
 from app_slice_design.setup import load_app_slice_run_config
-from common_lib.materials import make_materials
+from common_lib.materials import apply_boron_ppm_to_fuel_graphite, make_materials
 from common_lib.runlib import start_program
 from one_layer_disk_design.disks_core_characteristics import (
     calculate_disk_core_characteristics,
@@ -31,19 +34,32 @@ def main(argv: list[str] | None = None) -> None:
     print("App-slice simulation parameters:")
     print(f"run_mode: {sim.run_mode}")
     print(f"n_batches: {sim.n_batches}")
+    print(f"n_threads: {sim.n_threads}")
     print(f"nsm_material: {sim.nsm_material}")
     print(f"nsm_thickness: {sim.nsm_thickness}")
     print(f"conical_pitch: {sim.conical_pitch}")
     print(f"particle_type: {sim.particle_type}")
     print(f"weight_windows: {sim.weight_windows}")
+    print(f"ww_mesh_cm: {sim.ww_mesh_cm}")
+    print(f"ww_energy_groups: {sim.ww_energy_groups}")
+    print(f"survival_biasing: {sim.survival_biasing}")
     print(f"dose_time: {sim.dose_time}")
     print(f"print_core_characteristics: {sim.print_core_characteristics}")
+    print(f"boron_concentration_ppm: {sim.boron_concentration_ppm}")
+    print(f"ddd_tallies_only: {sim.ddd_tallies_only}")
     print(f"columns: {setup.columns}")
     print(f"enrichment_pct: {setup.enrichment_pct}")
     print(f"fuel_temp_c: {setup.fuel_temp_c}")
     print(f"tpv_density: {setup.tpv_density}")
     print(f"tpv_eff_pct: {setup.tpv_eff_pct}")
     print("--------------------------------")
+
+    # Ensure OpenMC picks up the UI thread count (simlib reads simsettings.json).
+    threads = max(1, min(256, int(sim.n_threads)))
+    Path("simsettings.json").write_text(
+        f"{json.dumps({'threads': threads}, indent=2)}\n",
+        encoding="utf-8",
+    )
 
     material_choice = material_choice_from_setup(setup, sim.nsm_material)
     # Equivalent enrichment is applied in the paper script; here use the slider enrichment.
@@ -56,12 +72,19 @@ def main(argv: list[str] | None = None) -> None:
         moderator_density=1.0,
         gadolinium_oxide_in_fuel_proportion=0.0,
     )
+    apply_boron_ppm_to_fuel_graphite(
+        materials_dict,
+        material_choice,
+        sim.boron_concentration_ppm,
+        colors,
+    )
     ensure_materials_available(
         materials_dict,
         collect_material_names(setup, sim.nsm_material),
     )
 
     geom = make_app_slice_geometry(config, materials_dict, material_choice)
+    write_plot_defaults(geom.bounding_box, origin=geom.render_origin)
 
     print(
         f"Geometry: pitch={geom.pitch_cm:.3f} cm, "
@@ -96,6 +119,10 @@ def main(argv: list[str] | None = None) -> None:
         geometry_settings=None,
         batches=int(sim.n_batches),
         weight_windows=sim.weight_windows,
+        survival_biasing=sim.survival_biasing,
+        ww_mesh_cm=sim.ww_mesh_cm,
+        ww_energy_groups=sim.ww_energy_groups,
+        ddd_tallies_only=sim.ddd_tallies_only,
         particle_type=sim.particle_type,
         tracked_cells=geom.tracked_cells,
         material_choice=material_choice,

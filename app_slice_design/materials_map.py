@@ -104,18 +104,33 @@ def shared_stack_thickness_cm(setup: AppSliceSetup) -> float:
 
 
 def fuel_and_tpv_thickness_cm(setup: AppSliceSetup) -> tuple[float, float]:
+    """
+    Thicknesses used as volume/thickness → face area in core characteristics.
+
+    Fuel: total UO2 thickness (usually one slab; emissive area then ×2 for both faces).
+    TPV: thickness of a *single* InGaAs sheet. Both faces are separate cells whose
+    volumes are summed; dividing by the summed sheet thickness would under-count
+    area by ~2× vs the website's ``2 * density * TPV_area``.
+    """
     fuel_cm = 0.0
     for row in setup.layers.get("fuel", []):
         if resolve_material_name(row.name) == "Uranium Dioxide":
             fuel_cm += row.cm
     if fuel_cm <= 0:
         fuel_cm = setup.cylinder_diameter_mm / 10.0
-    tpv_cm = 0.0
-    for row in setup.layers.get("tpv", []):
-        if resolve_material_name(row.name) == "InGaAs":
-            tpv_cm += row.cm
-    if tpv_cm <= 0:
+    tpv_sheets = [
+        row.cm
+        for row in setup.layers.get("tpv", [])
+        if resolve_material_name(row.name) == "InGaAs" and row.cm > 0
+    ]
+    if not tpv_sheets:
         tpv_cm = 0.02
+    elif max(tpv_sheets) - min(tpv_sheets) > 1e-6:
+        # Differing sheet thicknesses: use volume-weighted mean so
+        # sum(V_i) / t_mean ≈ sum(V_i / t_i) when areas are similar.
+        tpv_cm = sum(tpv_sheets) / len(tpv_sheets)
+    else:
+        tpv_cm = tpv_sheets[0]
     return fuel_cm, tpv_cm
 
 
