@@ -35,6 +35,16 @@ export function groupThicknesses(groups: Groups): Array<[string, number]> {
   });
 }
 
+/** Solid disk thickness for Modelica (excludes Void / He gaps). */
+export function solidDiskThicknessCm(diskLayers: LayerRow[] | undefined): number {
+  const rows = diskLayers ?? [];
+  const solid = rows.filter((row) => String(row.name ?? "").trim().toLowerCase() !== "void");
+  const sum = solid.reduce((total, row) => total + row.cm, 0);
+  if (sum > 0) return sum;
+  const total = rows.reduce((acc, row) => acc + row.cm, 0);
+  return total > 0 ? total : 0.8;
+}
+
 export function sharedThickness(totals: Array<[string, number]>): number | null {
   const rounded = new Set(totals.map(([, cm]) => Math.round(cm * 100) / 100));
   if (rounded.size !== 1) return null;

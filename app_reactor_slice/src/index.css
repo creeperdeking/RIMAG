@@ -47,37 +47,35 @@ h1, h2, .fw-semibold {
 }
 
 .app-shell {
-  display: flex;
-  align-items: stretch;
   min-height: 100vh;
-}
-
-.app-sidebar {
-  width: 21rem;
-  flex: 0 0 21rem;
-  min-height: 100vh;
-  padding: 1.15rem 1rem 1.5rem;
-  background: #f0f2f6;
-  border-right: 1px solid rgba(49, 51, 63, 0.12);
 }
 
 .app-main {
   position: relative;
-  flex: 1 1 auto;
   min-width: 0;
   padding: 0.65rem 1.35rem 1.5rem;
   background: #fff;
 }
 
+.app-main-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.35rem;
+  min-height: 2rem;
+}
+
 .config-toolbar {
-  position: absolute;
-  top: 0.55rem;
-  right: 1.35rem;
-  z-index: 5;
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  max-width: min(22rem, calc(100% - 2rem));
+  flex: 0 1 auto;
+  max-width: min(22rem, 100%);
+}
+
+.geometry-controls {
+  background: #f0f2f6;
 }
 
 .config-toolbar-select {
@@ -113,7 +111,7 @@ h1, h2, .fw-semibold {
 }
 
 .app-main-tabs > .nav {
-  padding-right: 14rem;
+  padding-right: 0;
 }
 
 .form-range {
@@ -152,15 +150,13 @@ h1, h2, .fw-semibold {
   margin-bottom: 0.15rem;
 }
 
-@media (max-width: 991px) {
-  .app-shell {
-    flex-direction: column;
-  }
+/* Geometry-tab sidebar controls stay compact inside the main pane. */
+.app-main .geometry-controls.controls .control-slider {
+  margin-bottom: 0.3rem;
+}
 
-  .app-sidebar {
-    width: 100%;
-    flex-basis: auto;
-  }
+.app-main .geometry-controls.controls .control-slider .form-label {
+  margin-bottom: 0;
 }
 
 .line-chart-key {
@@ -576,4 +572,21 @@ button.simulation-run-list-item {
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.rimael-fuel-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 40rem;
+}
+
+.rimael-chart-label {
+  font-size: 10px;
+  fill: #6c757d;
+}
+
+.rimael-chart-axis {
+  font-size: 11px;
+  fill: #495057;
 }

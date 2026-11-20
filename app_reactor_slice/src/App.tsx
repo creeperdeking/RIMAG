@@ -5,6 +5,7 @@ import CompactSection from "./components/CompactSection";
 import LayerChart from "./components/LayerChart";
 import LayerEditor from "./components/LayerEditor";
 import SimulationTab from "./components/SimulationTab";
+import ThermodynamicTab from "./components/ThermodynamicTab";
 import VisualisationTab from "./components/VisualisationTab";
 import ZoneChart, { columnPoses } from "./components/ZoneChart";
 import { LAYER_GROUPS, LAYER_MATCH_NOTE, TAB_KEYS, type LayerGroupId, type TabKey } from "./constants";
@@ -27,6 +28,7 @@ import {
   sameMaterialNames,
   setupFromState,
   sharedThickness,
+  solidDiskThicknessCm,
   thicknessWarning,
   type Groups,
 } from "./layers";
@@ -40,7 +42,7 @@ const TAB_LABELS: Record<TabKey, string> = {
   fuel: "Fuel setup",
   designer: "Layer designer",
   thermodynamic: "Thermodynamic",
-  simulation: "Simulation",
+  simulation: "Neutronics",
   visualisation: "Visualisation",
 };
 
@@ -421,6 +423,8 @@ const Explorer: React.FC = () => {
     params.set("tpv_density", setup.tpv_density.toFixed(2));
     params.set("tpv_eff_pct", setup.tpv_eff_pct.toFixed(0));
     params.set("fuel_temp_c", setup.fuel_temp_c.toFixed(0));
+    params.set("fuel_emissivity", setup.fuel_emissivity.toFixed(2));
+    params.set("disk_emissivity", setup.disk_emissivity.toFixed(2));
     params.set("enrichment_pct", setup.enrichment_pct.toFixed(1));
     params.set("packing_pct", setup.packing_pct.toFixed(0));
     params.set("hm_particle_pct", setup.hm_particle_pct.toFixed(0));
@@ -584,53 +588,79 @@ const Explorer: React.FC = () => {
   const uo2ToGraphite = graphiteFraction > 0 ? triso.hmFraction / graphiteFraction : Infinity;
 
   // -- Tabs -----------------------------------------------------------------
+  const geometryControls = (
+    <div className="controls geometry-controls border rounded p-3 h-100">
+      {renderSlider("a", "shield moderator thickness (m)", fixed(1))}
+      {renderSlider("abs", "shield absorber thickness (m)", fixed(2))}
+      {renderSlider("refl", "reflector thickness (m)", fixed(1))}
+      {renderSlider("b_pct", "b (%)", fixed(0, "%"))}
+      {renderSlider("w", "w (rim width)", fixed(1))}
+      {renderSlider("ratio_pct", "fuel / TPV", fixed(0, "%"))}
+      {layerCm === null && (
+        <Alert variant="warning" className="py-2 px-3 small my-2">
+          <div className="fw-semibold">Layers must have the same thickness</div>
+          {thicknessWarning(layerTotals)}
+        </Alert>
+      )}
+      {renderSlider("stack_m", "stack height (m)", fixed(1))}
+      {renderSlider("columns", "columns", fixed(0))}
+      <Form.Check
+        type="checkbox"
+        id="show-dims"
+        className="small mt-1"
+        label="Show dimension lines"
+        checked={setup.dims}
+        onChange={(event) => setSetup((prev) => ({ ...prev, dims: event.target.checked }))}
+      />
+    </div>
+  );
+
   const overviewTab = (
-    <>
-      <Row className="g-3">
-        <Col lg={8}>
-          <ZoneChart layout={layout} showDims={setup.dims} columns={columns} />
-          {mergeReflector && (
-            <div className="small text-secondary mt-2">
-              Reflector and shield moderator use the same materials, so the reflector ({setup.refl.toFixed(2)} m) is
-              folded into the shield moderator ({setup.a.toFixed(2)} m → {(setup.a + setup.refl).toFixed(2)} m) and
-              omitted as a separate core sector.
-            </div>
+    <Row className="g-3">
+      <Col lg={3}>{geometryControls}</Col>
+      <Col lg={6}>
+        <ZoneChart layout={layout} showDims={setup.dims} columns={columns} />
+        {mergeReflector && (
+          <div className="small text-secondary mt-2">
+            Reflector and shield moderator use the same materials, so the reflector ({setup.refl.toFixed(2)} m) is
+            folded into the shield moderator ({setup.a.toFixed(2)} m → {(setup.a + setup.refl).toFixed(2)} m) and
+            omitted as a separate core sector.
+          </div>
+        )}
+      </Col>
+      <Col lg={3}>
+        <div className="border rounded p-3 bg-white">
+          <h2 className="h6 mb-2">Results</h2>
+          <div className="results-compact">
+            {resultRows.map(([label, value]) => (
+              <div key={label}>
+                <span>{label}</span>
+                <b>{value}</b>
+              </div>
+            ))}
+            <p>{resultNote}</p>
+          </div>
+        </div>
+        <div className="mt-3">
+          <Button variant="outline-secondary" disabled={copying} onClick={() => void onCopyBlender()}>
+            {copying ? "Copying…" : "Copy 3D model"}
+          </Button>
+          <div className="small text-secondary mt-2">
+            64 side faces, one cylinder per column. Paste in Blender's 3D View with Ctrl+V.
+          </div>
+          {copyNote && (
+            <Alert
+              variant={copyNote.kind}
+              dismissible
+              className="py-2 px-3 small mt-2 mb-0"
+              onClose={() => setCopyNote(null)}
+            >
+              {copyNote.text}
+            </Alert>
           )}
-        </Col>
-        <Col lg={4}>
-          <div className="border rounded p-3 bg-white">
-            <h2 className="h6 mb-2">Results</h2>
-            <div className="results-compact">
-              {resultRows.map(([label, value]) => (
-                <div key={label}>
-                  <span>{label}</span>
-                  <b>{value}</b>
-                </div>
-              ))}
-              <p>{resultNote}</p>
-            </div>
-          </div>
-          <div className="mt-3">
-            <Button variant="outline-secondary" disabled={copying} onClick={() => void onCopyBlender()}>
-              {copying ? "Copying…" : "Copy 3D model"}
-            </Button>
-            <div className="small text-secondary mt-2">
-              64 side faces, one cylinder per column. Paste in Blender's 3D View with Ctrl+V.
-            </div>
-            {copyNote && (
-              <Alert
-                variant={copyNote.kind}
-                dismissible
-                className="py-2 px-3 small mt-2 mb-0"
-                onClose={() => setCopyNote(null)}
-              >
-                {copyNote.text}
-              </Alert>
-            )}
-          </div>
-        </Col>
-      </Row>
-    </>
+        </div>
+      </Col>
+    </Row>
   );
 
   const fuelTab = (
@@ -739,24 +769,9 @@ const Explorer: React.FC = () => {
     </div>
   );
 
+  const diskThicknessCm = useMemo(() => solidDiskThicknessCm(groups.disk), [groups.disk]);
   const thermodynamicTab = (
-    <Row className="g-4">
-      <Col lg={6}>
-        <div className="border rounded p-3 bg-white">
-          <h2 className="h6 mb-3">TPV and fuel temperature</h2>
-          <p className="small text-secondary mb-3">
-            Electrical TPV cell loading and conversion efficiency, plus the hot-side fuel temperature used for radiative
-            heat balance in RIMAG core characteristics.
-          </p>
-          {renderSlider("tpv_density", "TPV power density (W/cm²)", fixed(2))}
-          {renderSlider("tpv_eff_pct", "TPV efficiency", fixed(0, "%"))}
-          {renderSlider("fuel_temp_c", "Fuel temperature (°C)", fixed(0))}
-          <div className="small text-secondary mt-2">
-            Fuel temperature is sent to the simulation as {Math.round(setup.fuel_temp_c + 273)} K.
-          </div>
-        </div>
-      </Col>
-    </Row>
+    <ThermodynamicTab setup={setup} diskThicknessCm={diskThicknessCm} renderSlider={renderSlider} />
   );
 
   const onSimulationChange = (simulation: SimulationParams) => {
@@ -778,33 +793,9 @@ const Explorer: React.FC = () => {
 
   return (
     <div className="app-shell">
-      <aside className="app-sidebar controls">
-          <h1 className="h5 mb-2">Hollow disk zone calculator</h1>
-          {renderSlider("a", "shield moderator thickness (m)", fixed(1))}
-          {renderSlider("abs", "shield absorber thickness (m)", fixed(2))}
-          {renderSlider("refl", "reflector thickness (m)", fixed(1))}
-          {renderSlider("b_pct", "b (%)", fixed(0, "%"))}
-          {renderSlider("w", "w (rim width)", fixed(1))}
-          {renderSlider("ratio_pct", "fuel / TPV", fixed(0, "%"))}
-          {layerCm === null && (
-            <Alert variant="warning" className="py-2 px-3 small my-2">
-              <div className="fw-semibold">Layers must have the same thickness</div>
-              {thicknessWarning(layerTotals)}
-            </Alert>
-          )}
-          {renderSlider("stack_m", "stack height (m)", fixed(1))}
-          {renderSlider("columns", "columns", fixed(0))}
-          <Form.Check
-            type="checkbox"
-            id="show-dims"
-            className="small mt-1"
-            label="Show dimension lines"
-            checked={setup.dims}
-            onChange={(event) => setSetup((prev) => ({ ...prev, dims: event.target.checked }))}
-          />
-      </aside>
-
       <main className="app-main">
+        <div className="app-main-header">
+          <h1 className="h5 mb-0">Hollow disk zone calculator</h1>
           <div className="config-toolbar">
             <Form.Select
               size="sm"
@@ -830,7 +821,12 @@ const Explorer: React.FC = () => {
             >
               +
             </Button>
-            <Button size="sm" variant="primary" title={loadedCfg ? `Save ${loadedCfg}` : "Save configuration"} onClick={() => void onSave()}>
+            <Button
+              size="sm"
+              variant="primary"
+              title={loadedCfg ? `Save ${loadedCfg}` : "Save configuration"}
+              onClick={() => void onSave()}
+            >
               Save
             </Button>
             {loadedCfg && (
@@ -845,32 +841,33 @@ const Explorer: React.FC = () => {
               </Button>
             )}
           </div>
-          {notice && (
-            <Alert
-              variant={notice.kind}
-              dismissible
-              className="py-2 px-3 small config-toolbar-notice"
-              onClose={() => setNotice(null)}
-            >
-              {notice.text}
-            </Alert>
-          )}
-          <Tabs
-            activeKey={tab}
-            onSelect={(key) => {
-              if (isTabKey(key)) setTab(key);
-            }}
-            mountOnEnter
-            // Keep mounted tabs alive so Simulation can keep streaming output.
-            unmountOnExit={false}
-            className="mb-0 app-main-tabs"
+        </div>
+        {notice && (
+          <Alert
+            variant={notice.kind}
+            dismissible
+            className="py-2 px-3 small config-toolbar-notice"
+            onClose={() => setNotice(null)}
           >
-            {TAB_KEYS.map((key) => (
-              <Tab key={key} eventKey={key} title={TAB_LABELS[key]} className="pt-3">
-                {tabContent[key]}
-              </Tab>
-            ))}
-          </Tabs>
+            {notice.text}
+          </Alert>
+        )}
+        <Tabs
+          activeKey={tab}
+          onSelect={(key) => {
+            if (isTabKey(key)) setTab(key);
+          }}
+          mountOnEnter
+          // Keep mounted tabs alive so Simulation can keep streaming output.
+          unmountOnExit={false}
+          className="mb-0 app-main-tabs"
+        >
+          {TAB_KEYS.map((key) => (
+            <Tab key={key} eventKey={key} title={TAB_LABELS[key]} className="pt-3">
+              {tabContent[key]}
+            </Tab>
+          ))}
+        </Tabs>
       </main>
     </div>
   );

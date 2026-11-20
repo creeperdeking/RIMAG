@@ -28,6 +28,7 @@ import {
   updateQueuedSimulation,
   weightWindowsStatus,
 } from "./server/rimagRunner";
+import { RimaelRunnerError, runRimaelFuelTemperature } from "./server/rimaelRunner";
 
 const SETUPS_FILE = path.resolve("save/setups.json");
 
@@ -473,8 +474,66 @@ function geometryApi(): Plugin {
   };
 }
 
+function rimaelApi(): Plugin {
+  const handle: Connect.NextHandleFunction = (req, res, next) => {
+    const url = req.url?.split("?")[0];
+    if (!url?.startsWith("/api/rimael")) {
+      next();
+      return;
+    }
+
+    if (url === "/api/rimael/run" && req.method === "POST") {
+      void readJsonBody(req)
+        .then(async (body) => {
+          const record =
+            body && typeof body === "object" && !Array.isArray(body)
+              ? (body as Record<string, unknown>)
+              : {};
+          const num = (key: string): number | undefined => {
+            const raw = record[key];
+            const value = typeof raw === "number" ? raw : Number(raw);
+            return Number.isFinite(value) ? value : undefined;
+          };
+          const trace = await runRimaelFuelTemperature({
+            fuelTempC: num("fuel_temp_c"),
+            fuelEmissivity: num("fuel_emissivity"),
+            diskEmissivity: num("disk_emissivity"),
+            diskThicknessCm: num("disk_thickness_cm"),
+          });
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify(trace));
+        })
+        .catch((error: unknown) => {
+          const message =
+            error instanceof RimaelRunnerError
+              ? error.message
+              : error instanceof Error
+                ? error.message
+                : "Could not run the RIMAEL Modelica simulation.";
+          res.statusCode = 500;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ error: message }));
+        });
+      return;
+    }
+
+    res.statusCode = 405;
+    res.end();
+  };
+
+  return {
+    name: "reactor-slice-rimael",
+    configureServer(server) {
+      server.middlewares.use(handle);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(handle);
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), setupStore(), blenderClipboard(), simulationApi(), geometryApi()],
+  plugins: [react(), setupStore(), blenderClipboard(), simulationApi(), geometryApi(), rimaelApi()],
   server: {
     host: true,
     port: 3001,

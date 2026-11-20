@@ -29,6 +29,8 @@ export const NUMERIC_FIELDS = {
   compact_spacing_mm: [0.0, 10.0, 0.1, 1.0],
   tpv_eff_pct: [10.0, 50.0, 1.0, 33.0],
   fuel_temp_c: [800.0, 1600.0, 10.0, 1150.0],
+  fuel_emissivity: [0.05, 1.0, 0.01, 0.85],
+  disk_emissivity: [0.05, 1.0, 0.01, 0.85],
   stack_m: [0.1, 20.0, 0.1, 1.0],
   columns: [1.0, 3.0, 1.0, 1.0],
 } as const;
