@@ -22,6 +22,11 @@ WORKDIR /opt/openmc
 RUN git clone --depth 1 --branch periodic-zcone https://github.com/creeperdeking/openmc.git . \
     && git fetch --depth 1 origin tag v0.16.0
 
+# Land periodic z-cone jumps slightly inside the arrival halfspace so
+# cell search does not lose the particle (weight-window splits hit this).
+COPY docker/openmc-zcone-landing-nudge.patch /tmp/openmc-zcone-landing-nudge.patch
+RUN git apply /tmp/openmc-zcone-landing-nudge.patch
+
 RUN mkdir build && cd build \
     && cmake -DCMAKE_BUILD_TYPE=Release -DOPENMC_USE_MPI=OFF -DOPENMC_BUILD_TESTS=OFF \
              -DCMAKE_INSTALL_PREFIX=/usr/local .. \

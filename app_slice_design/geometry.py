@@ -547,6 +547,7 @@ def _build_column_stack_universe(
             fill=slice_universe,
         )
         # Real-z shift matches paper: material pitch × z_scaling.
+        # The shell cones use that same shift, so the fill stays on the cones.
         cell.translation = (0.0, 0.0, z_center_mat * z_scale)
         stack_cells.append(cell)
     return openmc.Universe(cells=stack_cells)
@@ -588,17 +589,12 @@ def make_app_slice_geometry(
     stack_height_cm = n_slices * period_cm
     half_period = period_cm / 2.0
 
-    r_in_cm = layout.r_inner * 100.0
     r_out_cm = layout.r_outer * 100.0
-    r_mid_cm = 0.5 * (r_in_cm + r_out_cm)
     use_periodic_cones = abs(conical_pitch_deg) >= 1e-12
-    # Shift so the slice midplane at the fuel radius passes through world z = 0.
-    tan_pitch = math.tan(math.radians(conical_pitch_deg)) if use_periodic_cones else 0.0
-    z_shift = r_mid_cm * tan_pitch
 
-    # Open the fill's outer sheets against the root periodic cones (no second
-    # coincident surface). The hole stays axially bounded so it cannot reach
-    # the cone apex on the axis.
+    # Closed cone shells (transmission). The periodic boundary is a pair of
+    # z-planes below. A periodic cone jump lands on the partner cone and
+    # OpenMC then fails the cell search. Planes do not.
     slice_universe, tracked, _ = _one_disk_universe(
         layout,
         setup.layers,
@@ -606,26 +602,19 @@ def make_app_slice_geometry(
         materials_dict,
         material_choice,
         conical_pitch_deg,
-        open_period=use_periodic_cones,
+        open_period=False,
     )
-    half_bc = half_period
-
-    if use_periodic_cones:
-        # One shell. The periodic cones replace the flat-slab layer stack.
-        n_layers = 1
-        column_fill: openmc.Universe = slice_universe
-    else:
-        n_layers, start_index = _transport_layer_count(
-            period_cm, r_out_cm, conical_pitch_deg
-        )
-        column_fill = _build_column_stack_universe(
-            slice_universe,
-            pitch_cm,
-            n_layers,
-            start_index,
-            r_out_cm,
-            conical_pitch_deg,
-        )
+    n_layers, start_index = _transport_layer_count(
+        period_cm, r_out_cm, conical_pitch_deg
+    )
+    column_fill = _build_column_stack_universe(
+        slice_universe,
+        pitch_cm,
+        n_layers,
+        start_index,
+        r_out_cm,
+        conical_pitch_deg,
+    )
 
     poses = column_poses(columns, layout.r_outer)
     # Put world (0,0,0) at column-0 fuel mid-annulus so the default
@@ -633,84 +622,38 @@ def make_app_slice_geometry(
     ox, oy, _oz = _fuel_mid_world_cm(layout, *poses[0])
 
     shifted: List[Tuple[float, float, float]] = []
-    extent = 0.0
     for x_m, y_m, rot_deg in poses:
         cx = x_m * 100.0 - ox
         cy = y_m * 100.0 - oy
         shifted.append((cx, cy, rot_deg))
-        extent = max(extent, math.hypot(cx, cy) + r_out_cm)
-    extent += 10.0
 
-    # Flat pitch keeps periodic planes. A cone pitch puts one periodic z-cone
-    # pair on each column, coaxial with that column. The pair is one period apart.
-    z_low = None
-    z_high = None
-    if not use_periodic_cones:
-        z_low = openmc.ZPlane(z0=-half_period, boundary_type="periodic")
-        z_high = openmc.ZPlane(z0=half_period, boundary_type="periodic")
-        z_low.periodic_surface = z_high
+    # One period, flat planes. Conical material sheets stay inside the stack.
+    z_low = openmc.ZPlane(z0=-half_period, boundary_type="periodic")
+    z_high = openmc.ZPlane(z0=half_period, boundary_type="periodic")
+    z_low.periodic_surface = z_high
 
     # 3) Root instantiates the column fill once per reactor cylinder.
     # Column footprints use r_out only — centers are 2*r_out apart (rims touch).
     column_cells: List[openmc.Cell] = []
     for index, (cx, cy, rot_deg) in enumerate(shifted):
-        col_cyl = -openmc.ZCylinder(x0=cx, y0=cy, r=r_out_cm)
-        if use_periodic_cones:
-            r2 = 1.0 / tan_pitch**2
-            cone_lo = openmc.ZCone(
-                x0=cx,
-                y0=cy,
-                z0=z_shift - half_bc,
-                r2=r2,
-                boundary_type="periodic",
-                name=f"period_lo_{index}",
-            )
-            cone_hi = openmc.ZCone(
-                x0=cx,
-                y0=cy,
-                z0=z_shift + half_bc,
-                r2=r2,
-                boundary_type="periodic",
-                name=f"period_hi_{index}",
-            )
-            cone_lo.periodic_surface = cone_hi
-            # Downward nappe: outside the lower-apex cone and inside the upper one.
-            region = col_cyl & +cone_lo & -cone_hi
-            translation_z = z_shift
-        else:
-            region = col_cyl & +z_low & -z_high
-            translation_z = 0.0
+        # Vacuum on the column wall. Neutrons that leave the disk radially are
+        # killed here instead of streaming through a helium box around the origin.
+        col_cyl = -openmc.ZCylinder(
+            x0=cx, y0=cy, r=r_out_cm, boundary_type="vacuum",
+        )
+        region = col_cyl & +z_low & -z_high
         cell = openmc.Cell(
             name=f"column_{index}",
             region=region,
             fill=column_fill,
         )
-        cell.translation = (cx, cy, translation_z)
+        cell.translation = (cx, cy, 0.0)
         if abs(rot_deg) > 1e-9:
             cell.rotation = (0.0, 0.0, rot_deg)
         column_cells.append(cell)
 
-    if use_periodic_cones:
-        # The shell droops by R·tan(pitch). Vacuum planes sit just outside it.
-        z_min = (z_shift - half_bc) - r_out_cm * tan_pitch
-        z_max = z_shift + half_bc
-        margin = 1.0
-        z_vac_lo = openmc.ZPlane(z0=z_min - margin, boundary_type="vacuum")
-        z_vac_hi = openmc.ZPlane(z0=z_max + margin, boundary_type="vacuum")
-        world = -openmc.ZCylinder(r=extent, boundary_type="vacuum") & +z_vac_lo & -z_vac_hi
-        bound_z = (z_min - margin, z_max + margin)
-    else:
-        world = -openmc.ZCylinder(r=extent, boundary_type="vacuum") & +z_low & -z_high
-        bound_z = (-half_period, half_period)
-    columns_union = column_cells[0].region
-    for cell in column_cells[1:]:
-        columns_union = columns_union | cell.region
-    void_cell = openmc.Cell(
-        name="world_void",
-        region=world & ~columns_union,
-        fill=materials_dict[material_choice.void],
-    )
-    root = openmc.Universe(cells=[*column_cells, void_cell])
+    bound_z = (-half_period, half_period)
+    root = openmc.Universe(cells=column_cells)
     geometry = openmc.Geometry(root, merge_surfaces=True, surface_precision=5)
 
     # Sheet volumes above are for one column. Each column instantiates the same cells.
@@ -726,7 +669,7 @@ def make_app_slice_geometry(
     for name in material_choice.model_dump().values():
         tracked.setdefault(name, [])
 
-    axial = "periodic z-cones" if use_periodic_cones else f"{n_layers}× boundary_layer"
+    axial = f"periodic z-planes, {n_layers}× cone shells" if use_periodic_cones else f"{n_layers}× boundary_layer"
     print(
         f"App-slice transport: {axial} "
         f"over one period {period_cm:.3f} cm "
@@ -736,14 +679,30 @@ def make_app_slice_geometry(
         f"origin = column-0 fuel mid (shift {-ox:.3f}, {-oy:.3f}, 0) cm"
     )
 
-    ll = (-extent, -extent, bound_z[0])
-    ur = (extent, extent, bound_z[1])
+    # Rectangular box of the column cylinders. The weight-window mesh uses this,
+    # so cells are not spent on the helium that used to surround the origin.
+    ll = (
+        min(cx - r_out_cm for cx, _, _ in shifted),
+        min(cy - r_out_cm for _, cy, _ in shifted),
+        bound_z[0],
+    )
+    ur = (
+        max(cx + r_out_cm for cx, _, _ in shifted),
+        max(cy + r_out_cm for _, cy, _ in shifted),
+        bound_z[1],
+    )
+    render_radius = max(math.hypot(cx, cy) + r_out_cm for cx, cy, _ in shifted)
+    print(
+        f"Vacuum boundary: column cylinder r={r_out_cm:.1f} cm; "
+        f"weight-window box x[{ll[0]:.1f},{ur[0]:.1f}] "
+        f"y[{ll[1]:.1f},{ur[1]:.1f}] z[{ll[2]:.1f},{ur[2]:.1f}] cm"
+    )
     return MakeAppSliceGeometryResult(
         geometry=geometry,
         universe=root,
         tracked_cells=tracked,
         bounding_box=(ll, ur),
-        render_radius=extent,
+        render_radius=render_radius,
         render_height=(bound_z[1] - bound_z[0]) * 1.05,
         render_origin=(0.0, 0.0, 0.5 * (bound_z[0] + bound_z[1])),
         layout=layout,

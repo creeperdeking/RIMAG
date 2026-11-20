@@ -1,0 +1,529 @@
+import React, { useEffect, useState } from "react";
+import { Alert, Button, Form, Modal } from "react-bootstrap";
+import {
+  NSM_MATERIALS,
+  PARTICLE_TYPES,
+  RUN_MODES,
+  WEIGHT_WINDOWS_RUN,
+  type NsmMaterial,
+  type ParticleType,
+  type RunMode,
+  type WeightWindowsRun,
+} from "../constants";
+import {
+  normalizeSetup,
+  normalizeSimulation,
+  type Setup,
+  type SimulationParams,
+} from "../configurations";
+import { FieldLabel, InfoTip } from "./SimulationFieldLabel";
+
+export type QueueModalMode = "append" | "edit" | "view";
+
+type QueueResult = {
+  summary?: string | null;
+  keff?: number | null;
+  keffUncertainty?: number | null;
+  ingaasReached?: number | null;
+  ingaasVoxels?: number | null;
+  ingaasReachFraction?: number | null;
+  ingaasEnergyFraction?: number | null;
+};
+
+type Props = {
+  show: boolean;
+  mode: QueueModalMode;
+  title: string;
+  setup: Setup;
+  /** Seed form from the live calculator (append) or from a queue item. */
+  initialSimulation: SimulationParams & { weight_windows?: WeightWindowsRun | string };
+  /** True when runs/default already has weight_windows.h5 (needed for refine). */
+  wwPresent?: boolean;
+  result?: QueueResult | null;
+  exitCode?: number | null;
+  statusLabel?: string | null;
+  saving?: boolean;
+  error?: string | null;
+  onHide: () => void;
+  onSubmit?: (simulation: SimulationParams & { weight_windows: WeightWindowsRun }) => void;
+};
+
+const WW_OPTION_LABELS: Record<WeightWindowsRun, string> = {
+  no: "no (analog)",
+  use: "use (apply existing windows)",
+  generate: "generate (legacy)",
+  seed: "seed (MAGIC after analog keff)",
+  refine: "refine (one MAGIC pass)",
+  autorefine: "autorefine (until InGaAs ≥ 80%)",
+};
+
+function applyWwPreset(
+  draft: SimulationParams & { weight_windows: WeightWindowsRun },
+  weight_windows: WeightWindowsRun,
+): SimulationParams & { weight_windows: WeightWindowsRun } {
+  if (weight_windows === "seed") {
+    return {
+      ...draft,
+      weight_windows,
+      run_mode: "keff_notallies",
+      survival_biasing: true,
+    };
+  }
+  if (weight_windows === "refine" || weight_windows === "autorefine") {
+    return {
+      ...draft,
+      weight_windows,
+      run_mode: "keff_notallies",
+      survival_biasing: false,
+    };
+  }
+  if (weight_windows === "no" || weight_windows === "use") {
+    return {
+      ...draft,
+      weight_windows,
+      run_mode: draft.run_mode === "keff_notallies" ? "keff" : draft.run_mode,
+    };
+  }
+  return { ...draft, weight_windows };
+}
+
+function queueSimulationFromRaw(
+  raw: SimulationParams & { weight_windows?: WeightWindowsRun | string },
+): SimulationParams & { weight_windows: WeightWindowsRun } {
+  const base = normalizeSimulation(raw);
+  const ww = typeof raw.weight_windows === "string" ? raw.weight_windows : base.weight_windows;
+  const weight_windows = (WEIGHT_WINDOWS_RUN as readonly string[]).includes(ww)
+    ? (ww as WeightWindowsRun)
+    : "no";
+  return { ...base, weight_windows };
+}
+
+const RunQueueModal: React.FC<Props> = ({
+  show,
+  mode,
+  title,
+  setup,
+  initialSimulation,
+  wwPresent = false,
+  result,
+  exitCode,
+  statusLabel,
+  saving = false,
+  error = null,
+  onHide,
+  onSubmit,
+}) => {
+  const readOnly = mode === "view";
+  const [draft, setDraft] = useState(() => queueSimulationFromRaw(initialSimulation));
+
+  useEffect(() => {
+    if (show) setDraft(queueSimulationFromRaw(initialSimulation));
+  }, [show, initialSimulation]);
+
+  const setField = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) => {
+    setDraft((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const setWeightWindows = (weight_windows: WeightWindowsRun) => {
+    setDraft((prev) => applyWwPreset(prev, weight_windows));
+  };
+
+  const geometryBits = (() => {
+    try {
+      const normalized = normalizeSetup({ ...setup, simulation: draft });
+      return `${normalized.columns} col · stack ${normalized.stack_m} m · a=${normalized.a}`;
+    } catch {
+      return "current calculator geometry";
+    }
+  })();
+
+  const fieldDisabled = readOnly || saving;
+
+  return (
+    <Modal show={show} onHide={onHide} size="lg" centered scrollable>
+      <Modal.Header closeButton>
+        <Modal.Title className="h5 mb-0">{title}</Modal.Title>
+      </Modal.Header>
+      <Modal.Body>
+        <p className="small text-secondary mb-3">
+          Geometry follows the calculator ({geometryBits}). These fields are the RIMAG run parameters
+          for this queue item.
+        </p>
+        {statusLabel && (
+          <p className="small mb-3">
+            Status: <strong>{statusLabel}</strong>
+            {exitCode != null ? ` · exit ${exitCode}` : ""}
+          </p>
+        )}
+        {mode === "view" && (
+          <div className="border rounded p-2 mb-3 bg-light-subtle">
+            <div className="small text-uppercase text-secondary fw-semibold mb-1">Result</div>
+            {result?.keff != null ? (
+              <div className="font-monospace">
+                keff {result.keff.toFixed(5)}
+                {result.keffUncertainty != null ? ` ± ${result.keffUncertainty.toFixed(5)}` : ""}
+              </div>
+            ) : (
+              <div className="small text-secondary">No keff captured for this run.</div>
+            )}
+            {result?.ingaasReachFraction != null && (
+              <div className="font-monospace mt-2">
+                InGaAs coverage {(100 * result.ingaasReachFraction).toFixed(0)}%
+                {result.ingaasReached != null && result.ingaasVoxels != null
+                  ? ` (${result.ingaasReached}/${result.ingaasVoxels} mesh cells)`
+                  : ""}
+                {result.ingaasReachFraction < 0.8 ? (
+                  <span className="small text-secondary"> · target 80%</span>
+                ) : (
+                  <span className="small text-success"> · target met</span>
+                )}
+              </div>
+            )}
+            {result?.ingaasEnergyFraction != null && (
+              <div className="small text-secondary font-monospace">
+                InGaAs energy groups {(100 * result.ingaasEnergyFraction).toFixed(0)}%
+              </div>
+            )}
+            {result?.summary && (
+              <div className="small text-secondary mt-1 text-break">{result.summary}</div>
+            )}
+          </div>
+        )}
+        {error && (
+          <Alert variant="danger" className="py-2 px-3 small">
+            {error}
+          </Alert>
+        )}
+
+        <Form.Group className="simulation-field">
+          <Form.Label className="small mb-0 simulation-field-label">Run mode</Form.Label>
+          <Form.Select
+            size="sm"
+            value={draft.run_mode}
+            disabled={fieldDisabled}
+            onChange={(event) => setField("run_mode", event.target.value as RunMode)}
+          >
+            {RUN_MODES.map((modeOption) => (
+              <option key={modeOption} value={modeOption}>
+                {modeOption}
+              </option>
+            ))}
+          </Form.Select>
+        </Form.Group>
+
+        <Form.Group className="simulation-field">
+          <Form.Label className="small mb-0 simulation-field-label">Batches</Form.Label>
+          <Form.Control
+            size="sm"
+            type="number"
+            min={1}
+            step={1}
+            value={draft.n_batches}
+            disabled={fieldDisabled}
+            onChange={(event) => setField("n_batches", Math.max(1, Math.round(Number(event.target.value) || 1)))}
+          />
+        </Form.Group>
+
+        <Form.Group className="simulation-field">
+          <FieldLabel info={<>Passed to OpenMC as <code>RIMAG_THREADS</code> / <code>simsettings.json</code>.</>}>
+            OpenMP threads
+          </FieldLabel>
+          <Form.Control
+            size="sm"
+            type="number"
+            min={1}
+            max={256}
+            step={1}
+            value={draft.n_threads}
+            disabled={fieldDisabled}
+            onChange={(event) =>
+              setField("n_threads", Math.max(1, Math.min(256, Math.round(Number(event.target.value) || 1))))
+            }
+          />
+        </Form.Group>
+
+        <Form.Group className="simulation-field">
+          <Form.Label className="small mb-0 simulation-field-label">Neutron shield moderator</Form.Label>
+          <Form.Select
+            size="sm"
+            value={draft.nsm_material}
+            disabled={fieldDisabled}
+            onChange={(event) => setField("nsm_material", event.target.value as NsmMaterial)}
+          >
+            {NSM_MATERIALS.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </Form.Select>
+        </Form.Group>
+
+        <Form.Group className="simulation-field">
+          <FieldLabel info="Stored for the run config; app-slice CSG uses the zone layout.">
+            NSM thickness (cm)
+          </FieldLabel>
+          <Form.Control
+            size="sm"
+            type="number"
+            min={0}
+            step={0.1}
+            value={draft.nsm_thickness}
+            disabled={fieldDisabled}
+            onChange={(event) => setField("nsm_thickness", Math.max(0, Number(event.target.value) || 0))}
+          />
+        </Form.Group>
+
+        <Form.Group className="simulation-field">
+          <FieldLabel info="Elemental boron by mass in the graphite of the fuel layer. Reflector, disk, and shield graphite stay pure carbon.">
+            Boron concentration (ppm)
+          </FieldLabel>
+          <Form.Control
+            size="sm"
+            type="number"
+            min={0}
+            step={1}
+            value={draft.boron_concentration_ppm}
+            disabled={fieldDisabled}
+            onChange={(event) =>
+              setField("boron_concentration_ppm", Math.max(0, Number(event.target.value) || 0))
+            }
+          />
+        </Form.Group>
+
+        <Form.Group className="simulation-field">
+          <FieldLabel info="Layer bounds become cones about the disk axis (0° = flat disks). Increasing the conical pitch increases simulation time significantly.">
+            Conical pitch (°)
+          </FieldLabel>
+          <Form.Control
+            size="sm"
+            type="number"
+            min={0}
+            max={45}
+            step={0.1}
+            value={draft.conical_pitch}
+            disabled={fieldDisabled}
+            onChange={(event) => setField("conical_pitch", Math.max(0, Number(event.target.value) || 0))}
+          />
+        </Form.Group>
+
+        <Form.Group className="simulation-field">
+          <Form.Label className="small mb-0 simulation-field-label">Particle type</Form.Label>
+          <Form.Select
+            size="sm"
+            value={draft.particle_type}
+            disabled={fieldDisabled}
+            onChange={(event) => setField("particle_type", event.target.value as ParticleType)}
+          >
+            {PARTICLE_TYPES.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </Form.Select>
+        </Form.Group>
+
+        <div className="border rounded p-2 mb-3 bg-light-subtle">
+          <FieldLabel
+            className="small mb-1 fw-semibold"
+            info={
+              <>
+                For deep shields (~10 orders of magnitude to the InGaAs), seed once, then refine (or use{" "}
+                <em>autorefine</em> to loop until ~80% of InGaAs mesh cells are reached) before the next queue
+                step. Then set tally mode to <em>use</em> for a tally run.
+              </>
+            }
+          >
+            Weight windows
+          </FieldLabel>
+          {!readOnly && (
+            <div className="d-flex flex-wrap gap-2 mb-2">
+              <Button
+                size="sm"
+                variant={draft.weight_windows === "seed" ? "primary" : "outline-primary"}
+                disabled={saving}
+                onClick={() => setWeightWindows("seed")}
+              >
+                Seed
+              </Button>
+              <Button
+                size="sm"
+                variant={draft.weight_windows === "refine" ? "primary" : "outline-primary"}
+                disabled={saving}
+                title={
+                  !wwPresent
+                    ? "No weight_windows.h5 yet — queue a seed first, or refine after one finishes"
+                    : undefined
+                }
+                onClick={() => setWeightWindows("refine")}
+              >
+                Refine
+              </Button>
+              <Button
+                size="sm"
+                variant={draft.weight_windows === "autorefine" ? "primary" : "outline-primary"}
+                disabled={saving}
+                title={
+                  !wwPresent
+                    ? "No weight_windows.h5 yet — queue a seed first, or autorefine after one finishes"
+                    : "Keep refining until InGaAs mesh coverage reaches 80%"
+                }
+                onClick={() => setWeightWindows("autorefine")}
+              >
+                Autorefine
+              </Button>
+              {(draft.weight_windows === "seed" ||
+                draft.weight_windows === "refine" ||
+                draft.weight_windows === "autorefine") && (
+                <Button
+                  size="sm"
+                  variant="outline-secondary"
+                  disabled={saving}
+                  onClick={() => setWeightWindows("no")}
+                >
+                  Clear to analog
+                </Button>
+              )}
+            </div>
+          )}
+          <Form.Group className="simulation-field mb-2">
+            <Form.Label className="small mb-0 simulation-field-label">Tally / build mode</Form.Label>
+            <Form.Select
+              size="sm"
+              value={draft.weight_windows}
+              disabled={fieldDisabled}
+              onChange={(event) => setWeightWindows(event.target.value as WeightWindowsRun)}
+            >
+              {WEIGHT_WINDOWS_RUN.filter((value) => value !== "generate").map((value) => (
+                <option key={value} value={value}>
+                  {WW_OPTION_LABELS[value]}
+                </option>
+              ))}
+              {draft.weight_windows === "generate" && (
+                <option value="generate">{WW_OPTION_LABELS.generate}</option>
+              )}
+            </Form.Select>
+            {(draft.weight_windows === "seed" ||
+              draft.weight_windows === "refine" ||
+              draft.weight_windows === "autorefine") && (
+              <div className="small text-secondary mt-2 mb-0">
+                Sets run mode to <code>keff_notallies</code>
+                {draft.weight_windows === "seed"
+                  ? " with survival biasing on."
+                  : " with survival biasing off."}
+                {draft.weight_windows === "autorefine" && (
+                  <>
+                    {" "}
+                    Repeats refine until InGaAs coverage reaches 80% (or 25 passes), then the queue continues.
+                  </>
+                )}
+                {(draft.weight_windows === "refine" || draft.weight_windows === "autorefine") &&
+                  !wwPresent && (
+                    <>
+                      {" "}
+                      Needs an existing <code>weight_windows.h5</code> when this item starts.
+                    </>
+                  )}
+              </div>
+            )}
+          </Form.Group>
+          <Form.Group className="simulation-field">
+            <FieldLabel info="Start coarse (40 cm). Finer cells resolve the shield better but make seed/refine much slower.">
+              Mesh cell (cm)
+            </FieldLabel>
+            <Form.Control
+              size="sm"
+              type="number"
+              min={0.5}
+              step={0.5}
+              value={draft.ww_mesh_cm}
+              disabled={fieldDisabled}
+              onChange={(event) => setField("ww_mesh_cm", Math.max(0.5, Number(event.target.value) || 0.5))}
+            />
+          </Form.Group>
+          <Form.Group className="simulation-field mb-0">
+            <Form.Label className="small mb-0 simulation-field-label">Energy groups</Form.Label>
+            <Form.Control
+              size="sm"
+              type="number"
+              min={1}
+              max={200}
+              step={1}
+              value={draft.ww_energy_groups}
+              disabled={fieldDisabled}
+              onChange={(event) =>
+                setField(
+                  "ww_energy_groups",
+                  Math.max(1, Math.min(200, Math.round(Number(event.target.value) || 1))),
+                )
+              }
+            />
+          </Form.Group>
+        </div>
+
+        <Form.Check
+          type="checkbox"
+          id="queue-survival-biasing"
+          className="small mb-3"
+          label="Survival biasing"
+          checked={draft.survival_biasing}
+          disabled={fieldDisabled}
+          onChange={(event) => setField("survival_biasing", event.target.checked)}
+        />
+
+        <Form.Group className="simulation-field">
+          <Form.Label className="small mb-0 simulation-field-label">Dose time (years)</Form.Label>
+          <Form.Control
+            size="sm"
+            type="number"
+            min={0}
+            step={0.1}
+            value={draft.dose_time}
+            disabled={fieldDisabled}
+            onChange={(event) => setField("dose_time", Math.max(0, Number(event.target.value) || 0))}
+          />
+        </Form.Group>
+
+        <Form.Check
+          type="checkbox"
+          id="queue-print-core-characteristics"
+          className="small mb-2"
+          label="Print core characteristics"
+          checked={draft.print_core_characteristics}
+          disabled={fieldDisabled}
+          onChange={(event) => setField("print_core_characteristics", event.target.checked)}
+        />
+
+        <Form.Check
+          type="checkbox"
+          id="queue-ddd-tallies-only"
+          className="small mb-0"
+          label={
+            <span className="d-inline-flex align-items-center gap-1">
+              Photovoltaic DDD tallies only
+              <InfoTip text="When on, keff keeps only the SR-NIEL flux tally on the InGaAs cells (keff itself still comes from the eigenvalue solve). Turn off for heating, tritium, C-14, IFP, and the rest." />
+            </span>
+          }
+          checked={draft.ddd_tallies_only}
+          disabled={fieldDisabled}
+          onChange={(event) => setField("ddd_tallies_only", event.target.checked)}
+        />
+      </Modal.Body>
+      <Modal.Footer>
+        <Button variant="outline-secondary" onClick={onHide} disabled={saving}>
+          {readOnly ? "Close" : "Cancel"}
+        </Button>
+        {!readOnly && onSubmit && (
+          <Button
+            variant="primary"
+            disabled={saving}
+            onClick={() => onSubmit({ ...draft, weight_windows: draft.weight_windows })}
+          >
+            {saving ? "Saving…" : mode === "append" ? "Append to queue" : "Save changes"}
+          </Button>
+        )}
+      </Modal.Footer>
+    </Modal>
+  );
+};
+
+export default RunQueueModal;

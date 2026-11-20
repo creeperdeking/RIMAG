@@ -47,7 +47,7 @@ class AppSliceSimulationParams(BaseModel):
         "depletion",
         "keff_emitter_gamma_source",
         "norun",
-    ] = "render"
+    ] = "keff"
     n_batches: int = 200
     n_threads: int = 10
     nsm_material: str = "Graphite"

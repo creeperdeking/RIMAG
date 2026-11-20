@@ -10,12 +10,22 @@ import {
   plotGeometrySlice,
 } from "./server/geometryPlot";
 import {
+  appendSimulation,
   clearWeightWindows,
+  adoptRunningSimulation,
+  getSimulationQueue,
+  isQueuePaused,
   isSimulationRunning,
+  readQueueItem,
+  removeQueuedSimulation,
+  reorderQueuedSimulations,
   RimagRunnerError,
+  setQueuePaused,
   startSimulation,
   stopSimulation,
   subscribe,
+  subscribeQueue,
+  updateQueuedSimulation,
   weightWindowsStatus,
 } from "./server/rimagRunner";
 
@@ -155,14 +165,128 @@ function simulationApi(): Plugin {
 
     if (url === "/api/simulation/status" && req.method === "GET") {
       res.setHeader("Content-Type", "application/json");
-      res.end(JSON.stringify({ running: isSimulationRunning() }));
+      void adoptRunningSimulation().then(() => {
+        if (!res.writableEnded) {
+          res.end(
+            JSON.stringify({
+              running: isSimulationRunning(),
+              queuePaused: isQueuePaused(),
+              queue: getSimulationQueue(),
+            }),
+          );
+        }
+      });
       return;
+    }
+
+    if (url === "/api/simulation/queue" && req.method === "GET") {
+      res.setHeader("Content-Type", "application/json");
+      void adoptRunningSimulation().then(() => {
+        if (!res.writableEnded) res.end(JSON.stringify(getSimulationQueue()));
+      });
+      return;
+    }
+
+    if (url === "/api/simulation/queue/reorder" && req.method === "POST") {
+      void readJsonBody(req)
+        .then((body) => {
+          const ids = (body as { ids?: unknown }).ids;
+          if (!Array.isArray(ids) || !ids.every((id) => typeof id === "string")) {
+            throw new RimagRunnerError("Body must be { ids: string[] }.");
+          }
+          const queue = reorderQueuedSimulations(ids);
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify(queue));
+        })
+        .catch((error: unknown) => {
+          const message =
+            error instanceof RimagRunnerError
+              ? error.message
+              : error instanceof Error
+                ? error.message
+                : "Could not reorder the queue.";
+          res.statusCode = error instanceof RimagRunnerError ? 409 : 400;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ error: message }));
+        });
+      return;
+    }
+
+    if (url === "/api/simulation/queue/pause" && req.method === "POST") {
+      void readJsonBody(req)
+        .then((body) => {
+          const paused = Boolean((body as { paused?: unknown }).paused);
+          const result = setQueuePaused(paused);
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ ...result, queue: getSimulationQueue() }));
+        })
+        .catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : "Could not update queue pause.";
+          res.statusCode = 400;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ error: message }));
+        });
+      return;
+    }
+
+    const queueItemMatch = url?.match(/^\/api\/simulation\/queue\/([^/]+)$/);
+    if (queueItemMatch) {
+      const id = decodeURIComponent(queueItemMatch[1]);
+      if (req.method === "GET") {
+        const item = readQueueItem(id);
+        res.setHeader("Content-Type", "application/json");
+        if (!item) {
+          res.statusCode = 404;
+          res.end(JSON.stringify({ error: "Queue item not found." }));
+          return;
+        }
+        res.end(JSON.stringify(item));
+        return;
+      }
+      if (req.method === "DELETE") {
+        try {
+          const queue = removeQueuedSimulation(id);
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify(queue));
+        } catch (error: unknown) {
+          const message =
+            error instanceof RimagRunnerError
+              ? error.message
+              : error instanceof Error
+                ? error.message
+                : "Could not remove the queued run.";
+          res.statusCode = error instanceof RimagRunnerError ? 409 : 400;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ error: message }));
+        }
+        return;
+      }
+      if (req.method === "PUT") {
+        void readJsonBody(req)
+          .then((body) => {
+            const item = updateQueuedSimulation(id, body);
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ ok: true, item, queue: getSimulationQueue() }));
+          })
+          .catch((error: unknown) => {
+            const message =
+              error instanceof RimagRunnerError
+                ? error.message
+                : error instanceof Error
+                  ? error.message
+                  : "Could not update the queued run.";
+            res.statusCode = error instanceof RimagRunnerError ? 409 : 400;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: message }));
+          });
+        return;
+      }
     }
 
     if (url === "/api/simulation/stop" && req.method === "POST") {
       const stopped = stopSimulation();
       res.setHeader("Content-Type", "application/json");
-      res.end(JSON.stringify({ stopped }));
+      res.end(JSON.stringify({ stopped, queuePaused: isQueuePaused() }));
       return;
     }
 
@@ -172,15 +296,37 @@ function simulationApi(): Plugin {
         "Cache-Control": "no-cache",
         Connection: "keep-alive",
       });
-      res.write(`data: ${JSON.stringify({ type: "ready", running: isSimulationRunning() })}\n\n`);
-      const unsubscribe = subscribe((line) => {
-        res.write(`data: ${JSON.stringify({ type: "log", line })}\n\n`);
-        if (line.startsWith("[runner] done exit=")) {
-          const code = Number(line.slice("[runner] done exit=".length));
-          res.write(`data: ${JSON.stringify({ type: "done", code: Number.isFinite(code) ? code : 1 })}\n\n`);
-        }
+      void adoptRunningSimulation().then(() => {
+        if (res.writableEnded) return;
+        res.write(
+          `data: ${JSON.stringify({
+            type: "ready",
+            running: isSimulationRunning(),
+            queuePaused: isQueuePaused(),
+            queue: getSimulationQueue(),
+          })}\n\n`,
+        );
+        const unsubscribeLog = subscribe((line) => {
+          res.write(`data: ${JSON.stringify({ type: "log", line })}\n\n`);
+          if (line.startsWith("[runner] done exit=")) {
+            const code = Number(line.slice("[runner] done exit=".length));
+            res.write(
+              `data: ${JSON.stringify({
+                type: "done",
+                code: Number.isFinite(code) ? code : 1,
+                queue: getSimulationQueue(),
+              })}\n\n`,
+            );
+          }
+        });
+        const unsubscribeQueue = subscribeQueue((queue) => {
+          res.write(`data: ${JSON.stringify({ type: "queue", queue })}\n\n`);
+        });
+        req.on("close", () => {
+          unsubscribeLog();
+          unsubscribeQueue();
+        });
       });
-      req.on("close", () => unsubscribe());
       return;
     }
 
@@ -189,7 +335,7 @@ function simulationApi(): Plugin {
         .then((body) => {
           startSimulation(body);
           res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ ok: true, running: true }));
+          res.end(JSON.stringify({ ok: true, running: true, queue: getSimulationQueue() }));
         })
         .catch((error: unknown) => {
           const message =
@@ -198,6 +344,34 @@ function simulationApi(): Plugin {
               : error instanceof Error
                 ? error.message
                 : "Could not start the simulation.";
+          res.statusCode = error instanceof RimagRunnerError ? 409 : 400;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ error: message }));
+        });
+      return;
+    }
+
+    if (url === "/api/simulation/append" && req.method === "POST") {
+      void readJsonBody(req)
+        .then((body) => {
+          const item = appendSimulation(body);
+          res.setHeader("Content-Type", "application/json");
+          res.end(
+            JSON.stringify({
+              ok: true,
+              item,
+              running: isSimulationRunning(),
+              queue: getSimulationQueue(),
+            }),
+          );
+        })
+        .catch((error: unknown) => {
+          const message =
+            error instanceof RimagRunnerError
+              ? error.message
+              : error instanceof Error
+                ? error.message
+                : "Could not append the simulation.";
           res.statusCode = error instanceof RimagRunnerError ? 409 : 400;
           res.setHeader("Content-Type", "application/json");
           res.end(JSON.stringify({ error: message }));

@@ -1,0 +1,24 @@
+diff --git a/src/boundary_condition.cpp b/src/boundary_condition.cpp
+--- a/src/boundary_condition.cpp
++++ b/src/boundary_condition.cpp
+@@ -170,6 +170,20 @@ void TranslationalPeriodicBC::handle_particle(
+   auto new_r = p.r() + translation_;
+   int new_surface = p.surface() > 0 ? j_surf_ + 1 : -(j_surf_ + 1);
+ 
++  // A z-cone jump lands exactly on the partner cone. The quadratic evaluate
++  // is then ~0 and the cell search rejects the point (planes do not do this).
++  // Step 1e-4 cm into the arrival halfspace so find() succeeds.
++  if (dynamic_cast<const SurfaceZCone*>(&surf) != nullptr) {
++    const Surface& dest {*model::surfaces[j_surf_]};
++    Direction n = dest.normal(new_r);
++    double nlen = n.norm();
++    if (nlen > 0.0) {
++      n /= nlen;
++      double into = new_surface > 0 ? 1.0 : -1.0;
++      new_r += into * 1.0e-4 * n;
++    }
++  }
++
+   // Handle the effects of the surface albedo on the particle's weight.
+   BoundaryCondition::handle_albedo(p, surf);
+ 

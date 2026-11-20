@@ -2,6 +2,24 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  appendQueued,
+  beginRunning,
+  ensureRunningPlaceholder,
+  getQueueItem,
+  markFinished,
+  markRunning,
+  peekNextQueued,
+  queueSnapshot,
+  reconcileAfterRestart,
+  removeQueued,
+  reorderQueued,
+  saveQueue,
+  updateQueuedPayload,
+  type QueueItem,
+  type QueueItemResult,
+  type SimQueueState,
+} from "./simQueue";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.resolve(HERE, "..");
@@ -16,16 +34,32 @@ export class RimagRunnerError extends Error {}
 type JobState = {
   child: ChildProcessWithoutNullStreams | null;
   listeners: Set<(line: string) => void>;
+  queueListeners: Set<(queue: SimQueueState) => void>;
   running: boolean;
   lastLines: string[];
+  currentId: string | null;
+  /** When true, the next job end does not start the following queued run (Stop). */
+  suppressQueueAdvance: boolean;
+  /** When true, finished runs do not auto-start the next queued item (Pause). */
+  queuePaused: boolean;
+  /** Completed refine passes for the current autorefine queue item. */
+  autoRefinePass: number;
 };
 
 const job: JobState = {
   child: null,
   listeners: new Set(),
+  queueListeners: new Set(),
   running: false,
   lastLines: [],
+  currentId: null,
+  suppressQueueAdvance: false,
+  queuePaused: false,
+  autoRefinePass: 0,
 };
+
+const AUTOREFINE_TARGET = 0.8;
+const AUTOREFINE_MAX_PASSES = 25;
 
 function runDocker(args: string[]): Promise<number> {
   return new Promise((resolve) => {
@@ -60,6 +94,27 @@ function emit(line: string) {
   job.lastLines.push(line);
   if (job.lastLines.length > 2000) job.lastLines.splice(0, job.lastLines.length - 2000);
   for (const listener of job.listeners) listener(line);
+}
+
+function emitQueue() {
+  const snapshot = queueSnapshot();
+  for (const listener of job.queueListeners) listener(snapshot);
+}
+
+export function getSimulationQueue(): SimQueueState {
+  const state = queueSnapshot();
+  let changed = false;
+  for (const item of state.items) {
+    const next = backfillWwCoverage(item);
+    if (next.result !== item.result) changed = true;
+  }
+  return changed ? queueSnapshot() : state;
+}
+
+export function subscribeQueue(listener: (queue: SimQueueState) => void) {
+  job.queueListeners.add(listener);
+  listener(queueSnapshot());
+  return () => job.queueListeners.delete(listener);
 }
 
 function copyDir(src: string, dest: string) {
@@ -101,6 +156,17 @@ export function syncRimagSourcesIntoRunDir() {
   }
 }
 
+/** Refresh only the plot script. Safe while a simulation is using the other copies. */
+export function syncPlotScriptIntoRunDir() {
+  fs.mkdirSync(RUN_DIR, { recursive: true });
+  const src = path.join(REPO_ROOT, "plot_geometry_slice.py");
+  const dest = path.join(RUN_DIR, "plot_geometry_slice.py");
+  if (!fs.existsSync(src)) {
+    throw new RimagRunnerError(`Missing ${src}`);
+  }
+  fs.copyFileSync(src, dest);
+}
+
 export function writeRunParams(payload: unknown) {
   syncRimagSourcesIntoRunDir();
   const target = path.join(RUN_DIR, PARAMS_FILE);
@@ -108,8 +174,107 @@ export function writeRunParams(payload: unknown) {
   return target;
 }
 
+export function isQueuePaused() {
+  return job.queuePaused;
+}
+
+export function setQueuePaused(paused: boolean): { paused: boolean; running: boolean } {
+  job.queuePaused = paused;
+  if (paused) {
+    emit("[runner] Queue paused — current run continues; next items will not start automatically.");
+  } else {
+    emit("[runner] Queue resumed.");
+    if (!job.running) maybeStartNextFromQueue();
+  }
+  emitQueue();
+  return { paused: job.queuePaused, running: job.running };
+}
+
 export function isSimulationRunning() {
   return job.running;
+}
+
+function containerIsRunning(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const child = spawn("docker", ["inspect", "-f", "{{.State.Running}}", CONTAINER_NAME], {
+      windowsHide: true,
+    });
+    let out = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      out += chunk.toString("utf8");
+    });
+    child.on("error", () => resolve(false));
+    child.on("close", (code) => resolve(code === 0 && out.trim() === "true"));
+  });
+}
+
+function forwardProcessOutput(child: ChildProcessWithoutNullStreams) {
+  const forward = (chunk: Buffer) => {
+    const text = chunk.toString("utf8");
+    for (const line of text.split(/\r\n|\n|\r/)) {
+      if (line.length) emit(line);
+    }
+  };
+  child.stdout.on("data", forward);
+  child.stderr.on("data", forward);
+}
+
+let adopting: Promise<void> | null = null;
+
+/**
+ * The Vite server keeps the run only in memory. A server restart drops that
+ * state while `rimag-app-sim` keeps transporting. Follow its logs again.
+ * Also resumes the disk queue when the container is gone but jobs remain.
+ */
+export function adoptRunningSimulation(): Promise<void> {
+  if (job.running) return Promise.resolve();
+  if (adopting) return adopting;
+  adopting = containerIsRunning()
+    .then((alive) => {
+      reconcileAfterRestart(alive);
+      if (alive) {
+        const paramsPath = path.join(RUN_DIR, PARAMS_FILE);
+        let payload: unknown = null;
+        try {
+          if (fs.existsSync(paramsPath)) {
+            payload = JSON.parse(fs.readFileSync(paramsPath, "utf8"));
+          }
+        } catch {
+          payload = null;
+        }
+        ensureRunningPlaceholder(payload, true);
+        const runningItem = queueSnapshot().items.find((item) => item.status === "running");
+        job.currentId = runningItem?.id ?? null;
+        emitQueue();
+        if (job.running) return;
+        job.running = true;
+        job.lastLines = [];
+        emit(
+          "[runner] Reattached to rimag-app-sim. The app server restarted and lost the log; the run is still going.",
+        );
+        const child = spawn("docker", ["logs", "-f", "--tail", "400", CONTAINER_NAME], {
+          windowsHide: true,
+        });
+        job.child = child;
+        forwardProcessOutput(child);
+        child.on("error", (error) => {
+          emit(`[runner] log follow failed: ${error.message}`);
+        });
+        child.on("close", () => {
+          void containerIsRunning().then((still) => {
+            if (still || !job.running) return;
+            onJobEnded(0);
+          });
+        });
+        return;
+      }
+      emitQueue();
+      maybeStartNextFromQueue();
+    })
+    .finally(() => {
+      adopting = null;
+    });
+  return adopting;
 }
 
 export function subscribe(listener: (line: string) => void) {
@@ -121,22 +286,218 @@ export function subscribe(listener: (line: string) => void) {
 /**
  * Interrupt like Ctrl+C: SIGINT to PID 1 inside the container.
  * On Windows, kill() on the compose client does not send Unix signals.
+ * Queued runs stay on disk; they do not start until Append/Start kicks the queue again.
  */
+function simulationRecordFromPayload(payload: unknown): Record<string, unknown> {
+  const root =
+    payload && typeof payload === "object" && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : {};
+  if (root.simulation && typeof root.simulation === "object" && !Array.isArray(root.simulation)) {
+    return root.simulation as Record<string, unknown>;
+  }
+  return root;
+}
+
+function wwModeFromPayload(payload: unknown): string {
+  return String(simulationRecordFromPayload(payload).weight_windows ?? "no");
+}
+
+function isAutoRefinePayload(payload: unknown): boolean {
+  return wwModeFromPayload(payload) === "autorefine";
+}
+
+/** Map queue-only modes (autorefine) to what simulation_app_slice.py accepts. */
+function payloadForRunner(payload: unknown): unknown {
+  if (!isAutoRefinePayload(payload)) return payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
+  const root = payload as Record<string, unknown>;
+  if (root.simulation && typeof root.simulation === "object" && !Array.isArray(root.simulation)) {
+    return {
+      ...root,
+      simulation: {
+        ...(root.simulation as Record<string, unknown>),
+        weight_windows: "refine",
+      },
+    };
+  }
+  return { ...root, weight_windows: "refine" };
+}
+
+function resultFromLogs(): QueueItemResult {
+  // Prefer OpenMC's final combined keff line; fall back to the last progress k=.
+  let keff: number | null = null;
+  let keffUncertainty: number | null = null;
+  let summary: string | null = null;
+  for (let i = job.lastLines.length - 1; i >= 0; i -= 1) {
+    const line = job.lastLines[i];
+    const final = line.match(
+      /k-effective\s*\([^)]+\)\s*=\s*([0-9.]+)\s*\+\/-\s*([0-9.]+)/i,
+    );
+    if (final) {
+      keff = Number(final[1]);
+      keffUncertainty = Number(final[2]);
+      summary = line.replace(/^\[[^\]]+\]\s*/, "").trim();
+      break;
+    }
+  }
+  if (keff == null) {
+    for (let i = job.lastLines.length - 1; i >= 0; i -= 1) {
+      const line = job.lastLines[i];
+      const progress = line.match(
+        /\bk=([0-9.]+)(?:\s*\+\/-\s*([0-9.]+))?/i,
+      );
+      if (progress) {
+        keff = Number(progress[1]);
+        keffUncertainty = progress[2] != null ? Number(progress[2]) : null;
+        summary = line.replace(/^\[[^\]]+\]\s*/, "").trim();
+        break;
+      }
+    }
+  }
+  return { summary, keff, keffUncertainty };
+}
+
+function isWwBuildMode(mode: string): boolean {
+  return mode === "seed" || mode === "refine" || mode === "autorefine" || mode === "generate";
+}
+
+function wwCoverageFields(): Pick<
+  QueueItemResult,
+  "ingaasReached" | "ingaasVoxels" | "ingaasReachFraction" | "ingaasEnergyFraction"
+> {
+  const ww = weightWindowsStatus();
+  return {
+    ingaasReached: ww.ingaasReached,
+    ingaasVoxels: ww.ingaasVoxels,
+    ingaasReachFraction: ww.ingaasReachFraction,
+    ingaasEnergyFraction: ww.ingaasEnergyFraction,
+  };
+}
+
+function attachWwCoverage(result: QueueItemResult, payload: unknown | null | undefined): QueueItemResult {
+  if (!payload || !isWwBuildMode(wwModeFromPayload(payload))) return result;
+  const coverage = wwCoverageFields();
+  const frac = coverage.ingaasReachFraction;
+  const reached =
+    coverage.ingaasReached != null && coverage.ingaasVoxels != null
+      ? `${coverage.ingaasReached}/${coverage.ingaasVoxels}`
+      : null;
+  const pct = frac != null ? `${(100 * frac).toFixed(0)}%` : null;
+  let summary = result.summary ?? null;
+  if (pct && !(summary && /ingaas/i.test(summary))) {
+    const bit = `InGaAs ${pct}${reached ? ` (${reached})` : ""}`;
+    summary = summary ? `${summary} · ${bit}` : bit;
+  }
+  return { ...result, ...coverage, summary };
+}
+
+function finishQueueItem(
+  itemId: string | null,
+  code: number,
+  status: "done" | "failed" | "cancelled",
+  result: QueueItemResult | null,
+  advance: boolean,
+) {
+  markFinished(itemId, code, status, result);
+  job.currentId = null;
+  job.autoRefinePass = 0;
+  emitQueue();
+  emit(`[runner] done exit=${code}`);
+  if (advance) maybeStartNextFromQueue();
+}
+
+function onJobEnded(code: number) {
+  if (job.child && !job.child.killed) {
+    try {
+      job.child.kill();
+    } catch {
+      // ignore
+    }
+  }
+  job.child = null;
+  if (!job.running) return;
+  job.running = false;
+  const stopped = job.suppressQueueAdvance;
+  job.suppressQueueAdvance = false;
+  const itemId = job.currentId;
+  const item = itemId ? getQueueItem(itemId) : null;
+
+  if (!stopped && code === 0 && item && isAutoRefinePayload(item.payload)) {
+    job.autoRefinePass += 1;
+    const ww = weightWindowsStatus();
+    const frac = ww.ingaasReachFraction;
+    const pctLabel = frac != null ? `${(100 * frac).toFixed(0)}%` : "unknown";
+    const reached =
+      ww.ingaasReached != null && ww.ingaasVoxels != null
+        ? `${ww.ingaasReached}/${ww.ingaasVoxels}`
+        : null;
+    emit(
+      `[runner] Autorefine pass ${job.autoRefinePass}: InGaAs ${reached ?? "—"} · ${pctLabel} (target ${(100 * AUTOREFINE_TARGET).toFixed(0)}%)`,
+    );
+
+    if (frac != null && frac >= AUTOREFINE_TARGET) {
+      const base = attachWwCoverage(resultFromLogs(), item.payload);
+      finishQueueItem(
+        itemId,
+        0,
+        "done",
+        {
+          ...base,
+          summary: `Autorefine reached InGaAs ${pctLabel}${reached ? ` (${reached})` : ""} after ${job.autoRefinePass} pass${job.autoRefinePass === 1 ? "" : "es"}`,
+        },
+        true,
+      );
+      return;
+    }
+
+    if (job.autoRefinePass >= AUTOREFINE_MAX_PASSES) {
+      const base = attachWwCoverage(resultFromLogs(), item.payload);
+      finishQueueItem(
+        itemId,
+        0,
+        "done",
+        {
+          ...base,
+          summary: `Autorefine stopped after ${AUTOREFINE_MAX_PASSES} passes (InGaAs ${pctLabel}; target ${(100 * AUTOREFINE_TARGET).toFixed(0)}%)`,
+        },
+        true,
+      );
+      return;
+    }
+
+    // Autorefine is one queue item: keep looping even if Pause is on (Pause only blocks the next item).
+    emit("[runner] Autorefine: below target, starting another refine pass…");
+    launchDockerJob(item.payload, item, { continueAutoRefine: true });
+    return;
+  }
+
+  const status = stopped ? "cancelled" : code === 0 ? "done" : "failed";
+  const result = stopped
+    ? { summary: "Stopped by user" }
+    : attachWwCoverage(resultFromLogs(), item?.payload);
+  finishQueueItem(itemId, code, status, result, !stopped);
+}
+
 export function stopSimulation(): boolean {
   if (!job.running && !job.child) return false;
+  job.suppressQueueAdvance = true;
   emit("[runner] Stop: sending SIGINT to container (same as Ctrl+C)…");
+  emit("[runner] Remaining queued runs stay waiting (use Resume if the queue is paused).");
   void (async () => {
+    const alive = await containerIsRunning();
+    if (!alive) {
+      emit("[runner] Container rimag-app-sim is already gone.");
+      onJobEnded(0);
+      return;
+    }
     const code = await runDocker(["kill", "--signal=SIGINT", CONTAINER_NAME]);
     if (code !== 0) {
       emit("[runner] SIGINT did not reach the container; forcing docker kill…");
-      await runDocker(["kill", CONTAINER_NAME]);
-    }
-    // Also drop the local compose client if it is still attached.
-    if (job.child && !job.child.killed) {
-      try {
-        job.child.kill();
-      } catch {
-        // ignore
+      const killed = await runDocker(["kill", CONTAINER_NAME]);
+      if (killed !== 0) {
+        emit("[runner] Container rimag-app-sim is already gone.");
+        onJobEnded(0);
       }
     }
   })();
@@ -179,6 +540,10 @@ export type WeightWindowsStatus = {
   decades: number | null;
   reachYCm: number | null;
   meshRMaxCm: number | null;
+  ingaasVoxels: number | null;
+  ingaasReached: number | null;
+  ingaasReachFraction: number | null;
+  ingaasEnergyFraction: number | null;
 };
 
 function metaNumber(meta: Record<string, unknown>, key: string): number | null {
@@ -210,6 +575,10 @@ export function weightWindowsStatus(): WeightWindowsStatus {
   let decades: number | null = null;
   let reachYCm: number | null = null;
   let meshRMaxCm: number | null = null;
+  let ingaasVoxels: number | null = null;
+  let ingaasReached: number | null = null;
+  let ingaasReachFraction: number | null = null;
+  let ingaasEnergyFraction: number | null = null;
   if (fs.existsSync(metaPath)) {
     try {
       const meta = JSON.parse(fs.readFileSync(metaPath, "utf8")) as Record<string, unknown>;
@@ -225,6 +594,10 @@ export function weightWindowsStatus(): WeightWindowsStatus {
       decades = metaNumber(meta, "decades");
       reachYCm = metaNumber(meta, "reach_y_cm");
       meshRMaxCm = metaNumber(meta, "mesh_r_max_cm");
+      ingaasVoxels = metaNumber(meta, "ingaas_voxels");
+      ingaasReached = metaNumber(meta, "ingaas_reached");
+      ingaasReachFraction = metaNumber(meta, "ingaas_reach_fraction");
+      ingaasEnergyFraction = metaNumber(meta, "ingaas_energy_fraction");
     } catch {
       // ignore corrupt meta
     }
@@ -244,6 +617,10 @@ export function weightWindowsStatus(): WeightWindowsStatus {
     decades,
     reachYCm,
     meshRMaxCm,
+    ingaasVoxels,
+    ingaasReached,
+    ingaasReachFraction,
+    ingaasEnergyFraction,
   };
 }
 
@@ -262,14 +639,14 @@ export function clearWeightWindows(): boolean {
   return removed;
 }
 
-export function startSimulation(payload: unknown): void {
-  if (job.running) {
-    throw new RimagRunnerError("A simulation is already running.");
-  }
-
-  writeRunParams(payload);
-  const threads = threadsFromPayload(payload);
-  // Entrypoint writes simsettings.json from RIMAG_THREADS before Python starts.
+function launchDockerJob(
+  payload: unknown,
+  item: QueueItem,
+  options: { continueAutoRefine?: boolean } = {},
+) {
+  const runnerPayload = payloadForRunner(payload);
+  writeRunParams(runnerPayload);
+  const threads = threadsFromPayload(runnerPayload);
   fs.writeFileSync(
     path.join(RUN_DIR, "simsettings.json"),
     `${JSON.stringify({ threads }, null, 2)}\n`,
@@ -277,6 +654,12 @@ export function startSimulation(payload: unknown): void {
   );
   job.lastLines = [];
   job.running = true;
+  job.currentId = item.id;
+  job.suppressQueueAdvance = false;
+  if (!options.continueAutoRefine) {
+    job.autoRefinePass = 0;
+  }
+  emitQueue();
 
   const { command, prefix } = dockerComposeCommand();
   const args = [
@@ -293,12 +676,20 @@ export function startSimulation(payload: unknown): void {
     PARAMS_FILE,
   ];
 
+  const autoNote =
+    isAutoRefinePayload(payload) && !options.continueAutoRefine
+      ? " · autorefine until InGaAs ≥ 80%"
+      : isAutoRefinePayload(payload)
+        ? ` · autorefine pass ${job.autoRefinePass + 1}`
+        : "";
+  emit(`[runner] queue item ${item.id.slice(0, 8)} · ${item.label}${autoNote}`);
   emit(`[runner] repo=${REPO_ROOT}`);
   emit(`[runner] run_dir=${RUN_DIR}`);
   emit(`[runner] threads=${threads}`);
   emit(`[runner] ${command} ${args.join(" ")}`);
 
   void removeSimContainer().then(() => {
+    if (!job.running || job.currentId !== item.id) return;
     const child = spawn(command, args, {
       cwd: REPO_ROOT,
       env: {
@@ -311,26 +702,139 @@ export function startSimulation(payload: unknown): void {
     });
     job.child = child;
 
-    const forward = (chunk: Buffer) => {
-      const text = chunk.toString("utf8");
-      for (const line of text.split(/\r\n|\n|\r/)) {
-        if (line.length) emit(line);
-      }
-    };
-
-    child.stdout.on("data", forward);
-    child.stderr.on("data", forward);
+    forwardProcessOutput(child);
     child.on("error", (error) => {
       emit(`[runner] failed to start: ${error.message}`);
-      job.running = false;
-      job.child = null;
-      emit("[runner] done exit=1");
+      onJobEnded(1);
     });
     child.on("close", (code, signal) => {
       emit(`[runner] process closed code=${code ?? "null"} signal=${signal ?? "null"}`);
-      job.running = false;
-      job.child = null;
-      emit(`[runner] done exit=${code ?? 1}`);
+      onJobEnded(code ?? 1);
     });
   });
+}
+
+function maybeStartNextFromQueue() {
+  if (job.running) return;
+  if (job.queuePaused) {
+    emitQueue();
+    return;
+  }
+  const next = peekNextQueued();
+  if (!next) {
+    emitQueue();
+    return;
+  }
+  const marked = markRunning(next.id);
+  if (!marked) return;
+  emit(`[runner] Starting next queued run: ${marked.label}`);
+  launchDockerJob(marked.payload, marked);
+}
+
+/** Start immediately with this payload (becomes the running queue item). */
+export function startSimulation(payload: unknown): void {
+  if (job.running) {
+    throw new RimagRunnerError("A simulation is already running. Use Append to queue another.");
+  }
+  const item = beginRunning(payload);
+  launchDockerJob(payload, item);
+}
+
+/**
+ * Queue a run with the current calculator payload. Runs after the active job,
+ * or starts now if nothing is running. Persisted in runs/default/sim_queue.json.
+ */
+export function appendSimulation(payload: unknown): QueueItem {
+  // If a transport is already live but the disk queue has no "running" row
+  // (e.g. started before the queue existed), register it so Append is #2.
+  if (job.running) {
+    const snap = queueSnapshot();
+    if (!snap.items.some((entry) => entry.status === "running")) {
+      const paramsPath = path.join(RUN_DIR, PARAMS_FILE);
+      let currentPayload: unknown = null;
+      try {
+        if (fs.existsSync(paramsPath)) {
+          currentPayload = JSON.parse(fs.readFileSync(paramsPath, "utf8"));
+        }
+      } catch {
+        currentPayload = null;
+      }
+      ensureRunningPlaceholder(currentPayload, true);
+      const runningItem = queueSnapshot().items.find((entry) => entry.status === "running");
+      job.currentId = runningItem?.id ?? job.currentId;
+    }
+  }
+  const item = appendQueued(payload);
+  emit(`[runner] Appended to queue: ${item.label} (${item.id.slice(0, 8)})`);
+  emitQueue();
+  if (!job.running) maybeStartNextFromQueue();
+  return item;
+}
+
+export function removeQueuedSimulation(id: string): SimQueueState {
+  try {
+    removeQueued(id);
+  } catch (error: unknown) {
+    throw new RimagRunnerError(error instanceof Error ? error.message : String(error));
+  }
+  emit(`[runner] Removed queued run ${id.slice(0, 8)}`);
+  emitQueue();
+  return queueSnapshot();
+}
+
+export function updateQueuedSimulation(id: string, payload: unknown): QueueItem {
+  try {
+    const item = updateQueuedPayload(id, payload);
+    emit(`[runner] Updated queued run ${id.slice(0, 8)} · ${item.label}`);
+    emitQueue();
+    return item;
+  } catch (error: unknown) {
+    throw new RimagRunnerError(error instanceof Error ? error.message : String(error));
+  }
+}
+
+export function reorderQueuedSimulations(orderedQueuedIds: string[]): SimQueueState {
+  try {
+    const state = reorderQueued(orderedQueuedIds);
+    emit(`[runner] Reordered queued runs`);
+    emitQueue();
+    return state;
+  } catch (error: unknown) {
+    throw new RimagRunnerError(error instanceof Error ? error.message : String(error));
+  }
+}
+
+function metaMatchesFinishedItem(item: QueueItem, ww: WeightWindowsStatus): boolean {
+  if (!ww.updatedAt || !item.finishedAt) return false;
+  const metaMs = Date.parse(ww.updatedAt);
+  const finishedMs = Date.parse(item.finishedAt);
+  if (!Number.isFinite(metaMs) || !Number.isFinite(finishedMs)) return false;
+  // Meta is written near the end of the OpenMC job; allow a few minutes of skew.
+  return Math.abs(metaMs - finishedMs) <= 15 * 60 * 1000;
+}
+
+/** Fill InGaAs coverage on older WW build results from weight_windows_meta.json when it matches. */
+function backfillWwCoverage(item: QueueItem): QueueItem {
+  if (item.status !== "done" && item.status !== "failed") return item;
+  if (!isWwBuildMode(wwModeFromPayload(item.payload))) return item;
+  if (item.result?.ingaasReachFraction != null) return item;
+  const ww = weightWindowsStatus();
+  if (ww.ingaasReachFraction == null) return item;
+  const mode = wwModeFromPayload(item.payload);
+  if (mode === "seed" && ww.lastPass && ww.lastPass !== "seed") return item;
+  if ((mode === "refine" || mode === "autorefine") && ww.lastPass && ww.lastPass !== "refine") return item;
+  if (!metaMatchesFinishedItem(item, ww)) return item;
+  const enriched = attachWwCoverage(item.result ?? {}, item.payload);
+  const state = queueSnapshot();
+  const index = state.items.findIndex((entry) => entry.id === item.id);
+  if (index >= 0) {
+    state.items[index] = { ...state.items[index], result: enriched };
+    saveQueue(state);
+  }
+  return { ...item, result: enriched };
+}
+
+export function readQueueItem(id: string): QueueItem | null {
+  const item = getQueueItem(id);
+  return item ? backfillWwCoverage(item) : null;
 }

@@ -75,7 +75,7 @@ export type SimulationParams = {
 };
 
 export const DEFAULT_SIMULATION_PARAMS: SimulationParams = {
-  run_mode: "render",
+  run_mode: "keff",
   n_batches: 200,
   n_threads: 10,
   nsm_material: "Graphite",

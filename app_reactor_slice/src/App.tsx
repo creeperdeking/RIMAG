@@ -268,7 +268,6 @@ const Explorer: React.FC = () => {
   const [tab, setTab] = useState<TabKey>(boot.tab);
   const [saved, setSaved] = useState<Record<string, Setup>>({});
   const [loadedCfg, setLoadedCfg] = useState<string | null>(boot.cfg);
-  const [saveName, setSaveName] = useState("");
   const [choice, setChoice] = useState("");
   const [notice, setNotice] = useState<Notice | null>(null);
   const [copying, setCopying] = useState(false);
@@ -463,34 +462,46 @@ const Explorer: React.FC = () => {
 
   const currentSetup = (): Setup => normalizeSetup(setupFromState(setup, groups));
 
-  const onSave = async () => {
-    const typed = saveName.trim();
-    const name = typed || loadedCfg || "";
-    if (!name) {
+  const persistNamed = async (name: string, message?: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) {
       setNotice({ kind: "danger", text: "Enter a configuration name." });
       return;
     }
     try {
-      const persisted = await putSetups({ ...saved, [name]: currentSetup() });
+      const persisted = await putSetups({ ...saved, [trimmed]: currentSetup() });
       setSaved(persisted);
-      setChoice(name);
-      setLoadedCfg(name);
-      if (typed) setSaveName("");
-      setNotice({ kind: "success", text: `Saved ${name}.` });
+      setChoice(trimmed);
+      setLoadedCfg(trimmed);
+      setNotice({ kind: "success", text: message ?? `Saved ${trimmed}.` });
     } catch (error) {
       setNotice({ kind: "danger", text: error instanceof Error ? error.message : String(error) });
     }
   };
 
-  const onLoad = () => {
-    const target = saved[choice];
-    if (!choice || !target) {
-      setNotice({ kind: "danger", text: "Choose a saved configuration." });
+  const onSave = async () => {
+    if (loadedCfg) {
+      await persistNamed(loadedCfg, `Updated ${loadedCfg}.`);
       return;
     }
+    const typed = window.prompt("Configuration name");
+    if (typed == null) return;
+    await persistNamed(typed);
+  };
+
+  const onCreate = async () => {
+    const typed = window.prompt("New configuration name", loadedCfg ? `${loadedCfg}-copy` : "");
+    if (typed == null) return;
+    await persistNamed(typed, `Created ${typed.trim()}.`);
+  };
+
+  const onSelectConfig = (name: string) => {
+    setChoice(name);
+    const target = saved[name];
+    if (!target) return;
     setSetup(target);
-    setLoadedCfg(choice);
-    setNotice({ kind: "success", text: `Loaded ${choice}.` });
+    setLoadedCfg(name);
+    setNotice({ kind: "success", text: `Loaded ${name}.` });
   };
 
   const onCopyBlender = async () => {
@@ -518,15 +529,16 @@ const Explorer: React.FC = () => {
   };
 
   const onDelete = async () => {
-    if (!choice || !saved[choice]) return;
-    if (!window.confirm(`Delete ${choice} from the save folder?`)) return;
+    const name = loadedCfg || choice;
+    if (!name || !saved[name]) return;
+    if (!window.confirm(`Delete ${name} from the save folder?`)) return;
     const next = { ...saved };
-    delete next[choice];
+    delete next[name];
     try {
       const persisted = await putSetups(next);
       setSaved(persisted);
-      if (loadedCfg === choice) setLoadedCfg(null);
-      setNotice({ kind: "success", text: `Deleted ${choice}.` });
+      if (loadedCfg === name) setLoadedCfg(null);
+      setNotice({ kind: "success", text: `Deleted ${name}.` });
     } catch (error) {
       setNotice({ kind: "danger", text: error instanceof Error ? error.message : String(error) });
     }
@@ -790,58 +802,59 @@ const Explorer: React.FC = () => {
             checked={setup.dims}
             onChange={(event) => setSetup((prev) => ({ ...prev, dims: event.target.checked }))}
           />
+      </aside>
 
-          <hr className="my-3" />
-
-          <Form.Group className="mb-2">
-            <Form.Label className="small mb-1">Configuration name</Form.Label>
-            <Form.Control size="sm" value={saveName} onChange={(event) => setSaveName(event.target.value)} />
-          </Form.Group>
-          <Button size="sm" variant="primary" className="w-100 mb-3" onClick={() => void onSave()}>
-            Save
-          </Button>
-
-          {savedNames.length ? (
-            <>
-              <Form.Group className="mb-2">
-                <Form.Label className="small mb-1">Saved configurations</Form.Label>
-                <div className="d-flex gap-2">
-                  <Form.Select size="sm" value={choice} onChange={(event) => setChoice(event.target.value)}>
-                    {savedNames.map((name) => (
-                      <option key={name} value={name}>
-                        {name}
-                      </option>
-                    ))}
-                  </Form.Select>
-                  <Button size="sm" variant="outline-danger" title="Delete this configuration" onClick={() => void onDelete()}>
-                    Delete
-                  </Button>
-                </div>
-              </Form.Group>
-              <Button size="sm" variant="outline-primary" className="w-100" onClick={onLoad}>
-                Load
+      <main className="app-main">
+          <div className="config-toolbar">
+            <Form.Select
+              size="sm"
+              className="config-toolbar-select"
+              value={loadedCfg ?? choice}
+              disabled={!savedNames.length}
+              aria-label="Saved configuration"
+              onChange={(event) => onSelectConfig(event.target.value)}
+            >
+              {!savedNames.length && <option value="">Unsaved</option>}
+              {savedNames.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </Form.Select>
+            <Button
+              size="sm"
+              variant="outline-secondary"
+              className="config-toolbar-icon"
+              title="Create a new configuration from the current setup"
+              onClick={() => void onCreate()}
+            >
+              +
+            </Button>
+            <Button size="sm" variant="primary" title={loadedCfg ? `Save ${loadedCfg}` : "Save configuration"} onClick={() => void onSave()}>
+              Save
+            </Button>
+            {loadedCfg && (
+              <Button
+                size="sm"
+                variant="link"
+                className="config-toolbar-delete"
+                title={`Delete ${loadedCfg}`}
+                onClick={() => void onDelete()}
+              >
+                ×
               </Button>
-            </>
-          ) : (
-            <div className="small text-secondary">No saved configurations yet.</div>
-          )}
+            )}
+          </div>
           {notice && (
             <Alert
               variant={notice.kind}
               dismissible
-              className="py-2 px-3 small mt-2 mb-0"
+              className="py-2 px-3 small config-toolbar-notice"
               onClose={() => setNotice(null)}
             >
               {notice.text}
             </Alert>
           )}
-          <div className="small text-secondary mt-2">
-            Leave the name blank to update {loadedCfg ? loadedCfg : "the loaded configuration"}. Configurations are stored
-            in the save folder.
-          </div>
-      </aside>
-
-      <main className="app-main">
           <Tabs
             activeKey={tab}
             onSelect={(key) => {
@@ -850,7 +863,7 @@ const Explorer: React.FC = () => {
             mountOnEnter
             // Keep mounted tabs alive so Simulation can keep streaming output.
             unmountOnExit={false}
-            className="mb-0"
+            className="mb-0 app-main-tabs"
           >
             {TAB_KEYS.map((key) => (
               <Tab key={key} eventKey={key} title={TAB_LABELS[key]} className="pt-3">

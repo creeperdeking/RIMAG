@@ -73,6 +73,6 @@ export type ParticleType = (typeof PARTICLE_TYPES)[number];
 export const WEIGHT_WINDOWS = ["no", "use"] as const;
 export type WeightWindows = (typeof WEIGHT_WINDOWS)[number];
 
-/** Full set accepted by the Python runner (includes build passes). */
-export const WEIGHT_WINDOWS_RUN = ["no", "use", "generate", "seed", "refine"] as const;
+/** Full set for queue items (includes build passes). Autorefine is expanded to refine by the runner. */
+export const WEIGHT_WINDOWS_RUN = ["no", "use", "generate", "seed", "refine", "autorefine"] as const;
 export type WeightWindowsRun = (typeof WEIGHT_WINDOWS_RUN)[number];

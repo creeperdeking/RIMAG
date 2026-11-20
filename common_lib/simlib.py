@@ -487,64 +487,164 @@ def summarize_weight_windows(ww_path: str | Path = WW_FILE) -> dict:
     }
 
 
-def print_weight_windows_depth_summary(stats: dict) -> None:
-    """Human-readable shield-penetration summary for the Simulation log."""
-    spat = 100.0 * float(stats.get("spatial_coverage") or 0.0)
-    ener = 100.0 * float(stats.get("energy_coverage") or 0.0)
-    outer = 100.0 * float(stats.get("outer_coverage") or 0.0)
-    decades = stats.get("decades")
-    lo_min = stats.get("lower_min")
-    lo_max = stats.get("lower_max")
-    reach = stats.get("reach_y_cm")
-    r_max = stats.get("mesh_r_max_cm")
-    hit = stats.get("voxels_hit")
-    total = stats.get("voxels_total")
+def summarize_ingaas_weight_windows(ww_path: str | Path = WW_FILE) -> dict:
+    """How many WW mesh voxels overlap InGaAs sheets, and how many have windows.
 
+    Mesh centers miss the 0.02 cm sheets, so each voxel is sampled on a small
+    xy stencil and a dense z ladder inside the period. Uses a temp cwd with a
+    minimal settings.xml so a leftover refine settings (WW generators on) cannot
+    break openmc.lib.init after the transport run.
+    """
+    import shutil
+    import tempfile
+    import openmc.lib
+
+    path = Path(ww_path).resolve()
+    wws = load_weight_windows_list(path)
+    if not wws:
+        raise ValueError(f"{path} contains no weight windows")
+    ww = wws[-1]
+    lo = np.asarray(ww.lower_ww_bounds, dtype=float)
+    mesh = ww.mesh
+    ll = np.asarray(mesh.lower_left, dtype=float)
+    ur = np.asarray(mesh.upper_right, dtype=float)
+    nx, ny, nz = (int(v) for v in mesh.dimension)
+    if lo.ndim != 4:
+        lo = lo.reshape(nx, ny, nz, -1)
+    n_e = int(lo.shape[3])
+    dx = (ur[0] - ll[0]) / nx
+    dy = (ur[1] - ll[1]) / ny
+    dz = (ur[2] - ll[2]) / nz
+    z_samples = 41
+    xy_offsets = (-0.35, 0.0, 0.35)
+
+    def _mat_name(cell, mats) -> str:
+        fill = cell.fill
+        name = getattr(fill, "name", "") or ""
+        if name:
+            return name
+        mid = getattr(fill, "id", None)
+        mat = mats.get(mid) if mid is not None else None
+        return getattr(mat, "name", "") if mat is not None else ""
+
+    run_dir = path.parent
+    geom_src = run_dir / "geometry.xml"
+    mats_src = run_dir / "materials.xml"
+    if not geom_src.is_file() or not mats_src.is_file():
+        raise FileNotFoundError(
+            f"Need {geom_src.name} and {mats_src.name} beside {path.name}"
+        )
+
+    prev_cwd = Path.cwd()
+    stage = Path(tempfile.mkdtemp(prefix="ingaas_ww_"))
+    try:
+        shutil.copy2(geom_src, stage / "geometry.xml")
+        shutil.copy2(mats_src, stage / "materials.xml")
+        # Tiny eigenvalue settings: geometry probe only, no weight windows.
+        probe = openmc.Settings()
+        probe.run_mode = "eigenvalue"
+        probe.particles = 1
+        probe.batches = 1
+        probe.inactive = 0
+        probe.source = openmc.IndependentSource(
+            space=openmc.stats.Point((0.0, 0.0, 0.0))
+        )
+        probe.output = {"summary": False, "tallies": False}
+        os.chdir(stage)
+        probe.export_to_xml()
+        if getattr(openmc.lib, "is_initialized", False):
+            openmc.lib.finalize()
+        openmc.lib.init(args=[])
+        try:
+            mats = {m.id: m for m in openmc.lib.materials.values()}
+            total = 0
+            reached = 0
+            energy_fracs: List[float] = []
+            for ix in range(nx):
+                for iy in range(ny):
+                    for iz in range(nz):
+                        x0 = float(ll[0] + (ix + 0.5) * dx)
+                        y0 = float(ll[1] + (iy + 0.5) * dy)
+                        hit = False
+                        for ox in xy_offsets:
+                            for oy in xy_offsets:
+                                x = x0 + ox * dx
+                                y = y0 + oy * dy
+                                if x < ll[0] or x > ur[0] or y < ll[1] or y > ur[1]:
+                                    continue
+                                for jz in range(z_samples):
+                                    z = float(
+                                        ll[2]
+                                        + (iz + (jz + 0.5) / z_samples) * dz
+                                    )
+                                    try:
+                                        cell, _ = openmc.lib.find_cell((x, y, z))
+                                    except Exception:
+                                        continue
+                                    if "InGaAs" in _mat_name(cell, mats):
+                                        hit = True
+                                        break
+                                if hit:
+                                    break
+                            if hit:
+                                break
+                        if not hit:
+                            continue
+                        total += 1
+                        cell_vals = lo[ix, iy, iz, :]
+                        pos = cell_vals[
+                            np.isfinite(cell_vals) & (cell_vals > 0.0)
+                        ]
+                        if pos.size:
+                            reached += 1
+                            energy_fracs.append(
+                                float(pos.size / n_e) if n_e else 0.0
+                            )
+        finally:
+            if getattr(openmc.lib, "is_initialized", False):
+                openmc.lib.finalize()
+    finally:
+        os.chdir(prev_cwd)
+        shutil.rmtree(stage, ignore_errors=True)
+
+    return {
+        "ingaas_voxels": int(total),
+        "ingaas_reached": int(reached),
+        "ingaas_missed": int(total - reached),
+        "ingaas_reach_fraction": (reached / total) if total else 0.0,
+        "ingaas_energy_fraction": (
+            float(np.mean(energy_fracs)) if energy_fracs else 0.0
+        ),
+    }
+
+
+def print_weight_windows_depth_summary(stats: dict, ingaas: dict | None = None) -> None:
+    """Human-readable InGaAs / shield-penetration summary for the Simulation log."""
     print("-------- Weight-window depth --------")
-    n_sets = stats.get("n_sets")
-    if n_sets and int(n_sets) > 1:
-        print(f"(using latest of {n_sets} WW sets in file)")
-    print(
-        f"Spatial coverage: {spat:.1f}% of voxels "
-        f"({hit}/{total} with any energy window)"
-    )
-    print(f"Energy×voxel coverage: {ener:.1f}%")
-    if decades is not None and lo_min is not None and lo_max is not None:
+    if ingaas is not None:
+        voxels = int(ingaas.get("ingaas_voxels") or 0)
+        hit = int(ingaas.get("ingaas_reached") or 0)
+        frac = 100.0 * float(ingaas.get("ingaas_reach_fraction") or 0.0)
+        efrac = 100.0 * float(ingaas.get("ingaas_energy_fraction") or 0.0)
         print(
-            f"Lower-bound span: {decades:.2f} decades "
-            f"({lo_min:.3e} … {lo_max:.3e})"
+            f"InGaAs WW coverage: {hit}/{voxels} mesh cells "
+            f"({frac:.1f}%); energy groups when reached {efrac:.1f}%"
+        )
+        print(
+            "Tip: empty InGaAs cells → refine again; "
+            "then run keff with weight_windows=use for DDD."
         )
     else:
-        print("Lower-bound span: n/a (no positive windows)")
-    print(
-        f"Outer-third coverage: {outer:.1f}% "
-        f"({stats.get('outer_hit')}/{stats.get('outer_total')} voxels)"
-    )
-    if reach is not None and r_max:
+        spat = 100.0 * float(stats.get("spatial_coverage") or 0.0)
+        outer = 100.0 * float(stats.get("outer_coverage") or 0.0)
+        decades = stats.get("decades")
+        print(f"Spatial coverage: {spat:.1f}% · outer {outer:.1f}%")
+        if decades is not None:
+            print(f"Lower-bound span: {decades:.2f} decades")
         print(
-            f"Farthest +y window: r≈{reach:.0f} cm "
-            f"(mesh radial extent ≈{r_max:.0f} cm)"
+            "Tip: refine again to push into the TPV; "
+            "then run keff with weight_windows=use for DDD."
         )
-    # Compact radial profile: 6 bins from centre to +y edge.
-    line_r = stats.get("lineout_y_r_cm") or []
-    line_lo = stats.get("lineout_y_lower") or []
-    pos = [(r, w) for r, w in zip(line_r, line_lo) if r >= 0.0]
-    if pos:
-        n_bins = min(6, len(pos))
-        edges = np.linspace(0.0, pos[-1][0] if pos[-1][0] > 0 else 1.0, n_bins + 1)
-        parts = []
-        for i in range(n_bins):
-            lo_r, hi_r = edges[i], edges[i + 1]
-            chunk = [w for r, w in pos if (r >= lo_r and (r < hi_r or i == n_bins - 1))]
-            if not chunk or max(chunk) <= 0.0:
-                parts.append(f"{hi_r:.0f}cm:·")
-            else:
-                parts.append(f"{hi_r:.0f}cm:{max(chunk):.1e}")
-        print("Lineout +y (max lower WW): " + " | ".join(parts))
-    print(
-        "Tip: low outer coverage / few decades → refine again; "
-        "then run keff with weight_windows=use for DDD."
-    )
     print("------------------------------------")
 
 
@@ -583,7 +683,20 @@ def write_ww_meta(
         payload["lower_max"] = depth["lower_max"]
         payload["reach_y_cm"] = depth["reach_y_cm"]
         payload["mesh_r_max_cm"] = depth["mesh_r_max_cm"]
-        print_weight_windows_depth_summary(depth)
+        ingaas = None
+        try:
+            ingaas = summarize_ingaas_weight_windows(WW_FILE)
+            payload["ingaas_voxels"] = ingaas["ingaas_voxels"]
+            payload["ingaas_reached"] = ingaas["ingaas_reached"]
+            payload["ingaas_missed"] = ingaas["ingaas_missed"]
+            payload["ingaas_reach_fraction"] = ingaas["ingaas_reach_fraction"]
+            payload["ingaas_energy_fraction"] = ingaas["ingaas_energy_fraction"]
+        except Exception as ingaas_exc:
+            import traceback
+
+            print(f"InGaAs WW coverage skipped: {ingaas_exc}")
+            traceback.print_exc()
+        print_weight_windows_depth_summary(depth, ingaas)
         # Drop older MAGIC generations so the next refine/use loads only the latest.
         prune_weight_windows_file(WW_FILE)
     except Exception as exc:
@@ -684,7 +797,11 @@ def make_sim_settings(
         # Seed/refine are for window shape, not final tallies: fewer histories
         # and a coarser mesh keep runtime hours → minutes.
         settings.particles = min(settings.particles, 2000)
+        # Periodic z-cone landings are nudged inside the cell in OpenMC.
+        # Keep a modest lost-particle margin; dumps stay off (they dominate runtime).
         settings.rel_max_lost_particles = 0.05
+        settings.max_write_lost_particles = 1
+        settings.max_history_splits = min(settings.max_history_splits, 100)
         ww_mesh = make_ww_mesh(
             lower_left_corner, upper_right_corner, cell_dimension=ww_mesh_cm
         )
@@ -714,21 +831,13 @@ def make_sim_settings(
             settings.weight_windows = [latest_weight_windows(WW_FILE)]
             settings.survival_biasing = False
             settings.cutoff = {"weight": 1e-4, "weight_avg": 1.0}
-            # Cap splits: WW+periodic-cone secondary bank is fragile.
-            settings.max_history_splits = min(settings.max_history_splits, 500)
-            settings.rel_max_lost_particles = max(
-                settings.rel_max_lost_particles, 0.05
-            )
-            # Default -1 writes an HDF5 dump per lost particle — kills refine runtime.
-            # OpenMC's Python API requires > 0; 1 keeps a single diagnostic dump.
-            settings.max_write_lost_particles = 1
             print(f"Weight windows: refining from latest set in {WW_FILE}")
         else:
             print("Weight windows: seeding MAGIC (offline, after analog transport)")
-            settings.max_write_lost_particles = 1
         print(
             f"Weight windows: {settings.particles} particles/gen, "
-            f"rel_max_lost={settings.rel_max_lost_particles}, on_the_fly=False"
+            f"rel_max_lost={settings.rel_max_lost_particles}, "
+            f"max_splits={settings.max_history_splits}, on_the_fly=False"
         )
     elif weight_windows == "use":
         if not Path(WW_FILE).is_file():
@@ -743,9 +852,8 @@ def make_sim_settings(
         settings.weight_windows = [latest_weight_windows(WW_FILE)]
         settings.survival_biasing = False  # WW handles weights
         settings.cutoff = {"weight": 1e-4, "weight_avg": 1.0}  # RR safety
-        settings.max_history_splits = min(settings.max_history_splits, 500)
-        # Applied WW splits on periodic z-cones can lose a few particles.
-        settings.rel_max_lost_particles = max(settings.rel_max_lost_particles, 0.05)
+        settings.max_history_splits = min(settings.max_history_splits, 100)
+        settings.rel_max_lost_particles = 0.05
         settings.max_write_lost_particles = 1
 
     return settings

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -106,6 +108,22 @@ def _pixel_shape(width: float, height: float, pixels: int) -> tuple[int, int]:
     return px_w, px_h
 
 
+def _stage_plot_dir(work: Path) -> Path:
+    """OpenMC plot mode writes plots.xml and summary.h5 in the process cwd.
+
+    Keep that off the live run directory so a plot can run during transport.
+    """
+    stage = work / ".plot_stage"
+    if stage.exists():
+        shutil.rmtree(stage)
+    stage.mkdir()
+    for name in ("geometry.xml", "materials.xml", "settings.xml", PLOT_DEFAULTS_NAME):
+        src = work / name
+        if src.is_file():
+            shutil.copyfile(src, stage / name)
+    return stage
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     work = Path.cwd()
@@ -160,8 +178,10 @@ def main(argv: list[str] | None = None) -> int:
         flush=True,
     )
 
-    materials = openmc.Materials.from_xml(str(mats_path))
-    openmc.Geometry.from_xml(str(geom_path), materials)
+    stage = _stage_plot_dir(work)
+    os.chdir(stage)
+    materials = openmc.Materials.from_xml(str(stage / "materials.xml"))
+    openmc.Geometry.from_xml(str(stage / "geometry.xml"), materials)
 
     plot = openmc.Plot()
     plot.filename = Path(args.out).stem
@@ -177,10 +197,11 @@ def main(argv: list[str] | None = None) -> int:
     openmc.Plots([plot]).export_to_xml()
     openmc.plot_geometry(output=False)
 
-    out_path = work / f"{plot.filename}.png"
+    out_path = stage / f"{plot.filename}.png"
     wanted = work / args.out
-    if out_path.resolve() != wanted.resolve() and out_path.is_file():
-        out_path.replace(wanted)
+    if out_path.is_file():
+        shutil.copyfile(out_path, wanted)
+    shutil.rmtree(stage, ignore_errors=True)
     if not wanted.is_file():
         print(f"Expected plot file missing: {wanted}", file=sys.stderr)
         return 1

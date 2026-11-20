@@ -2,7 +2,11 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { isSimulationRunning, syncRimagSourcesIntoRunDir } from "./rimagRunner";
+import {
+  isSimulationRunning,
+  syncPlotScriptIntoRunDir,
+  syncRimagSourcesIntoRunDir,
+} from "./rimagRunner";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.resolve(HERE, "..");
@@ -98,7 +102,13 @@ export function viewForBasis(
     Math.max(1e-6, (defaults.ur[1] - defaults.ll[1]) * defaults.pad),
     Math.max(1e-6, (defaults.ur[2] - defaults.ll[2]) * defaults.pad),
   ];
-  const origin = defaults.origin;
+  // Center on the bounding box. defaults.origin is the fuel point, which is
+  // not the middle of the disk, so a full-span window centered there clips the far side.
+  const origin: [number, number, number] = [
+    0.5 * (defaults.ll[0] + defaults.ur[0]),
+    0.5 * (defaults.ll[1] + defaults.ur[1]),
+    0.5 * (defaults.ll[2] + defaults.ur[2]),
+  ];
   if (basis === "xy") return { width: spans[0], height: spans[1], origin };
   if (basis === "xz") return { width: spans[0], height: spans[2], origin };
   return { width: spans[1], height: spans[2], origin };
@@ -237,13 +247,6 @@ function runDockerPlot(req: PlotRequest): Promise<{ code: number; stderr: string
 
 /** Run OpenMC plot mode; returns absolute path to the PNG. */
 export async function plotGeometrySlice(body: unknown): Promise<string> {
-  if (isSimulationRunning()) {
-    throw new GeometryPlotError(
-      "A simulation is running; wait for it to finish before plotting.",
-      409,
-    );
-  }
-
   const status = geometryStatus();
   if (!status.ready) {
     throw new GeometryPlotError(
@@ -253,7 +256,11 @@ export async function plotGeometrySlice(body: unknown): Promise<string> {
   }
 
   const req = parsePlotRequest(body);
-  syncRimagSourcesIntoRunDir();
+  // A full sync rewrites common_lib and app_slice_design in the live run folder.
+  // During transport, only refresh the plot script. The plot itself reads copies
+  // of the XML in .plot_stage and does not rewrite the run's geometry or summary.
+  if (isSimulationRunning()) syncPlotScriptIntoRunDir();
+  else syncRimagSourcesIntoRunDir();
 
   const outPath = path.join(RUN_DIR, PLOT_OUT);
   if (fs.existsSync(outPath)) {
