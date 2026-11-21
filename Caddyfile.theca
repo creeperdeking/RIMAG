@@ -1,0 +1,13 @@
+# RIMAG reactor-slice → https://theca.fr (443)
+# FV-0               → https://theca.fr:8443
+# Install: sudo cp /home/neyney/RIMAG/Caddyfile.theca /etc/caddy/Caddyfile && sudo systemctl reload caddy
+
+theca.fr {
+	encode gzip
+	reverse_proxy 127.0.0.1:8080
+}
+
+theca.fr:8443 {
+	encode gzip
+	reverse_proxy 127.0.0.1:5173
+}

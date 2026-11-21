@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,7 +12,11 @@ const APP_MO = path.join(MODEL_DIR, "RIMAEL_App.mo");
 const SOURCE_PKG = path.join(MODEL_DIR, "RIMAEL");
 const MAKE_APP = path.join(MODEL_DIR, "_make_app_mo.py");
 const MOS = path.join(MODEL_DIR, "run_reactor_app.mos");
-const EXE = path.join(WORK_DIR, "RIMAEL.Reactor.exe");
+/** OpenModelica emits `RIMAEL.Reactor.exe` on Windows and `RIMAEL.Reactor` elsewhere. */
+const REACTOR_BIN = path.join(
+  WORK_DIR,
+  process.platform === "win32" ? "RIMAEL.Reactor.exe" : "RIMAEL.Reactor",
+);
 const CSV = path.join(WORK_DIR, "RIMAEL.Reactor_res.csv");
 
 function sourcePackageMtimeMs(): number {
@@ -130,20 +134,68 @@ function overrideFlags(
   };
 }
 
-function findOmc(): string {
+const OMC_DOCKER_IMAGE =
+  process.env.OPENMODELICA_DOCKER_IMAGE ?? "openmodelica/openmodelica:v1.27.1-minimal";
+/** Writable HOME for the non-root Docker user (Modelica package index + stdlib). */
+const OMC_DOCKER_HOME = path.join(MODEL_DIR, ".omc-home");
+
+type OmcLauncher =
+  | { kind: "local"; omc: string }
+  | { kind: "docker"; image: string };
+
+function resolveOnPath(command: string): string | null {
+  try {
+    const which = process.platform === "win32" ? "where" : "which";
+    const resolved = execFileSync(which, [command], { encoding: "utf8" });
+    const first = resolved
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find(Boolean);
+    return first ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function findLocalOmc(): string | null {
   const candidates = [
     process.env.OPENMODELICA_OMC,
     "C:\\Program Files\\OpenModelica1.27.1-64bit\\bin\\omc.exe",
     "C:\\Program Files\\OpenModelica1.25.0-64bit\\bin\\omc.exe",
     "C:\\Program Files\\OpenModelica1.24.0-64bit\\bin\\omc.exe",
+    "/usr/bin/omc",
     "omc",
   ].filter((value): value is string => Boolean(value));
   for (const candidate of candidates) {
-    if (candidate === "omc") return candidate;
+    if (!candidate.includes("/") && !candidate.includes("\\")) {
+      const resolved = resolveOnPath(candidate);
+      if (resolved) return resolved;
+      continue;
+    }
     if (fs.existsSync(candidate)) return candidate;
   }
+  return null;
+}
+
+function dockerAvailable(): boolean {
+  try {
+    execFileSync("docker", ["info"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function resolveOmcLauncher(): OmcLauncher {
+  const local = findLocalOmc();
+  if (local) return { kind: "local", omc: local };
+  if (process.platform !== "win32" && dockerAvailable()) {
+    return { kind: "docker", image: OMC_DOCKER_IMAGE };
+  }
   throw new RimaelRunnerError(
-    "OpenModelica omc.exe not found. Install OpenModelica or set OPENMODELICA_OMC.",
+    "OpenModelica omc not found. Install OpenModelica, set OPENMODELICA_OMC, or install Docker to use " +
+      OMC_DOCKER_IMAGE +
+      ".",
   );
 }
 
@@ -237,22 +289,90 @@ function parseFuelCsv(csvPath: string): { timeS: number[]; fuelTempK: number[] }
 }
 
 function canReuseBinary(): boolean {
-  if (!fs.existsSync(EXE) || !fs.existsSync(APP_MO)) return false;
-  return fs.statSync(EXE).mtimeMs >= fs.statSync(APP_MO).mtimeMs;
+  if (!fs.existsSync(REACTOR_BIN) || !fs.existsSync(APP_MO)) return false;
+  try {
+    fs.accessSync(REACTOR_BIN, fs.constants.X_OK);
+  } catch {
+    return false;
+  }
+  return fs.statSync(REACTOR_BIN).mtimeMs >= fs.statSync(APP_MO).mtimeMs;
 }
 
-async function runCompiledBinary(override: string): Promise<void> {
-  const result = await runCommand(EXE, [`-override=${override}`], {
-    cwd: WORK_DIR,
-    env: {
-      ...process.env,
-      PATH: `${path.dirname(findOmc())}${path.delimiter}${process.env.PATH ?? ""}`,
-    },
-    timeoutMs: 180_000,
-  });
+function ensureDockerOmcHome() {
+  fs.mkdirSync(OMC_DOCKER_HOME, { recursive: true });
+}
+
+function modelicaStdlibInstalled(): boolean {
+  const libraries = path.join(OMC_DOCKER_HOME, ".openmodelica", "libraries");
+  if (!fs.existsSync(libraries)) return false;
+  return fs.readdirSync(libraries).some((name) => name.startsWith("Modelica "));
+}
+
+function dockerRunArgs(image: string, workdirInContainer: string, command: string[]): string[] {
+  ensureDockerOmcHome();
+  const uid = typeof process.getuid === "function" ? String(process.getuid()) : "0";
+  const gid = typeof process.getgid === "function" ? String(process.getgid()) : "0";
+  return [
+    "run",
+    "--rm",
+    "-u",
+    `${uid}:${gid}`,
+    "-e",
+    "HOME=/omc-home",
+    "-v",
+    `${OMC_DOCKER_HOME}:/omc-home`,
+    "-v",
+    `${MODEL_DIR}:/model`,
+    "-w",
+    workdirInContainer,
+    image,
+    ...command,
+  ];
+}
+
+async function ensureDockerModelicaLibrary(image: string): Promise<void> {
+  if (modelicaStdlibInstalled()) return;
+  ensureDockerOmcHome();
+  const result = await runCommand(
+    "docker",
+    dockerRunArgs(image, "/model", [
+      "bash",
+      "-lc",
+      'printf "%s\\n" "installPackage(Modelica);" "getErrorString();" "loadModel(Modelica);" "getErrorString();" > /tmp/install_modelica.mos && omc /tmp/install_modelica.mos',
+    ]),
+    { cwd: MODEL_DIR, timeoutMs: 300_000 },
+  );
+  if (result.code !== 0 || !modelicaStdlibInstalled()) {
+    throw new RimaelRunnerError(
+      `Could not install Modelica standard library in Docker.\n${result.stdout}\n${result.stderr}`,
+    );
+  }
+}
+
+async function runCompiledBinary(override: string, launcher: OmcLauncher): Promise<void> {
+  const overrideArg = `-override=${override}`;
+  let result: { code: number; stdout: string; stderr: string };
+  if (launcher.kind === "docker") {
+    await ensureDockerModelicaLibrary(launcher.image);
+    // Runtime libs live in the image; run the host-built Linux binary inside it.
+    result = await runCommand(
+      "docker",
+      dockerRunArgs(launcher.image, "/model/work", [`./${path.basename(REACTOR_BIN)}`, overrideArg]),
+      { cwd: WORK_DIR, timeoutMs: 180_000 },
+    );
+  } else {
+    result = await runCommand(REACTOR_BIN, [overrideArg], {
+      cwd: WORK_DIR,
+      env: {
+        ...process.env,
+        PATH: `${path.dirname(launcher.omc)}${path.delimiter}${process.env.PATH ?? ""}`,
+      },
+      timeoutMs: 180_000,
+    });
+  }
   if (result.code !== 0) {
     throw new RimaelRunnerError(
-      `RIMAEL.Reactor.exe failed (exit ${result.code}).\n${result.stdout}\n${result.stderr}`,
+      `RIMAEL.Reactor failed (exit ${result.code}).\n${result.stdout}\n${result.stderr}`,
     );
   }
   if (!fs.existsSync(CSV)) {
@@ -286,27 +406,46 @@ getErrorString();
   return mosPath;
 }
 
-async function compileAndSimulateWithOmc(override: string): Promise<void> {
+async function compileAndSimulateWithOmc(override: string, launcher: OmcLauncher): Promise<void> {
   fs.mkdirSync(WORK_DIR, { recursive: true });
+  // Drop stale Windows/previous results so a failed omc exit 0 cannot look successful.
+  for (const stale of [CSV, REACTOR_BIN]) {
+    try {
+      fs.unlinkSync(stale);
+    } catch {
+      /* missing is fine */
+    }
+  }
   const mosPath = writeMosWithOverride(override);
-  const omc = findOmc();
-  const result = await runCommand(omc, [mosPath], {
-    cwd: MODEL_DIR,
-    env: {
-      ...process.env,
-      PATH: `${path.dirname(omc)}${path.delimiter}${process.env.PATH ?? ""}`,
-    },
-    timeoutMs: 600_000,
-  });
+  const mosName = path.basename(mosPath);
+  let result: { code: number; stdout: string; stderr: string };
+  if (launcher.kind === "docker") {
+    await ensureDockerModelicaLibrary(launcher.image);
+    result = await runCommand("docker", dockerRunArgs(launcher.image, "/model", ["omc", mosName]), {
+      cwd: MODEL_DIR,
+      timeoutMs: 600_000,
+    });
+  } else {
+    result = await runCommand(launcher.omc, [mosPath], {
+      cwd: MODEL_DIR,
+      env: {
+        ...process.env,
+        PATH: `${path.dirname(launcher.omc)}${path.delimiter}${process.env.PATH ?? ""}`,
+      },
+      timeoutMs: 600_000,
+    });
+  }
   const logPath = path.join(WORK_DIR, "omc_run.log");
-  fs.writeFileSync(logPath, `${result.stdout}\n${result.stderr}\n`, "utf8");
-  if (result.code !== 0 || !fs.existsSync(CSV)) {
+  const combined = `${result.stdout}\n${result.stderr}\n`;
+  fs.writeFileSync(logPath, combined, "utf8");
+  const ok =
+    result.code === 0 &&
+    fs.existsSync(CSV) &&
+    /simulation finished successfully/i.test(combined);
+  if (!ok) {
     throw new RimaelRunnerError(
       `OpenModelica failed (exit ${result.code}). See ${logPath}\n${result.stdout.slice(-2000)}\n${result.stderr.slice(-2000)}`,
     );
-  }
-  if (!/simulation finished successfully/i.test(result.stdout + result.stderr) && !fs.existsSync(CSV)) {
-    throw new RimaelRunnerError(`OpenModelica did not report success. See ${logPath}`);
   }
 }
 
@@ -327,13 +466,14 @@ export async function runRimaelFuelTemperature(
   );
   await regenerateAppMoIfNeeded();
   fs.mkdirSync(WORK_DIR, { recursive: true });
+  const launcher = resolveOmcLauncher();
 
   let reusedBinary = false;
   if (canReuseBinary()) {
     reusedBinary = true;
-    await runCompiledBinary(flags);
+    await runCompiledBinary(flags, launcher);
   } else {
-    await compileAndSimulateWithOmc(flags);
+    await compileAndSimulateWithOmc(flags, launcher);
   }
 
   const { timeS, fuelTempK } = parseFuelCsv(CSV);

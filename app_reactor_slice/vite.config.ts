@@ -535,9 +535,16 @@ function rimaelApi(): Plugin {
 export default defineConfig({
   plugins: [react(), setupStore(), blenderClipboard(), simulationApi(), geometryApi(), rimaelApi()],
   server: {
-    host: true,
-    port: 3001,
+    // Bound locally; Caddy terminates HTTPS on theca.fr and proxies here.
+    host: "127.0.0.1",
+    port: 8080,
     strictPort: true,
+    allowedHosts: ["theca.fr"],
+    hmr: {
+      protocol: "wss",
+      host: "theca.fr",
+      clientPort: 443,
+    },
   },
   build: {
     outDir: "build",

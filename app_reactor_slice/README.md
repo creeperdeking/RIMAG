@@ -7,6 +7,6 @@ npm install
 npm start
 ```
 
-The dev server listens on port 3001. Sliders are on the left; the drawing and results update as you move them.
+The dev server listens on port 80. Sliders are on the left; the drawing and results update as you move them.
 
 Saved configurations are written to `save/setups.json` by the dev server, so they stay with the repo.
