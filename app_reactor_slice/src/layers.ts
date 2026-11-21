@@ -35,14 +35,24 @@ export function groupThicknesses(groups: Groups): Array<[string, number]> {
   });
 }
 
-/** Solid disk thickness for Modelica (excludes Void / He gaps). */
-export function solidDiskThicknessCm(diskLayers: LayerRow[] | undefined): number {
-  const rows = diskLayers ?? [];
+/** Solid layer thickness excluding Void / He gaps. */
+export function solidLayerThicknessCm(layers: LayerRow[] | undefined, fallbackCm: number): number {
+  const rows = layers ?? [];
   const solid = rows.filter((row) => String(row.name ?? "").trim().toLowerCase() !== "void");
   const sum = solid.reduce((total, row) => total + row.cm, 0);
   if (sum > 0) return sum;
   const total = rows.reduce((acc, row) => acc + row.cm, 0);
-  return total > 0 ? total : 0.8;
+  return total > 0 ? total : fallbackCm;
+}
+
+/** Solid disk thickness for Modelica (excludes Void / He gaps). */
+export function solidDiskThicknessCm(diskLayers: LayerRow[] | undefined): number {
+  return solidLayerThicknessCm(diskLayers, 0.8);
+}
+
+/** Solid fuel-stack thickness for Modelica FuelPlate (excludes Void). */
+export function solidFuelThicknessCm(fuelLayers: LayerRow[] | undefined): number {
+  return solidLayerThicknessCm(fuelLayers, 1.0);
 }
 
 export function sharedThickness(totals: Array<[string, number]>): number | null {

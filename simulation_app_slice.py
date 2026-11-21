@@ -47,6 +47,9 @@ def main(argv: list[str] | None = None) -> None:
     print(f"print_core_characteristics: {sim.print_core_characteristics}")
     print(f"boron_concentration_ppm: {sim.boron_concentration_ppm}")
     print(f"ddd_tallies_only: {sim.ddd_tallies_only}")
+    print(
+        f"thermal_power_mw: {sim.thermal_power_mw if sim.thermal_power_mw is not None else 'auto (geometry)'}"
+    )
     print(f"columns: {setup.columns}")
     print(f"enrichment_pct: {setup.enrichment_pct}")
     print(f"fuel_temp_c: {setup.fuel_temp_c}")
@@ -94,7 +97,7 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     def calculate_core_characteristics():
-        return calculate_disk_core_characteristics(
+        core = calculate_disk_core_characteristics(
             tracked_cells=geom.tracked_cells,
             material_choice=material_choice,
             materials_dict=materials_dict,
@@ -108,6 +111,22 @@ def main(argv: list[str] | None = None) -> None:
             rotary_axle_radius=geom.rotary_axle_radius_cm,
             min_cold_temp=1100 + 273,
         )
+        if sim.thermal_power_mw is not None and sim.thermal_power_mw > 0:
+            geometry_mw = core.core_power / 1e6
+            thermal_w = float(sim.thermal_power_mw) * 1e6
+            eff = setup.tpv_eff_pct / 100.0
+            core.core_power = thermal_w
+            core.core_power_electric = thermal_w * eff
+            core.photovoltaic_power = core.core_power_electric
+            if thermal_w > 0:
+                energy_in_fuel = core.heavy_metal_mass * (u235_enrichment * 12.0) * 24.0
+                core.fuel_lifetime = energy_in_fuel / (thermal_w / 1e6 * 3600.0)
+            print(
+                f"Thermal power override: {sim.thermal_power_mw:g} MW "
+                f"(geometry would give {geometry_mw:.4g} MW thermal / "
+                f"{geometry_mw * eff:.4g} MW electric)"
+            )
+        return core
 
     start_program(
         run_mode=sim.run_mode,

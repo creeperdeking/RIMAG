@@ -499,6 +499,14 @@ function rimaelApi(): Plugin {
             fuelEmissivity: num("fuel_emissivity"),
             diskEmissivity: num("disk_emissivity"),
             diskThicknessCm: num("disk_thickness_cm"),
+            diskAreaM2: num("disk_area_m2"),
+            fuelThicknessCm: num("fuel_thickness_cm"),
+            fuelAreaM2: num("fuel_area_m2"),
+            fuelArcFrac: num("fuel_arc_frac"),
+            tpvArcFrac: num("tpv_arc_frac"),
+            shield1ArcFrac: num("shield1_arc_frac"),
+            shield2ArcFrac: num("shield2_arc_frac"),
+            fuelHeatingPowerW: num("fuel_heating_power_w"),
           });
           res.setHeader("Content-Type", "application/json");
           res.end(JSON.stringify(trace));

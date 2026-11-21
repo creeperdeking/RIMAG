@@ -62,6 +62,10 @@ export function labelFromPayload(payload: unknown): string {
   }
   if (typeof batches === "number" && Number.isFinite(batches)) bits.push(`${batches} batches`);
   if (typeof pitch === "number" && Number.isFinite(pitch)) bits.push(`${pitch}°`);
+  const thermalMw = simulation.thermal_power_mw;
+  if (typeof thermalMw === "number" && Number.isFinite(thermalMw) && thermalMw > 0) {
+    bits.push(`${Number(thermalMw.toPrecision(4))} MWₜₕ`);
+  }
   return bits.join(" · ");
 }
 

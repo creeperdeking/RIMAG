@@ -26,8 +26,10 @@ const APP_ROOT = path.resolve(HERE, "..");
 const REPO_ROOT = path.resolve(APP_ROOT, "..");
 const RUN_DIR = path.resolve(REPO_ROOT, "runs", "default");
 const PARAMS_FILE = "app_slice_run.json";
-/** Fixed name so Stop can send SIGINT into the one-off container (Ctrl+C). */
-const CONTAINER_NAME = "rimag-app-sim";
+/** Prefix for one-off sim containers (Stop / adopt match this). */
+const CONTAINER_PREFIX = "rimag-app-sim";
+/** Legacy fixed name still cleaned up on launch. */
+const CONTAINER_NAME = CONTAINER_PREFIX;
 
 export class RimagRunnerError extends Error {}
 
@@ -38,6 +40,10 @@ type JobState = {
   running: boolean;
   lastLines: string[];
   currentId: string | null;
+  /** Active compose container name for Stop / log follow. */
+  containerName: string;
+  /** Monotonic id so overlapping launch/end callbacks ignore stale work. */
+  launchGen: number;
   /** When true, the next job end does not start the following queued run (Stop). */
   suppressQueueAdvance: boolean;
   /** When true, finished runs do not auto-start the next queued item (Pause). */
@@ -53,13 +59,22 @@ const job: JobState = {
   running: false,
   lastLines: [],
   currentId: null,
+  containerName: CONTAINER_NAME,
+  launchGen: 0,
   suppressQueueAdvance: false,
   queuePaused: false,
   autoRefinePass: 0,
 };
 
+/** Serialize remove+spawn so `docker rm -f` cannot SIGKILL a just-started peer. */
+let launchChain: Promise<void> = Promise.resolve();
+
 const AUTOREFINE_TARGET = 0.8;
 const AUTOREFINE_MAX_PASSES = 25;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function runDocker(args: string[]): Promise<number> {
   return new Promise((resolve) => {
@@ -85,9 +100,58 @@ function runDocker(args: string[]): Promise<number> {
   });
 }
 
-/** Remove a leftover named container so the next run can reuse the name. */
-async function removeSimContainer() {
-  await runDocker(["rm", "-f", CONTAINER_NAME]);
+async function containerExists(): Promise<boolean> {
+  const names = await listSimContainerNames();
+  return names.length > 0;
+}
+
+async function listSimContainerNames(): Promise<string[]> {
+  return new Promise((resolve) => {
+    const child = spawn(
+      "docker",
+      ["ps", "-aq", "--filter", `name=${CONTAINER_PREFIX}`, "--format", "{{.Names}}"],
+      { windowsHide: true, stdio: ["ignore", "pipe", "ignore"] },
+    );
+    let out = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      out += chunk.toString("utf8");
+    });
+    child.on("error", () => resolve([]));
+    child.on("close", () => {
+      resolve(
+        out
+          .split(/\r?\n/)
+          .map((n) => n.trim())
+          .filter(
+            (n) =>
+              n === CONTAINER_NAME ||
+              n.startsWith(`${CONTAINER_PREFIX}-`),
+          ),
+      );
+    });
+  });
+}
+
+/**
+ * Remove any leftover `rimag-app-sim*` containers before a new compose run.
+ * Serialized via launchChain so we never `rm -f` a container we just started.
+ */
+async function removeSimContainers() {
+  for (let attempt = 1; attempt <= 20; attempt++) {
+    const names = await listSimContainerNames();
+    // Also try the legacy fixed name in case filters miss it.
+    const targets = names.length > 0 ? names : [CONTAINER_NAME];
+    for (const name of targets) {
+      await runDocker(["rm", "-f", name]);
+    }
+    const left = await listSimContainerNames();
+    if (left.length === 0) return;
+    if (attempt === 1 || attempt % 5 === 0) {
+      emit(`[runner] Waiting for ${CONTAINER_PREFIX}* to release (attempt ${attempt})…`);
+    }
+    await sleep(500);
+  }
+  emit(`[runner] warning: ${CONTAINER_PREFIX}* still present after retries; next compose run may fail`);
 }
 
 function emit(line: string) {
@@ -194,18 +258,30 @@ export function isSimulationRunning() {
   return job.running;
 }
 
-function containerIsRunning(): Promise<boolean> {
-  return new Promise((resolve) => {
-    const child = spawn("docker", ["inspect", "-f", "{{.State.Running}}", CONTAINER_NAME], {
-      windowsHide: true,
+async function resolveRunningSimContainer(): Promise<string | null> {
+  const preferred = job.containerName;
+  const names = await listSimContainerNames();
+  const ordered = preferred && !names.includes(preferred) ? [preferred, ...names] : names;
+  for (const name of ordered.length > 0 ? ordered : [preferred || CONTAINER_NAME]) {
+    const running = await new Promise<boolean>((resolve) => {
+      const child = spawn("docker", ["inspect", "-f", "{{.State.Running}}", name], {
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      let out = "";
+      child.stdout.on("data", (chunk: Buffer) => {
+        out += chunk.toString("utf8");
+      });
+      child.on("error", () => resolve(false));
+      child.on("close", (code) => resolve(code === 0 && out.trim() === "true"));
     });
-    let out = "";
-    child.stdout.on("data", (chunk: Buffer) => {
-      out += chunk.toString("utf8");
-    });
-    child.on("error", () => resolve(false));
-    child.on("close", (code) => resolve(code === 0 && out.trim() === "true"));
-  });
+    if (running) return name;
+  }
+  return null;
+}
+
+async function containerIsRunning(): Promise<boolean> {
+  return (await resolveRunningSimContainer()) != null;
 }
 
 function forwardProcessOutput(child: ChildProcessWithoutNullStreams) {
@@ -249,21 +325,25 @@ export function adoptRunningSimulation(): Promise<void> {
         if (job.running) return;
         job.running = true;
         job.lastLines = [];
-        emit(
-          "[runner] Reattached to rimag-app-sim. The app server restarted and lost the log; the run is still going.",
-        );
-        const child = spawn("docker", ["logs", "-f", "--tail", "400", CONTAINER_NAME], {
-          windowsHide: true,
-        });
-        job.child = child;
-        forwardProcessOutput(child);
-        child.on("error", (error) => {
-          emit(`[runner] log follow failed: ${error.message}`);
-        });
-        child.on("close", () => {
-          void containerIsRunning().then((still) => {
-            if (still || !job.running) return;
-            onJobEnded(0);
+        void resolveRunningSimContainer().then((name) => {
+          if (!name || !job.running) return;
+          job.containerName = name;
+          emit(
+            `[runner] Reattached to ${name}. The app server restarted and lost the log; the run is still going.`,
+          );
+          const child = spawn("docker", ["logs", "-f", "--tail", "400", name], {
+            windowsHide: true,
+          });
+          job.child = child;
+          forwardProcessOutput(child);
+          child.on("error", (error) => {
+            emit(`[runner] log follow failed: ${error.message}`);
+          });
+          child.on("close", () => {
+            void containerIsRunning().then((still) => {
+              if (still || !job.running) return;
+              onJobEnded(0);
+            });
           });
         });
         return;
@@ -407,7 +487,22 @@ function finishQueueItem(
   if (advance) maybeStartNextFromQueue();
 }
 
-function onJobEnded(code: number) {
+function wwMetaUpdatedRecently(maxAgeMs = 120_000): boolean {
+  try {
+    const metaPath = path.join(RUN_DIR, WW_META_FILE);
+    if (!fs.existsSync(metaPath)) return false;
+    const age = Date.now() - fs.statSync(metaPath).mtimeMs;
+    return age >= 0 && age <= maxAgeMs;
+  } catch {
+    return false;
+  }
+}
+
+function onJobEnded(code: number, endedGen?: number) {
+  if (endedGen != null && endedGen !== job.launchGen) {
+    emit(`[runner] Ignoring stale job end (gen ${endedGen}, current ${job.launchGen}).`);
+    return;
+  }
   if (job.child && !job.child.killed) {
     try {
       job.child.kill();
@@ -423,7 +518,23 @@ function onJobEnded(code: number) {
   const itemId = job.currentId;
   const item = itemId ? getQueueItem(itemId) : null;
 
-  if (!stopped && code === 0 && item && isAutoRefinePayload(item.payload)) {
+  // Exit 137 = SIGKILL. Often the refine already finished (WW meta just written) and
+  // `docker compose` / a peer `docker rm -f` killed the follow-up container by name.
+  let effectiveCode = code;
+  if (
+    !stopped &&
+    code === 137 &&
+    item &&
+    isAutoRefinePayload(item.payload) &&
+    wwMetaUpdatedRecently()
+  ) {
+    emit(
+      "[runner] Exit 137 after a fresh weight_windows write — treating refine pass as completed (SIGKILL during container teardown/relaunch).",
+    );
+    effectiveCode = 0;
+  }
+
+  if (!stopped && effectiveCode === 0 && item && isAutoRefinePayload(item.payload)) {
     job.autoRefinePass += 1;
     const ww = weightWindowsStatus();
     const frac = ww.ingaasReachFraction;
@@ -468,15 +579,48 @@ function onJobEnded(code: number) {
 
     // Autorefine is one queue item: keep looping even if Pause is on (Pause only blocks the next item).
     emit("[runner] Autorefine: below target, starting another refine pass…");
-    launchDockerJob(item.payload, item, { continueAutoRefine: true });
+    job.running = true;
+    job.currentId = itemId;
+    void sleep(2000).then(() => {
+      if (job.currentId !== itemId) return;
+      launchDockerJob(item.payload, item, { continueAutoRefine: true });
+    });
     return;
   }
 
-  const status = stopped ? "cancelled" : code === 0 ? "done" : "failed";
-  const result = stopped
+  const status = stopped ? "cancelled" : effectiveCode === 0 ? "done" : "failed";
+  let result: QueueItemResult | null = stopped
     ? { summary: "Stopped by user" }
     : attachWwCoverage(resultFromLogs(), item?.payload);
-  finishQueueItem(itemId, code, status, result, !stopped);
+
+  // Autorefine must reach InGaAs coverage (or hit max passes as "done") before the
+  // next queue item. A crashed/killed refine (e.g. exit 137) used to mark failed
+  // and still advance — hold the queue instead.
+  const autoRefineFailed =
+    !stopped && status === "failed" && item != null && isAutoRefinePayload(item.payload);
+  if (autoRefineFailed) {
+    const frac = result?.ingaasReachFraction;
+    const pct =
+      frac != null ? `${(100 * frac).toFixed(0)}%` : "unknown";
+    const reached =
+      result?.ingaasReached != null && result?.ingaasVoxels != null
+        ? `${result.ingaasReached}/${result.ingaasVoxels}`
+        : null;
+    const killHint =
+      code === 137
+        ? " · SIGKILL (often docker rm -f name clash or host OOM / IDE restart)"
+        : "";
+    result = {
+      ...result,
+      summary: `Autorefine failed (exit ${code}${killHint}) · InGaAs ${pct}${reached ? ` (${reached})` : ""} · target ${(100 * AUTOREFINE_TARGET).toFixed(0)}%`,
+    };
+    job.queuePaused = true;
+    emit(
+      `[runner] Autorefine failed before InGaAs ≥ ${(100 * AUTOREFINE_TARGET).toFixed(0)}% (exit ${code}, coverage ${pct}${reached ? ` ${reached}` : ""}) — queue paused; next items will not start. Resume after fixing or re-queue autorefine.`,
+    );
+  }
+
+  finishQueueItem(itemId, effectiveCode, status, result, !stopped && !autoRefineFailed);
 }
 
 export function stopSimulation(): boolean {
@@ -485,18 +629,20 @@ export function stopSimulation(): boolean {
   emit("[runner] Stop: sending SIGINT to container (same as Ctrl+C)…");
   emit("[runner] Remaining queued runs stay waiting (use Resume if the queue is paused).");
   void (async () => {
-    const alive = await containerIsRunning();
-    if (!alive) {
-      emit("[runner] Container rimag-app-sim is already gone.");
+    const name = (await resolveRunningSimContainer()) ?? job.containerName;
+    const alive = name != null && (await containerIsRunning());
+    if (!alive || !name) {
+      emit(`[runner] Container ${CONTAINER_PREFIX}* is already gone.`);
       onJobEnded(0);
       return;
     }
-    const code = await runDocker(["kill", "--signal=SIGINT", CONTAINER_NAME]);
+    job.containerName = name;
+    const code = await runDocker(["kill", "--signal=SIGINT", name]);
     if (code !== 0) {
       emit("[runner] SIGINT did not reach the container; forcing docker kill…");
-      const killed = await runDocker(["kill", CONTAINER_NAME]);
+      const killed = await runDocker(["kill", name]);
       if (killed !== 0) {
-        emit("[runner] Container rimag-app-sim is already gone.");
+        emit(`[runner] Container ${name} is already gone.`);
         onJobEnded(0);
       }
     }
@@ -659,6 +805,9 @@ function launchDockerJob(
   if (!options.continueAutoRefine) {
     job.autoRefinePass = 0;
   }
+  const launchGen = ++job.launchGen;
+  const containerName = `${CONTAINER_PREFIX}-${Date.now().toString(36)}-${launchGen}`;
+  job.containerName = containerName;
   emitQueue();
 
   const { command, prefix } = dockerComposeCommand();
@@ -666,7 +815,7 @@ function launchDockerJob(
     ...prefix,
     "run",
     "--name",
-    CONTAINER_NAME,
+    containerName,
     "--rm",
     "-e",
     `RIMAG_THREADS=${threads}`,
@@ -686,32 +835,37 @@ function launchDockerJob(
   emit(`[runner] repo=${REPO_ROOT}`);
   emit(`[runner] run_dir=${RUN_DIR}`);
   emit(`[runner] threads=${threads}`);
+  emit(`[runner] container=${containerName}`);
   emit(`[runner] ${command} ${args.join(" ")}`);
 
-  void removeSimContainer().then(() => {
-    if (!job.running || job.currentId !== item.id) return;
-    const child = spawn(command, args, {
-      cwd: REPO_ROOT,
-      env: {
-        ...process.env,
-        RIMAG_RUN_DIR: RUN_DIR,
-        RIMAG_THREADS: String(threads),
-        PYTHONUNBUFFERED: "1",
-      },
-      windowsHide: true,
-    });
-    job.child = child;
+  launchChain = launchChain
+    .catch(() => undefined)
+    .then(async () => {
+      if (!job.running || job.currentId !== item.id || job.launchGen !== launchGen) return;
+      await removeSimContainers();
+      if (!job.running || job.currentId !== item.id || job.launchGen !== launchGen) return;
+      const child = spawn(command, args, {
+        cwd: REPO_ROOT,
+        env: {
+          ...process.env,
+          RIMAG_RUN_DIR: RUN_DIR,
+          RIMAG_THREADS: String(threads),
+          PYTHONUNBUFFERED: "1",
+        },
+        windowsHide: true,
+      });
+      job.child = child;
 
-    forwardProcessOutput(child);
-    child.on("error", (error) => {
-      emit(`[runner] failed to start: ${error.message}`);
-      onJobEnded(1);
+      forwardProcessOutput(child);
+      child.on("error", (error) => {
+        emit(`[runner] failed to start: ${error.message}`);
+        onJobEnded(1, launchGen);
+      });
+      child.on("close", (code, signal) => {
+        emit(`[runner] process closed code=${code ?? "null"} signal=${signal ?? "null"}`);
+        onJobEnded(code ?? 1, launchGen);
+      });
     });
-    child.on("close", (code, signal) => {
-      emit(`[runner] process closed code=${code ?? "null"} signal=${signal ?? "null"}`);
-      onJobEnded(code ?? 1);
-    });
-  });
 }
 
 function maybeStartNextFromQueue() {

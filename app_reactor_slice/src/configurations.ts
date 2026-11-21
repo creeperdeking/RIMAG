@@ -20,14 +20,14 @@ export const NUMERIC_FIELDS = {
   b_pct: [1.0, 100.0, 1.0, 100.0],
   w: [0.3, 3.0, 0.1, 1.0],
   ratio_pct: [10.0, 50.0, 1.0, 30.0],
-  tpv_density: [0.01, 3.0, 0.01, 0.89],
+  tpv_density: [0.01, 10.0, 0.01, 0.89],
   enrichment_pct: [0.1, 20.0, 0.1, 5.0],
   packing_pct: [1.0, 30.0, 1.0, 30.0],
   hm_particle_pct: [20.0, 60.0, 1.0, 30.0],
   cylinder_diameter_mm: [2.0, 30.0, 0.1, 10.0],
   wall_margin_mm: [0.0, 5.0, 0.1, 0.5],
   compact_spacing_mm: [0.0, 10.0, 0.1, 1.0],
-  tpv_eff_pct: [10.0, 50.0, 1.0, 33.0],
+  tpv_eff_pct: [1.0, 50.0, 1.0, 33.0],
   fuel_temp_c: [800.0, 1600.0, 10.0, 1150.0],
   fuel_emissivity: [0.05, 1.0, 0.01, 0.85],
   disk_emissivity: [0.05, 1.0, 0.01, 0.85],
@@ -74,6 +74,8 @@ export type SimulationParams = {
   ddd_tallies_only: boolean;
   ww_mesh_cm: number;
   ww_energy_groups: number;
+  /** Thermal power [MW]. null → OpenMC path computes from TPV/fuel geometry. */
+  thermal_power_mw: number | null;
 };
 
 export const DEFAULT_SIMULATION_PARAMS: SimulationParams = {
@@ -92,6 +94,7 @@ export const DEFAULT_SIMULATION_PARAMS: SimulationParams = {
   ddd_tallies_only: true,
   ww_mesh_cm: 40,
   ww_energy_groups: 10,
+  thermal_power_mw: null,
 };
 
 function pickBoolean(value: unknown, fallback: boolean): boolean {
@@ -127,6 +130,7 @@ export function normalizeSimulation(raw: unknown): SimulationParams {
   const boronPpm = Number(source.boron_concentration_ppm);
   const wwMesh = Number(source.ww_mesh_cm);
   const wwGroups = Number(source.ww_energy_groups);
+  const thermalMw = Number(source.thermal_power_mw);
   // Legacy "generate" in saved setups maps to "use" for the tally dropdown;
   // seed/refine are started from the WW submenu, not stored as the tally mode.
   const rawWw = typeof source.weight_windows === "string" ? source.weight_windows : "";
@@ -161,6 +165,12 @@ export function normalizeSimulation(raw: unknown): SimulationParams {
     ww_energy_groups: Number.isFinite(wwGroups)
       ? Math.max(1, Math.min(200, Math.round(wwGroups)))
       : DEFAULT_SIMULATION_PARAMS.ww_energy_groups,
+    thermal_power_mw:
+      source.thermal_power_mw == null || source.thermal_power_mw === ""
+        ? null
+        : Number.isFinite(thermalMw) && thermalMw > 0
+          ? thermalMw
+          : null,
   };
 }
 

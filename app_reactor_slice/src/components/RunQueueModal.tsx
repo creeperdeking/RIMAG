@@ -37,6 +37,8 @@ type Props = {
   setup: Setup;
   /** Seed form from the live calculator (append) or from a queue item. */
   initialSimulation: SimulationParams & { weight_windows?: WeightWindowsRun | string };
+  /** Overview thermal power [MW] used to prefill append when unset. */
+  defaultThermalPowerMw?: number | null;
   /** True when runs/default already has weight_windows.h5 (needed for refine). */
   wwPresent?: boolean;
   result?: QueueResult | null;
@@ -104,6 +106,7 @@ const RunQueueModal: React.FC<Props> = ({
   title,
   setup,
   initialSimulation,
+  defaultThermalPowerMw = null,
   wwPresent = false,
   result,
   exitCode,
@@ -117,8 +120,20 @@ const RunQueueModal: React.FC<Props> = ({
   const [draft, setDraft] = useState(() => queueSimulationFromRaw(initialSimulation));
 
   useEffect(() => {
-    if (show) setDraft(queueSimulationFromRaw(initialSimulation));
-  }, [show, initialSimulation]);
+    if (!show) return;
+    const next = queueSimulationFromRaw(initialSimulation);
+    // Append: prefill with Overview thermal so shield-thickness A/B can lock power.
+    if (
+      mode === "append" &&
+      next.thermal_power_mw == null &&
+      defaultThermalPowerMw != null &&
+      Number.isFinite(defaultThermalPowerMw) &&
+      defaultThermalPowerMw > 0
+    ) {
+      next.thermal_power_mw = defaultThermalPowerMw;
+    }
+    setDraft(next);
+  }, [show, initialSimulation, mode, defaultThermalPowerMw]);
 
   const setField = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) => {
     setDraft((prev) => ({ ...prev, [key]: value }));
@@ -414,6 +429,8 @@ const RunQueueModal: React.FC<Props> = ({
                   <>
                     {" "}
                     Repeats refine until InGaAs coverage reaches 80% (or 25 passes), then the queue continues.
+                    If a refine pass crashes (non-zero exit), the queue pauses so the next run does not start
+                    with incomplete windows.
                   </>
                 )}
                 {(draft.weight_windows === "refine" || draft.weight_windows === "autorefine") &&
@@ -480,6 +497,42 @@ const RunQueueModal: React.FC<Props> = ({
             value={draft.dose_time}
             disabled={fieldDisabled}
             onChange={(event) => setField("dose_time", Math.max(0, Number(event.target.value) || 0))}
+          />
+        </Form.Group>
+
+        <Form.Group className="simulation-field">
+          <FieldLabel
+            info={
+              <>
+                Scales source strength for DDD (and related tallies). Prefills with Overview thermal
+                power for this geometry. Clear the field to use the OpenMC geometry/TPV calculation
+                instead. Use the same value across shield-thickness runs to avoid fuel-area bias.
+              </>
+            }
+          >
+            Thermal power (MW)
+          </FieldLabel>
+          <Form.Control
+            size="sm"
+            type="number"
+            min={0}
+            step="any"
+            placeholder={
+              defaultThermalPowerMw != null && defaultThermalPowerMw > 0
+                ? `auto ≈ ${defaultThermalPowerMw.toPrecision(4)} MW`
+                : "auto (geometry)"
+            }
+            value={draft.thermal_power_mw ?? ""}
+            disabled={fieldDisabled}
+            onChange={(event) => {
+              const raw = event.target.value.trim();
+              if (raw === "") {
+                setField("thermal_power_mw", null);
+                return;
+              }
+              const value = Number(raw);
+              setField("thermal_power_mw", Number.isFinite(value) && value > 0 ? value : null);
+            }}
           />
         </Form.Group>
 
