@@ -88,8 +88,8 @@
       "n_batches": 20,
       "n_threads": 12,
       "nsm_material": "Graphite",
-      "nsm_thickness": 270,
-      "conical_pitch": 2,
+      "nsm_thickness": 125,
+      "conical_pitch": 15,
       "particle_type": "neutron",
       "weight_windows": "use",
       "survival_biasing": false,
@@ -98,7 +98,8 @@
       "boron_concentration_ppm": 200,
       "ddd_tallies_only": true,
       "ww_mesh_cm": 40,
-      "ww_energy_groups": 10
+      "ww_energy_groups": 10,
+      "thermal_power_mw": 318
     }
   },
   "fissiovolt-paper-ddd-check": {
@@ -200,7 +201,8 @@
       "boron_concentration_ppm": 200,
       "ddd_tallies_only": true,
       "ww_mesh_cm": 40,
-      "ww_energy_groups": 10
+      "ww_energy_groups": 10,
+      "thermal_power_mw": null
     }
   }
 }
