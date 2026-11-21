@@ -574,7 +574,8 @@ button.simulation-run-list-item {
   word-break: break-word;
 }
 
-.rimael-fuel-chart {
+.rimael-fuel-chart,
+.tpv-eff-chart {
   display: block;
   width: 100%;
   height: auto;

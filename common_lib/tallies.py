@@ -1,5 +1,5 @@
 import openmc
-from typing import List, Literal
+from typing import List, Literal, Tuple
 import scipy.constants as cst
 from common_lib.materials import MonitoredNuclide
 import numpy as np
@@ -577,6 +577,26 @@ def print_N16_production(sp: openmc.StatePoint, source_strength, electric_power)
     )
 
 
+def _tally_scalar(tally: openmc.Tally, scores: List[str], value: str) -> float:
+    """Collapse OpenMC tally bins to one scalar (sum).
+
+    CellFilter over multiple InGaAs layers returns one bin per cell; callers
+    pass the total cell volume, so the scores must be summed first.
+    """
+    arr = np.asarray(tally.get_values(scores=scores, value=value), dtype=float)
+    return float(arr.sum())
+
+
+def _tally_scalar_mean_sd(
+    tally: openmc.Tally, scores: List[str]
+) -> Tuple[float, float]:
+    mean = _tally_scalar(tally, scores, "mean")
+    sd_arr = np.asarray(tally.get_values(scores=scores, value="std_dev"), dtype=float)
+    # Uncorrelated-bin RSS; fine for a single reported CI on the sum.
+    sd = float(np.sqrt(np.sum(np.square(sd_arr))))
+    return mean, sd
+
+
 def _write_ddd_resultsim(
     yearly_ddd_photovoltaic: float,
     yearly_ddd_photovoltaic_ci95_pct: float,
@@ -606,16 +626,17 @@ def _print_photovoltaic_ddd(
     batches,
 ) -> None:
     ddd_photovoltaic = sp.get_tally(name="photovoltaic_ddd")
-    normalized_ddd_photovoltaic = float(
-        ddd_photovoltaic.get_values(scores=["flux"], value="mean")
+    normalized_ddd_photovoltaic, normalized_ddd_photovoltaic_sd = _tally_scalar_mean_sd(
+        ddd_photovoltaic, ["flux"]
     )
-    normalized_ddd_photovoltaic_sd = float(
-        ddd_photovoltaic.get_values(scores=["flux"], value="std_dev")
-    )
+    # EnergyFunctionFilter × flux → (MeV/g)·cm³ per source particle; /V → MeV/g/s.
     absolute_ddd_photovoltaic = (
         normalized_ddd_photovoltaic * source_strength / photovoltaic_slice_volume
     )  # MeV/g/s
-    yearly_ddd_photovoltaic = absolute_ddd_photovoltaic * dose_time
+    # dose_time is exposure length in seconds (e.g. 10 y → 10·365·86400 s).
+    # Product is cumulative DDD over that exposure, not a per-year rate.
+    ddd_over_dose_time = absolute_ddd_photovoltaic * dose_time  # MeV/g
+    dose_years = dose_time / (365 * 24 * 60 * 60) if dose_time else float("nan")
     yearly_ddd_photovoltaic_ci95_pct = (
         100 * 1.96 * normalized_ddd_photovoltaic_sd / normalized_ddd_photovoltaic
         if normalized_ddd_photovoltaic != 0
@@ -627,11 +648,12 @@ def _print_photovoltaic_ddd(
     print("--------------------------------")
     print("photovoltaic")
     print(
-        f"Displacement damage: {yearly_ddd_photovoltaic:.4e} MeV/g/year "
+        f"Displacement damage: {ddd_over_dose_time:.4e} MeV/g "
+        f"over {dose_years:g} years "
         f"(± {yearly_ddd_photovoltaic_ci95_pct:.2f}%, 95% CI)"
     )
     print("--------------------------------")
-    _write_ddd_resultsim(yearly_ddd_photovoltaic, yearly_ddd_photovoltaic_ci95_pct, batches)
+    _write_ddd_resultsim(ddd_over_dose_time, yearly_ddd_photovoltaic_ci95_pct, batches)
 
 
 def print_tallies(
@@ -711,26 +733,23 @@ def print_tallies(
         print(f"{lab}: {p:.2f}%")
     print("--------------------------------")
 
-    # Get normalized flux (MeV/g/source particle)
-    normalized_ddd_photovoltaic = float(
-        ddd_photovoltaic.get_values(scores=["flux"], value="mean")
-    )
-    normalized_ddd_photovoltaic_sd = float(
-        ddd_photovoltaic.get_values(scores=["flux"], value="std_dev")
+    # Get normalized flux (MeV/g/source particle); sum over InGaAs cell bins.
+    normalized_ddd_photovoltaic, normalized_ddd_photovoltaic_sd = _tally_scalar_mean_sd(
+        ddd_photovoltaic, ["flux"]
     )
 
     # Get absorption in photovoltaic
-    normalized_absorption_photovoltaic = float(
-        photovolatic.get_values(scores=["(n,gamma)"], value="mean")
+    normalized_absorption_photovoltaic = _tally_scalar(
+        photovolatic, ["(n,gamma)"], "mean"
     )
     # Get absorption in emitter
-    normalized_absorption_emitter = float(
-        fluence_emitter.get_values(scores=["(n,gamma)"], value="mean")
+    normalized_absorption_emitter = _tally_scalar(
+        fluence_emitter, ["(n,gamma)"], "mean"
     )
 
     # Get heating in photovoltaic
-    heating_photovoltaic = float(
-        photovolatic.get_values(scores=["heating"], value="mean")
+    heating_photovoltaic = (
+        _tally_scalar(photovolatic, ["heating"], "mean")
         / cst.value("joule-electron volt relationship")
     )  # J/particle
 
@@ -744,11 +763,13 @@ def print_tallies(
         heating_rate_photovoltaic * dose_time
     )  # kGy/year
 
-    # Calculate Displacement Damage Dose Rate (MeV/g/s)
+    # EnergyFunctionFilter × flux → (MeV/g)·cm³ per source; /V → MeV/g/s.
     absolute_ddd_photovoltaic = (
-        normalized_ddd_photovoltaic * source_strength / photovoltaic_slice_volume # MeV/g/s
+        normalized_ddd_photovoltaic * source_strength / photovoltaic_slice_volume  # MeV/g/s
     )
-    yearly_ddd_photovoltaic = absolute_ddd_photovoltaic * dose_time
+    # dose_time is exposure in seconds → cumulative MeV/g over that period.
+    ddd_over_dose_time = absolute_ddd_photovoltaic * dose_time
+    dose_years = dose_time / (365 * 24 * 60 * 60) if dose_time else float("nan")
     yearly_ddd_photovoltaic_ci95_pct = (
         100 * 1.96 * normalized_ddd_photovoltaic_sd / normalized_ddd_photovoltaic
         if normalized_ddd_photovoltaic != 0
@@ -780,12 +801,18 @@ def print_tallies(
     print("--------------------------------")
     print("photovoltaic")
     print(
-        f"Displacement damage: {yearly_ddd_photovoltaic:.4e} MeV/g/year (± {yearly_ddd_photovoltaic_ci95_pct:.2f}%, 95% CI)"
+        f"Displacement damage: {ddd_over_dose_time:.4e} MeV/g "
+        f"over {dose_years:g} years "
+        f"(± {yearly_ddd_photovoltaic_ci95_pct:.2f}%, 95% CI)"
     )
     print(
-        f"Absorption: {absorption_photovoltaic * dose_time:.4e} neutrons/cm3/year"
+        f"Absorption: {absorption_photovoltaic * dose_time:.4e} neutrons/cm3 "
+        f"over {dose_years:g} years"
     )
-    print(f"Dose rate: {yearly_heating_rate_photovoltaic:.4e} kGy/year")
+    print(
+        f"Dose: {yearly_heating_rate_photovoltaic:.4e} kGy "
+        f"over {dose_years:g} years"
+    )
     print("--------------------------------")
 
     print("emitter")
@@ -794,8 +821,9 @@ def print_tallies(
     )
     print(f"dpa emitter: {dpa_emitter:.2e} dpa/year")
     print(
-        f"Absorption: {absorption_emitter * dose_time:.4e} neutrons/cm3/year"
+        f"Absorption: {absorption_emitter * dose_time:.4e} neutrons/cm3 "
+        f"over {dose_years:g} years"
     )
     print("--------------------------------")
 
-    _write_ddd_resultsim(yearly_ddd_photovoltaic, yearly_ddd_photovoltaic_ci95_pct, batches)
+    _write_ddd_resultsim(ddd_over_dose_time, yearly_ddd_photovoltaic_ci95_pct, batches)

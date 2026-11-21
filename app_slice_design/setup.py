@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, List, Literal
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -64,6 +64,8 @@ class AppSliceSimulationParams(BaseModel):
     # MAGIC weight-window mesh / groups for seed and refine passes.
     ww_mesh_cm: float = Field(default=40.0, gt=0)
     ww_energy_groups: int = Field(default=10, ge=1, le=200)
+    # Optional thermal power override [MW]. None → use geometry/TPV calculation.
+    thermal_power_mw: Optional[float] = Field(default=None, gt=0)
 
 
 class AppSliceRunConfig(BaseModel):

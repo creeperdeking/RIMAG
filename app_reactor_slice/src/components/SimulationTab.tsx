@@ -15,6 +15,8 @@ type Props = {
   params: SimulationParams;
   onChange: (next: SimulationParams) => void;
   setup: Setup;
+  /** Overview thermal power [MW] for append-modal default. */
+  defaultThermalPowerMw?: number | null;
 };
 
 type WwStatus = {
@@ -176,7 +178,7 @@ function parseKeffFromLine(line: string, prev: KeffLive): KeffLive | null {
   return null;
 }
 
-const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
+const SimulationTab: React.FC<Props> = ({ params, onChange, setup, defaultThermalPowerMw = null }) => {
   const [running, setRunning] = useState(false);
   const [output, setOutput] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -188,6 +190,7 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
   const [queueModalError, setQueueModalError] = useState<string | null>(null);
   const [queueModalSaving, setQueueModalSaving] = useState(false);
   const [dragQueuedId, setDragQueuedId] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const logRef = useRef<HTMLPreElement>(null);
   const sourceRef = useRef<EventSource | null>(null);
 
@@ -505,6 +508,17 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
     setError(null);
   };
 
+  const onCopyOutput = async () => {
+    if (!output) return;
+    try {
+      await navigator.clipboard.writeText(output);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   const showKeffPanel = running || keffLive.value != null || keffLive.percent != null;
   const progressPercent =
     keffLive.percent != null && Number.isFinite(keffLive.percent)
@@ -696,6 +710,14 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
               <Button
                 variant="outline-secondary"
                 size="sm"
+                disabled={!output}
+                onClick={() => void onCopyOutput()}
+              >
+                {copied ? "Copied" : "Copy"}
+              </Button>
+              <Button
+                variant="outline-secondary"
+                size="sm"
                 disabled={running || !output}
                 onClick={onClear}
               >
@@ -762,6 +784,7 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup }) => {
           title={queueModal.title}
           setup={setup}
           initialSimulation={queueModal.simulation}
+          defaultThermalPowerMw={defaultThermalPowerMw}
           wwPresent={Boolean(wwStatus?.present)}
           result={queueModal.result}
           exitCode={queueModal.exitCode}

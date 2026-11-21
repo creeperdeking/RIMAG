@@ -29,6 +29,7 @@ import {
   setupFromState,
   sharedThickness,
   solidDiskThicknessCm,
+  solidFuelThicknessCm,
   thicknessWarning,
   type Groups,
 } from "./layers";
@@ -770,8 +771,20 @@ const Explorer: React.FC = () => {
   );
 
   const diskThicknessCm = useMemo(() => solidDiskThicknessCm(groups.disk), [groups.disk]);
+  const fuelThicknessCm = useMemo(() => solidFuelThicknessCm(groups.fuel), [groups.fuel]);
   const thermodynamicTab = (
-    <ThermodynamicTab setup={setup} diskThicknessCm={diskThicknessCm} renderSlider={renderSlider} />
+    <ThermodynamicTab
+      setup={setup}
+      diskThicknessCm={diskThicknessCm}
+      diskAreaM2={layout.totalArea}
+      fuelThicknessCm={fuelThicknessCm}
+      fuelAreaM2={layout.fuelArea}
+      fuelAngleRad={layout.fuelAngle}
+      tpvAngleRad={layout.oppositeAngle}
+      tpvAreaM2={oppositeArea}
+      renderSlider={renderSlider}
+      onNumericChange={setNumber}
+    />
   );
 
   const onSimulationChange = (simulation: SimulationParams) => {
@@ -779,7 +792,12 @@ const Explorer: React.FC = () => {
   };
 
   const simulationTab = (
-    <SimulationTab params={setup.simulation} onChange={onSimulationChange} setup={setup} />
+    <SimulationTab
+      params={setup.simulation}
+      onChange={onSimulationChange}
+      setup={setup}
+      defaultThermalPowerMw={thermalPower == null ? null : thermalPower / 1000}
+    />
   );
 
   const tabContent: Record<TabKey, React.ReactNode> = {

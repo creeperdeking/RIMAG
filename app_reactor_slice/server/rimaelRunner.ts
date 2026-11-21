@@ -2,6 +2,16 @@ import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  GRAPHITE_CP_J_KG_K,
+  GRAPHITE_DENSITY_KG_M3,
+  GRAPHITE_K_W_M_K,
+  RIMAEL_N_SECTIONS,
+  diskCircuitArcsFromAngles,
+  diskSectionThermal,
+  graphiteLumpedThermal,
+  type DiskCircuitArcs,
+} from "../shared/diskThermal";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.resolve(HERE, "..");
@@ -40,8 +50,17 @@ export type RimaelFuelTrace = {
   fuelEmissivity: number;
   diskEmissivity: number;
   diskThicknessCm: number;
+  diskAreaM2: number;
+  fuelThicknessCm: number;
+  fuelAreaM2: number;
+  fuelPlateC: number;
+  fuelMassKg: number;
+  fuelHeatingPowerW: number;
+  fuelArcFrac: number;
+  tpvArcFrac: number;
   heatCapacitySection: number;
   throughThicknessG: number;
+  massTotalKg: number;
   grFuel: number;
   grTpv: number;
   reusedBinary: boolean;
@@ -57,7 +76,23 @@ export type RimaelRunOptions = {
   diskEmissivity?: number;
   /** Solid disk thickness from Layer designer (cm, excludes Void). */
   diskThicknessCm?: number;
+  /** One-disk face area from Geometry tab (m²). */
+  diskAreaM2?: number;
+  /** Solid fuel-stack thickness from Layer designer (cm, excludes Void). */
+  fuelThicknessCm?: number;
+  /** Fuel-sector face area from Geometry tab (m²). */
+  fuelAreaM2?: number;
+  /** Fuel / TPV / shield circuit fractions of 2π from Geometry. */
+  fuelArcFrac?: number;
+  tpvArcFrac?: number;
+  shield1ArcFrac?: number;
+  shield2ArcFrac?: number;
+  /** Stationary fuel heating power P0 [W] (one disk × one slice, from app Thermal). */
+  fuelHeatingPowerW?: number;
 };
+
+/** Model default P0 when the app does not send a value. */
+const DEFAULT_P0_W = 383771;
 
 /** Model default FuelPlate start is 1523.15 K; disk T_start is 150 K cooler. */
 const DEFAULT_FUEL_START_K = 1523.15;
@@ -67,19 +102,22 @@ const DEFAULT_EPS = 0.85;
 const GR_FUEL_REF = 1.009;
 const GR_TPV_REF = 0.156;
 const EPS_TPV = 0.85;
-/** Model defaults match the usual 0.8 cm solid Disk layer. */
-const DISK_THICKNESS_REF_CM = 0.8;
-const HEAT_CAPACITY_REF = 23569;
-const THROUGH_G_REF = 18149;
+const DEFAULT_DISK_THICKNESS_CM = 0.8;
+const DEFAULT_FUEL_THICKNESS_CM = 1.0;
 
 function clampEps(value: number | undefined): number {
   if (value == null || !Number.isFinite(value)) return DEFAULT_EPS;
   return Math.min(1, Math.max(0.05, value));
 }
 
-function resolveDiskThicknessCm(value: number | undefined): number {
-  if (value == null || !Number.isFinite(value) || value <= 0) return DISK_THICKNESS_REF_CM;
+function resolveThicknessCm(value: number | undefined, fallback: number): number {
+  if (value == null || !Number.isFinite(value) || value <= 0) return fallback;
   return Math.min(20, Math.max(0.01, value));
+}
+
+function resolveAreaM2(value: number | undefined): number {
+  if (value == null || !Number.isFinite(value) || value <= 0) return 0;
+  return value;
 }
 
 /** Two gray surfaces: Gr = A / (1/ε₁ + 1/ε₂ − 1). */
@@ -93,17 +131,58 @@ function resolveFuelStartK(fuelTempC: number | undefined): number {
   return fuelTempC + 273.15;
 }
 
+function resolveCircuitArcs(options: RimaelRunOptions): DiskCircuitArcs {
+  if (
+    options.fuelArcFrac != null &&
+    options.tpvArcFrac != null &&
+    Number.isFinite(options.fuelArcFrac) &&
+    Number.isFinite(options.tpvArcFrac)
+  ) {
+    const shield1 =
+      options.shield1ArcFrac != null && Number.isFinite(options.shield1ArcFrac)
+        ? options.shield1ArcFrac
+        : undefined;
+    const shield2 =
+      options.shield2ArcFrac != null && Number.isFinite(options.shield2ArcFrac)
+        ? options.shield2ArcFrac
+        : undefined;
+    if (shield1 != null && shield2 != null) {
+      return {
+        fuelArcFrac: options.fuelArcFrac,
+        tpvArcFrac: options.tpvArcFrac,
+        shield1ArcFrac: shield1,
+        shield2ArcFrac: shield2,
+      };
+    }
+    return diskCircuitArcsFromAngles(options.fuelArcFrac * 2 * Math.PI, options.tpvArcFrac * 2 * Math.PI);
+  }
+  return diskCircuitArcsFromAngles((2 / 12) * 2 * Math.PI, (6 / 12) * 2 * Math.PI);
+}
+
+function resolveFuelHeatingPowerW(value: number | undefined): number {
+  if (value == null || !Number.isFinite(value) || value <= 0) return DEFAULT_P0_W;
+  return Math.min(1e9, Math.max(1, value));
+}
+
 function overrideFlags(
   fuelStartK: number,
   fuelEmissivity: number,
   diskEmissivity: number,
   diskThicknessCm: number,
+  diskAreaM2: number,
+  fuelThicknessCm: number,
+  fuelAreaM2: number,
+  arcs: DiskCircuitArcs,
+  fuelHeatingPowerW: number,
 ): {
   flags: string;
   grFuel: number;
   grTpv: number;
   heatCapacitySection: number;
   throughThicknessG: number;
+  massTotalKg: number;
+  fuelPlateC: number;
+  fuelMassKg: number;
 } {
   const diskStartK = Math.max(273.15, fuelStartK - DISK_OFFSET_K);
   const denomRef = 1 / DEFAULT_EPS + 1 / DEFAULT_EPS - 1;
@@ -111,19 +190,25 @@ function overrideFlags(
   const areaTpv = GR_TPV_REF * denomRef;
   const grFuel = radiationFactor(areaFuel, fuelEmissivity, diskEmissivity);
   const grTpv = radiationFactor(areaTpv, EPS_TPV, diskEmissivity);
-  const scale = diskThicknessCm / DISK_THICKNESS_REF_CM;
-  const heatCapacitySection = HEAT_CAPACITY_REF * scale;
-  const throughThicknessG = THROUGH_G_REF / scale;
-  const gOverrides = Array.from({ length: 12 }, (_, i) => {
+  const thermal = diskSectionThermal(diskAreaM2, diskThicknessCm, RIMAEL_N_SECTIONS);
+  const fuelThermal = graphiteLumpedThermal(fuelAreaM2, fuelThicknessCm);
+  const { heatCapacitySection, throughThicknessG, massTotalKg } = thermal;
+  const gOverrides = Array.from({ length: RIMAEL_N_SECTIONS }, (_, i) => {
     const n = i + 1;
     return `disk.twoFaceDiskSection${n}.thermalConductor.G=${throughThicknessG}`;
   }).join(",");
   return {
     flags: [
       `FuelPlate.T=${fuelStartK}`,
+      `FuelPlate.C=${fuelThermal.heatCapacity}`,
+      `P0=${fuelHeatingPowerW}`,
       `disk.T_start=${diskStartK}`,
       `Gr_fuel=${grFuel}`,
       `Gr_tpv=${grTpv}`,
+      `fuel_arc_frac=${arcs.fuelArcFrac}`,
+      `tpv_arc_frac=${arcs.tpvArcFrac}`,
+      `shield1_arc_frac=${arcs.shield1ArcFrac}`,
+      `shield2_arc_frac=${arcs.shield2ArcFrac}`,
       `disk.heat_capacity_section=${heatCapacitySection}`,
       gOverrides,
     ].join(","),
@@ -131,6 +216,9 @@ function overrideFlags(
     grTpv,
     heatCapacitySection,
     throughThicknessG,
+    massTotalKg,
+    fuelPlateC: fuelThermal.heatCapacity,
+    fuelMassKg: fuelThermal.massKg,
   };
 }
 
@@ -457,12 +545,37 @@ export async function runRimaelFuelTemperature(
   const fuelTempStartC = fuelStartK - 273.15;
   const fuelEmissivity = clampEps(options.fuelEmissivity);
   const diskEmissivity = clampEps(options.diskEmissivity);
-  const diskThicknessCm = resolveDiskThicknessCm(options.diskThicknessCm);
-  const { flags, grFuel, grTpv, heatCapacitySection, throughThicknessG } = overrideFlags(
+  const diskThicknessCm = resolveThicknessCm(options.diskThicknessCm, DEFAULT_DISK_THICKNESS_CM);
+  const fuelThicknessCm = resolveThicknessCm(options.fuelThicknessCm, DEFAULT_FUEL_THICKNESS_CM);
+  const diskAreaM2 = resolveAreaM2(options.diskAreaM2);
+  const fuelAreaM2 = resolveAreaM2(options.fuelAreaM2);
+  if (!(diskAreaM2 > 0)) {
+    throw new RimaelRunnerError("disk_area_m2 must be a positive disk face area from Geometry.");
+  }
+  if (!(fuelAreaM2 > 0)) {
+    throw new RimaelRunnerError("fuel_area_m2 must be a positive fuel-sector area from Geometry.");
+  }
+  const arcs = resolveCircuitArcs(options);
+  const fuelHeatingPowerW = resolveFuelHeatingPowerW(options.fuelHeatingPowerW);
+  const {
+    flags,
+    grFuel,
+    grTpv,
+    heatCapacitySection,
+    throughThicknessG,
+    massTotalKg,
+    fuelPlateC,
+    fuelMassKg,
+  } = overrideFlags(
     fuelStartK,
     fuelEmissivity,
     diskEmissivity,
     diskThicknessCm,
+    diskAreaM2,
+    fuelThicknessCm,
+    fuelAreaM2,
+    arcs,
+    fuelHeatingPowerW,
   );
   await regenerateAppMoIfNeeded();
   fs.mkdirSync(WORK_DIR, { recursive: true });
@@ -477,6 +590,8 @@ export async function runRimaelFuelTemperature(
   }
 
   const { timeS, fuelTempK } = parseFuelCsv(CSV);
+  const fuelPct = (100 * arcs.fuelArcFrac).toFixed(1);
+  const p0Kw = (fuelHeatingPowerW / 1000).toFixed(1);
   return {
     timeS,
     fuelTempK,
@@ -486,13 +601,29 @@ export async function runRimaelFuelTemperature(
     fuelEmissivity,
     diskEmissivity,
     diskThicknessCm,
+    diskAreaM2,
+    fuelThicknessCm,
+    fuelAreaM2,
+    fuelPlateC,
+    fuelMassKg,
+    fuelHeatingPowerW,
+    fuelArcFrac: arcs.fuelArcFrac,
+    tpvArcFrac: arcs.tpvArcFrac,
     heatCapacitySection,
     throughThicknessG,
+    massTotalKg,
     grFuel,
     grTpv,
     reusedBinary,
     message: reusedBinary
-      ? `Reused binary · T₀=${fuelTempStartC.toFixed(0)} °C · disk=${diskThicknessCm.toFixed(2)} cm · ε_fuel=${fuelEmissivity.toFixed(2)} · ε_disk=${diskEmissivity.toFixed(2)}`
-      : `Compiled · T₀=${fuelTempStartC.toFixed(0)} °C · disk=${diskThicknessCm.toFixed(2)} cm · ε_fuel=${fuelEmissivity.toFixed(2)} · ε_disk=${diskEmissivity.toFixed(2)}`,
+      ? `Reused binary · P0=${p0Kw} kW · fuel arc ${fuelPct}% · FuelPlate.C=${fuelPlateC.toFixed(0)} J/K`
+      : `Compiled · P0=${p0Kw} kW · fuel arc ${fuelPct}% · FuelPlate.C=${fuelPlateC.toFixed(0)} J/K`,
   };
 }
+
+export {
+  GRAPHITE_CP_J_KG_K,
+  GRAPHITE_DENSITY_KG_M3,
+  GRAPHITE_K_W_M_K,
+  RIMAEL_N_SECTIONS,
+};
