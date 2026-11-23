@@ -325,10 +325,11 @@ const ThermodynamicTab: React.FC<Props> = ({
   const [bandGapEv, setBandGapEv] = useState(0.7);
   const [reflectancePct, setReflectancePct] = useState(99);
   const [wocMv, setWocMv] = useState(70);
+  const [seriesResistance, setSeriesResistance] = useState(0.01);
 
   const curves = useMemo(
-    () => empiricalCurves(bandGapEv, reflectancePct, wocMv),
-    [bandGapEv, reflectancePct, wocMv],
+    () => empiricalCurves(bandGapEv, reflectancePct, wocMv, seriesResistance),
+    [bandGapEv, reflectancePct, wocMv, seriesResistance],
   );
   const effPoints = curves.efficiency;
   const powerPoints = curves.power;
@@ -491,11 +492,20 @@ const ThermodynamicTab: React.FC<Props> = ({
               format={(value) => `${value.toFixed(0)} mV`}
               onChange={setWocMv}
             />
+            <LimitSlider
+              label="Series resistance (Ω·cm²)"
+              value={seriesResistance}
+              min={0}
+              max={0.2}
+              step={0.005}
+              format={(value) => value.toFixed(3)}
+              onChange={setSeriesResistance}
+            />
             <p className="small text-secondary mb-2">
-              Regenerated from the Dada et al. empirical model (Fig.&nbsp;8). Band gap and the Woc penalty move
-              between the computed curves. Below-gap reflectance changes the absorbed heat, so efficiency moves and
-              power density stays put. Emitter temperature is the vacuum-shell temperature the cells see. Black =
-              slider; ring = model at shell T.
+              Single-diode model of Dada et al. Fig.&nbsp;8, solved at the selected band gap and Woc penalty. Series
+              resistance is that diode’s specific resistance; the published curves use 0.010 Ω·cm². Below-gap
+              reflectance changes the absorbed heat, so efficiency moves and power density stays put. View factor is 1.
+              Emitter temperature is the vacuum-shell temperature the cells see. Black = slider; ring = model at shell T.
             </p>
             <div className="small mb-2">
               Fuel <strong>{diskEmitter.fuelTempC.toFixed(0)} °C</strong>
@@ -524,7 +534,7 @@ const ThermodynamicTab: React.FC<Props> = ({
               </span>
             </div>
             <TpvModelChart
-              title={`Efficiency — ${reflectancePct.toFixed(1)}% R · Woc +${wocMv.toFixed(0)} mV · ${bandGapEv.toFixed(2)} eV`}
+              title={`Efficiency — ${reflectancePct.toFixed(1)}% R · Woc +${wocMv.toFixed(0)} mV · Rs ${seriesResistance.toFixed(3)} · ${bandGapEv.toFixed(2)} eV`}
               yLabel="η (%)"
               points={effPoints}
               color={egColor}
@@ -535,7 +545,7 @@ const ThermodynamicTab: React.FC<Props> = ({
               valueFormat={(v) => v.toFixed(0)}
             />
             <TpvModelChart
-              title={`Power density — Woc +${wocMv.toFixed(0)} mV · ${bandGapEv.toFixed(2)} eV`}
+              title={`Power density — Woc +${wocMv.toFixed(0)} mV · Rs ${seriesResistance.toFixed(3)} · ${bandGapEv.toFixed(2)} eV`}
               yLabel="P (W/cm²)"
               points={powerPoints}
               color={egColor}

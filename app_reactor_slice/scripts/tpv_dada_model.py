@@ -4,6 +4,10 @@ Reimplement Dada et al. (2025) empirical TPV model for Fig. 8 tables.
 Fig. 8 inputs (paper): VF=1, ε_abv=1, IQE=1, Tcell=25°C, Rseries=0.01 Ω·cm²,
 Woc = radiative-limit(at 15 mA/cm²) + 70 mV (solid) or +140 mV (dashed),
 ε_bel = 0.05 (95% R) or 0.01 (99% R).
+
+The website solves the same diode at a chosen series resistance. Blackbody
+current and heat for that solve are written to tpvDadaSpectrum.json; this
+script's Fig. 8 tables stay at Rseries = 0.01 Ω·cm².
 """
 from __future__ import annotations
 
@@ -168,6 +172,37 @@ def midpoint(a: float, b: float) -> float:
     return 0.5 * (a + b)
 
 
+def write_spectrum(path: Path) -> None:
+    """Blackbody current and heat used by the website to solve an arbitrary series resistance."""
+    temps = list(range(600, 1601, 50))
+    egs = [round(0.40 + i * 0.01, 2) for i in range(41)]
+    jsc_ref_si = 0.015 * CM2_PER_M2
+    jsc_rows, above_rows, below_rows = [], [], []
+    for eg in egs:
+        jsc_rows.append([(q * n_above(eg, tem)) / CM2_PER_M2 for tem in temps])
+        above_rows.append([q_above(eg, tem) / CM2_PER_M2 for tem in temps])
+        below_rows.append([q_below(eg, tem) / CM2_PER_M2 for tem in temps])
+    payload = {
+        "source": "Spectral inputs for the Dada et al. single-diode model. Series resistance and the Woc penalty are applied when the curve is drawn.",
+        "params": {
+            "VF": 1.0,
+            "e_abv": 1.0,
+            "IQE": 1.0,
+            "Tcell_C": 25.0,
+            "jsc_ref_A_cm2": 0.015,
+            "note": "jsc and heat are for a blackbody above/below the gap at view factor 1. woc_rad_V is Eg - Voc of the radiative limit at 15 mA/cm2 and 25 C.",
+        },
+        "eg_eV": egs,
+        "temps_C": temps,
+        "woc_rad_V": [woc_rad(eg, jsc_ref_si) for eg in egs],
+        "jsc_A_cm2": jsc_rows,
+        "q_above_W_cm2": above_rows,
+        "q_below_W_cm2": below_rows,
+    }
+    path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+    print(f"Wrote {path}")
+
+
 def main() -> None:
     # sanity: Stefan-Boltzmann
     t = 1273.15
@@ -237,9 +272,11 @@ def main() -> None:
             "mid": [midpoint(a, b) for a, b in zip(p_hi, p_lo)],
         }
 
-    out_path = Path(__file__).resolve().parents[1] / "src" / "data" / "tpvDadaFig8.json"
+    data_dir = Path(__file__).resolve().parents[1] / "src" / "data"
+    out_path = data_dir / "tpvDadaFig8.json"
     out_path.write_text(json.dumps(out, indent=2), encoding="utf-8")
     print(f"Wrote {out_path}")
+    write_spectrum(data_dir / "tpvDadaSpectrum.json")
 
     # quick peek at peaks
     for eg in egs:

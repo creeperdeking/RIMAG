@@ -1,16 +1,20 @@
 /**
  * Empirical TPV η(T) and power density from Dada et al. Fig. 8.
  *
- * Values are regenerated from the paper’s model (not hand-traced):
- *   VF=1, ε_abv=1, IQE=1, Tcell=25°C, Rseries=0.01 Ω·cm²,
- *   Woc = radiative-limit(15 mA/cm²) + 70 mV (solid) or + 140 mV (dashed),
- *   ε_bel = 0.05 (95% R) or 0.01 (99% R).
+ * The published curves use VF=1, ε_abv=1, IQE=1, Tcell=25°C, Rseries=0.01 Ω·cm²,
+ * Woc = radiative-limit(15 mA/cm²) + 70 mV (solid) or + 140 mV (dashed),
+ * ε_bel = 0.05 (95% R) or 0.01 (99% R).
  *
- * Generator: app_reactor_slice/scripts/tpv_dada_model.py → tpvDadaFig8.json
+ * The chart solver uses the same single-diode equation and applies whatever series
+ * resistance and Woc penalty are selected. Blackbody current and heat are tabulated
+ * in tpvDadaSpectrum.json; tpvDadaFig8.json keeps the published Rs = 0.01 curves.
+ *
+ * Generator: app_reactor_slice/scripts/tpv_dada_model.py
  * Source: Dada et al., Sol. Energy Mater. Sol. Cells 289 (2025) 113666.
  */
 
 import fig8 from "./tpvDadaFig8.json";
+import spectrum from "./tpvDadaSpectrum.json";
 
 export type TpvEgEv = 0.4 | 0.5 | 0.6 | 0.7 | 0.8;
 export type TpvBelowGapReflectancePct = 95 | 99;
@@ -90,50 +94,85 @@ function bracket(value: number, knots: readonly number[]): { i0: number; i1: num
   return { i0, i1: i0 + 1, t: span === 0 ? 0 : (value - knots[i0]) / span };
 }
 
-function blendBandGap(table: Record<string, BandSeries>, which: keyof BandSeries, egEv: number): number[] {
-  const { i0, i1, t } = bracket(egEv, TPV_EG_OPTIONS);
-  const left = table[TPV_EG_OPTIONS[i0].toFixed(1)][which];
-  const right = table[TPV_EG_OPTIONS[i1].toFixed(1)][which];
-  return left.map((value, index) => lerp(value, right[index], t));
-}
+const TCELL_C = 25;
+const THERMAL_VOLTAGE_V = (1.380649e-23 * (TCELL_C + 273.15)) / 1.602176634e-19;
+/** Current at which the Woc penalty is defined, matching Fig. 8. */
+const WOC_REFERENCE_A_CM2 = 0.015;
 
-function blendWoc(table: Record<string, BandSeries>, egEv: number, wocMv: number): number[] {
-  const at70 = blendBandGap(table, "hi_plus70mV", egEv);
-  const at140 = blendBandGap(table, "lo_plus140mV", egEv);
-  const t = (clamp(wocMv, 70, 140) - 70) / 70;
-  return at70.map((value, index) => lerp(value, at140[index], t));
+function j0FromWoc(egEv: number, wocV: number): number {
+  const voc = egEv - wocV;
+  const denom = Math.exp(voc / THERMAL_VOLTAGE_V) - 1;
+  if (!(denom > 0)) return Number.POSITIVE_INFINITY;
+  return WOC_REFERENCE_A_CM2 / denom;
 }
 
 /**
- * Efficiency and power density at any band gap, below-gap reflectance, and Woc penalty
- * inside the Fig. 8 ranges. Band gap and Woc are blended between the computed curves.
- * Reflectance changes only the below-gap part of the absorbed heat, so efficiency follows
- * that exactly and power density does not move.
+ * Maximum power density of J = −Jsc + J0 (exp(q(V − J Rs)/kT) − 1).
+ * Jsc and J0 are in A/cm², Rs in Ω·cm², and the result is in W/cm².
+ */
+function maximumPowerDensity(jsc: number, j0: number, rseriesOhmCm2: number): number {
+  if (!(jsc > 0) || !(j0 > 0) || !Number.isFinite(j0)) return 0;
+  const rs = Math.max(0, rseriesOhmCm2);
+  const vt = THERMAL_VOLTAGE_V;
+  const voc = vt * Math.log(jsc / j0 + 1);
+  const steps = 200;
+  let best = 0;
+  for (let i = 1; i < steps; i++) {
+    const voltage = (voc * 1.05 * i) / (steps - 1);
+    let current = -jsc;
+    for (let iteration = 0; iteration < 40; iteration++) {
+      const arg = Math.min((voltage - current * rs) / vt, 80);
+      const exponential = Math.exp(arg);
+      const residual = current + jsc - j0 * (exponential - 1);
+      const slope = 1 + j0 * exponential * (rs / vt);
+      const next = current - residual / slope;
+      if (Math.abs(next - current) < 1e-12) {
+        current = next;
+        break;
+      }
+      current = next;
+    }
+    const power = -current * voltage;
+    if (power > best) best = power;
+  }
+  return best;
+}
+
+function spectrumRow(egEv: number): { wocRadV: number; jsc: number[]; qAbove: number[]; qBelow: number[] } {
+  const gaps = spectrum.eg_eV;
+  const { i0, i1, t } = bracket(egEv, gaps);
+  const mix = (rows: number[][]) => rows[i0].map((value, index) => lerp(value, rows[i1][index], t));
+  return {
+    wocRadV: lerp(spectrum.woc_rad_V[i0], spectrum.woc_rad_V[i1], t),
+    jsc: mix(spectrum.jsc_A_cm2),
+    qAbove: mix(spectrum.q_above_W_cm2),
+    qBelow: mix(spectrum.q_below_W_cm2),
+  };
+}
+
+/**
+ * Efficiency and power density from the Fig. 8 single-diode model.
+ * Band gap, Woc penalty, and series resistance are solved directly.
+ * Reflectance changes only the below-gap part of the absorbed heat, so efficiency
+ * follows that and power density does not move.
  */
 export function empiricalCurves(
   egEv: number,
   reflectancePct: number,
   wocMv: number,
+  rseriesOhmCm2 = 0.01,
 ): { efficiency: TpvPoint[]; power: TpvPoint[] } {
   const eg = clamp(egEv, 0.4, 0.8);
   const reflectance = clamp(reflectancePct, 95, 99);
   const emissivity = (100 - reflectance) / 100;
-  const temps = fig8.temps_C as number[];
-  const power = blendWoc(fig8.power_w_cm2 as Record<string, BandSeries>, eg, wocMv);
-  const eta95 = blendWoc(fig8.efficiency_R95 as Record<string, BandSeries>, eg, wocMv);
-  const eta99 = blendWoc(fig8.efficiency_R99 as Record<string, BandSeries>, eg, wocMv);
-  const efficiency = eta95.map((value95, index) => {
-    const value99 = eta99[index];
-    const p = power[index];
-    if (!(p > 0) || !(value95 > 0) || !(value99 > 0)) {
-      return lerp(value95, value99, (reflectance - 95) / 4);
-    }
-    const absorbed95 = (100 * p) / value95;
-    const absorbed99 = (100 * p) / value99;
-    const below = (absorbed95 - absorbed99) / (0.05 - 0.01);
-    const above = absorbed99 - 0.01 * below;
-    const absorbed = above + emissivity * below;
-    return absorbed > 0 ? (100 * p) / absorbed : 0;
+  const wocExtraV = clamp(wocMv, 70, 140) / 1000;
+  const row = spectrumRow(eg);
+  const j0 = j0FromWoc(eg, row.wocRadV + wocExtraV);
+  const temps = spectrum.temps_C;
+  const power = row.jsc.map((jsc) => maximumPowerDensity(jsc, j0, rseriesOhmCm2));
+  const efficiency = power.map((value, index) => {
+    const absorbed = row.qAbove[index] + emissivity * row.qBelow[index];
+    return absorbed > 0 ? (100 * value) / absorbed : 0;
   });
   return {
     efficiency: temps.map((tempC, index) => ({ tempC, value: efficiency[index] })),
