@@ -30,11 +30,6 @@ export const LAYER_MATCH_NOTE =
   "The disk layer sits on top of every stack. Fuel, reflector, shield moderator, " +
   "shield absorber, and TPV, each plus the disk, must have the same thickness.";
 
-export const LAYER_FALLBACK_COLORS: Record<string, string> = {
-  Graphite: "black",
-  "Uranium Dioxide": "green",
-};
-
 export const TAB_KEYS = [
   "overview",
   "fuel",

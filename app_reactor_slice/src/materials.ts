@@ -69,12 +69,27 @@ function compositionText(spec: MaterialSpec): string {
     .join(", ");
 }
 
-export function materialFact(
-  name: string,
-  specs: Record<string, MaterialSpec>,
-  mixed: Record<string, MixedSpec>,
-): MaterialFact | null {
-  const [spec, mix] = libraryEntry(name, specs, mixed);
+/**
+ * Editor titles and the disk alias, in the same sense as app_slice_design.materials_map.
+ * The color then comes from that catalog entry in materials.py (via materials.json).
+ */
+const ROLE_CATALOG_NAMES: Record<string, string> = {
+  Disk: "Graphite",
+  disk: "Graphite",
+  "Disk layer": "Graphite",
+  "Fuel layer": "Uranium Dioxide",
+  "Reflector layer": "Graphite",
+  "Shield absorber": "Boron Carbide",
+  "TPV layer": "InGaAs",
+};
+
+export function catalogNameForLayer(name: string, shieldModerator = "Graphite"): string {
+  const trimmed = name.trim();
+  if (trimmed === "Shield moderator") return shieldModerator.trim() || "Graphite";
+  return ROLE_CATALOG_NAMES[trimmed] ?? trimmed;
+}
+
+function factFromEntry(spec: MaterialSpec | null, mix: MixedSpec | null, specs: Record<string, MaterialSpec>): MaterialFact | null {
   if (spec) {
     return {
       color: spec.color || "orange",
@@ -82,9 +97,7 @@ export function materialFact(
       density: spec.density,
     };
   }
-  if (!mix) {
-    return name === "Disk" ? { color: "black", composition: "", density: null } : null;
-  }
+  if (!mix) return null;
   const weights = mix.proportions.filter((w) => w > 0);
   if (!weights.length) return null;
   let volume = 0;
@@ -107,10 +120,25 @@ export function materialFact(
   };
 }
 
+export function materialFact(
+  name: string,
+  specs: Record<string, MaterialSpec>,
+  mixed: Record<string, MixedSpec>,
+  shieldModerator = "Graphite",
+): MaterialFact | null {
+  const trimmed = name.trim();
+  const direct = factFromEntry(...libraryEntry(trimmed, specs, mixed), specs);
+  if (direct) return direct;
+  const aliased = catalogNameForLayer(trimmed, shieldModerator);
+  if (aliased === trimmed) return null;
+  return factFromEntry(...libraryEntry(aliased, specs, mixed), specs);
+}
+
 export function materialLines(
   rows: Array<{ name: string }>,
   specs: Record<string, MaterialSpec>,
   mixed: Record<string, MixedSpec>,
+  shieldModerator = "Graphite",
 ): string[] {
   const lines: string[] = [];
   const seen = new Set<string>();
@@ -118,7 +146,7 @@ export function materialLines(
     const name = String(row.name ?? "").trim();
     if (!name || seen.has(name)) continue;
     seen.add(name);
-    const fact = materialFact(name, specs, mixed);
+    const fact = materialFact(name, specs, mixed, shieldModerator);
     if (!fact || !fact.composition) continue;
     const densityText = fact.density != null ? ` · ${Number(fact.density.toPrecision(4))} g/cm³` : "";
     lines.push(`${name}: ${fact.composition}${densityText}`);

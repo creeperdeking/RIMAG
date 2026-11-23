@@ -724,6 +724,7 @@ const Explorer: React.FC = () => {
           only={FUEL_ONLY}
           includeDisk={false}
           title="Fuel layer"
+          shieldModerator={setup.simulation.nsm_material}
         />
         <div className="small text-secondary mt-1">
           TRISO particles fill {(triso.particleInCylinder * 100).toFixed(1)}% of each cylinder. Heavy metal is{" "}
@@ -745,7 +746,7 @@ const Explorer: React.FC = () => {
       title={title}
       fallback={title}
       rows={groups[id]}
-      lines={materialLines(groups[id], specs, mixed)}
+      lines={materialLines(groups[id], specs, mixed, setup.simulation.nsm_material)}
       onChange={(rows) => setGroupRows(id, rows)}
     />
   );
@@ -766,7 +767,13 @@ const Explorer: React.FC = () => {
         )}
         {editorGroups.slice(1).map(([id, title]) => renderEditor(id, title))}
       </div>
-      <LayerChart groups={groups} layerCm={layerCm} specs={specs} mixed={mixed} />
+      <LayerChart
+        groups={groups}
+        layerCm={layerCm}
+        specs={specs}
+        mixed={mixed}
+        shieldModerator={setup.simulation.nsm_material}
+      />
     </div>
   );
 

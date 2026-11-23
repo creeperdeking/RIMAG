@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { LAYER_FALLBACK_COLORS, LAYER_GROUPS } from "../constants";
+import { LAYER_GROUPS } from "../constants";
 import type { LayerRow, MaterialSpec, MixedSpec } from "../geometry";
 import type { Groups } from "../layers";
 import { materialFact } from "../materials";
@@ -14,28 +14,36 @@ type Props = {
   /** The designer stacks the shared disk on every bar. The fuel preview does not. */
   includeDisk?: boolean;
   title?: string;
+  /** Neutron-shield material. The "Shield moderator" title uses this catalog color. */
+  shieldModerator?: string;
 };
 
 type Segment = { name: string; cm: number; color: string; detail: string };
 
-const LayerChart: React.FC<Props> = ({ groups, layerCm, specs, mixed, only, includeDisk = true, title }) => {
+const LayerChart: React.FC<Props> = ({
+  groups,
+  layerCm,
+  specs,
+  mixed,
+  only,
+  includeDisk = true,
+  title,
+  shieldModerator = "Graphite",
+}) => {
   const { columns, maxCm, legend } = useMemo(() => {
     const cols: Array<{ title: string; segments: Segment[] }> = [];
     const seen = new Map<string, string>();
     let tallest = 0;
-    for (const [groupId, groupTitle, colors] of LAYER_GROUPS) {
+    for (const [groupId, groupTitle] of LAYER_GROUPS) {
       if (only && !only.includes(groupId)) continue;
       const stacked = [
         ...(groups[groupId] ?? []),
         ...(includeDisk ? (groups.disk ?? []) : []),
       ] as LayerRow[];
-      const segments: Segment[] = stacked.map((layer, i) => {
-        const fact = materialFact(layer.name, specs, mixed);
-        let color = fact?.color ?? LAYER_FALLBACK_COLORS[layer.name] ?? colors[i % colors.length];
-        // Library graphite is black. The fuel preview uses the same mid gray as the compact.
-        if (!includeDisk && layer.name === "Graphite" && (color === "black" || !color)) {
-          color = "#78716c";
-        }
+      const segments: Segment[] = stacked.map((layer) => {
+        const fact = materialFact(layer.name, specs, mixed, shieldModerator);
+        // One catalog color per material, from materials.py. The same disk is the same color on every bar.
+        const color = fact?.color || "orange";
         let detail = "";
         if (fact?.composition) {
           detail = fact.composition;
@@ -53,7 +61,7 @@ const LayerChart: React.FC<Props> = ({ groups, layerCm, specs, mixed, only, incl
       maxCm: Math.max(tallest, 0.1),
       legend: [...seen.entries()].map(([name, color]) => ({ name, color })),
     };
-  }, [groups, specs, mixed, only, includeDisk]);
+  }, [groups, specs, mixed, only, includeDisk, shieldModerator]);
 
   const preview = !includeDisk && columns.length === 1;
   const height = includeDisk ? 420 : 220;
