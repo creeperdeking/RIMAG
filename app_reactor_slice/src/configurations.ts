@@ -31,6 +31,8 @@ export const NUMERIC_FIELDS = {
   fuel_temp_c: [800.0, 1600.0, 10.0, 1150.0],
   fuel_emissivity: [0.05, 1.0, 0.01, 0.85],
   disk_emissivity: [0.05, 1.0, 0.01, 0.85],
+  /** Gray emissivity of the thin vacuum-insulation shell, both faces. */
+  shell_emissivity: [0.05, 1.0, 0.01, 0.3],
   /** Broadband reflectance of the opaque TPV cells (fraction). ε_cell = 1 − R. */
   cell_reflectance: [0.5, 0.98, 0.01, 0.88],
   stack_m: [0.1, 20.0, 0.1, 1.0],

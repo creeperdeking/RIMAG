@@ -50,6 +50,34 @@ export function solidDiskThicknessCm(diskLayers: LayerRow[] | undefined): number
   return solidLayerThicknessCm(diskLayers, 0.8);
 }
 
+function isVoidLayer(row: LayerRow): boolean {
+  return String(row.name ?? "").trim().toLowerCase() === "void";
+}
+
+/**
+ * Helium gaps on the two faces of the disk [cm].
+ * Leading Void sheets face the fuel; trailing Void sheets face the TPV shell.
+ * A Void buried between disk solids is split equally across the two faces.
+ */
+export function diskHeliumGapsCm(diskLayers: LayerRow[] | undefined): { fuelGapCm: number; tpvGapCm: number } {
+  const rows = diskLayers ?? [];
+  let index = 0;
+  let leading = 0;
+  while (index < rows.length && isVoidLayer(rows[index])) {
+    leading += rows[index].cm;
+    index += 1;
+  }
+  let end = rows.length - 1;
+  let trailing = 0;
+  while (end >= index && isVoidLayer(rows[end])) {
+    trailing += rows[end].cm;
+    end -= 1;
+  }
+  if (leading > 0 || trailing > 0) return { fuelGapCm: leading, tpvGapCm: trailing };
+  const buried = rows.reduce((sum, row) => sum + (isVoidLayer(row) ? row.cm : 0), 0);
+  return { fuelGapCm: buried / 2, tpvGapCm: buried / 2 };
+}
+
 /** Solid fuel-stack thickness for Modelica FuelPlate (excludes Void). */
 export function solidFuelThicknessCm(fuelLayers: LayerRow[] | undefined): number {
   return solidLayerThicknessCm(fuelLayers, 1.0);

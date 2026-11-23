@@ -147,70 +147,162 @@ export function radiationFactorM2(
   return area / Math.max(denom, 1e-9);
 }
 
-export type LayerDiskRadiation = {
+/**
+ * Helium thermal conductivity at 1 atm [W/(m·K)].
+ * Power-law fit to k(300 K) = 0.156 and k(1000 K) = 0.360.
+ * Near 1 atm, k is set by temperature, not by pressure.
+ */
+export function heliumConductivityWPerMK(tempK: number): number {
+  const t = Math.min(3000, Math.max(250, tempK));
+  return 2.96e-3 * t ** 0.6945;
+}
+
+export type LayerHeatTransfer = {
   /** Heat generated in one column over one axial pitch, both faces [W]. */
   heatW: number;
-  /** Steady lumped disk temperature — the TPV emitter. */
   diskTempC: number;
   diskTempK: number;
-  /** Fuel temperature required to radiate heatW onto the disk. */
+  /** Vacuum-insulation shell. This is the surface the cells see. */
+  shellTempC: number;
+  shellTempK: number;
+  /** Fuel temperature required to deliver heatW to the disk. */
   fuelTempC: number;
   fuelTempK: number;
   tpvCellTempK: number;
   cellEmissivity: number;
-  /** Both faces: 2 × A / (1/ε_fuel + 1/ε_disk − 1). */
+  shellEmissivity: number;
+  /** Both faces, fuel ↔ disk. */
   grFuel: number;
-  /** Both faces: 2 × A_tpv / (1/ε_disk + 1/ε_cell − 1). */
-  grTpv: number;
+  /** Both faces, disk ↔ vacuum shell, across helium. */
+  grDiskShell: number;
+  /** Both faces, shell ↔ cells, across vacuum. */
+  grShellCell: number;
+  /** Helium conduction, fuel ↔ disk [W/K], at the solved film temperature. */
+  gFuelWPerK: number;
+  /** Helium conduction, disk ↔ shell [W/K], at the solved film temperature. */
+  gDiskShellWPerK: number;
+  /** Share of Q carried by helium conduction on that gap. */
+  conductionShareFuel: number;
+  conductionShareDisk: number;
+  fuelGapCm: number;
+  tpvGapCm: number;
 };
 
+function gapM(gapCm: number): number {
+  return Number.isFinite(gapCm) && gapCm > 0 ? gapCm / 100 : 0;
+}
+
+/** Radiation plus helium conduction across one gap. Area is both faces [m²]. */
+function heatAcrossGapW(
+  hotK: number,
+  coldK: number,
+  gr: number,
+  areaM2: number,
+  gapMeters: number,
+): { totalW: number; conductionW: number; gWPerK: number } {
+  const rad = SIGMA_W_M2_K4 * Math.max(gr, 0) * (hotK ** 4 - coldK ** 4);
+  if (!(gapMeters > 0) || !(areaM2 > 0) || !(hotK > coldK)) {
+    return { totalW: Math.max(0, rad), conductionW: 0, gWPerK: 0 };
+  }
+  const k = heliumConductivityWPerMK(0.5 * (hotK + coldK));
+  const gWPerK = (k * areaM2) / gapMeters;
+  const conductionW = gWPerK * (hotK - coldK);
+  return { totalW: rad + conductionW, conductionW, gWPerK };
+}
+
+/** Hot-side temperature that carries heatW to a known cold side. */
+function solveHotTemperatureK(
+  coldK: number,
+  heatW: number,
+  gr: number,
+  areaM2: number,
+  gapMeters: number,
+): number {
+  if (!(heatW > 0) || !(coldK > 0)) return coldK;
+  const flow = (hotK: number) => heatAcrossGapW(hotK, coldK, gr, areaM2, gapMeters).totalW;
+  if (!(gr > 0) && !(gapMeters > 0 && areaM2 > 0)) return coldK;
+  let lo = coldK;
+  let hi = coldK + 1;
+  for (let i = 0; i < 40 && flow(hi) < heatW; i += 1) {
+    hi = coldK + (hi - coldK) * 1.8;
+    if (hi > 6000) break;
+  }
+  if (flow(hi) < heatW) return hi;
+  for (let i = 0; i < 70; i += 1) {
+    const mid = 0.5 * (lo + hi);
+    if (flow(mid) < heatW) lo = mid;
+    else hi = mid;
+  }
+  return 0.5 * (lo + hi);
+}
+
 /**
- * Disk temperature from the heat of one layer, moved by radiation only.
+ * Steady temperatures for one layer in helium at 1 atm.
  *
- * Heat of one column over one pitch (both faces) is
- *   Q = P_electrical / η = 1000 × (2 × ρ × 10 × A_tpv) / (η/100)  [W].
- * At steady state that heat leaves the fuel by radiation to the disk and
- * the disk radiates the same heat onto the cells:
- *   Q = σ Gr_fuel (T_fuel⁴ − T_disk⁴) = σ Gr_tpv (T_disk⁴ − T_cell⁴).
- * Each Gr covers both faces of the layer. The cells are opaque, so
- * ε_cell = 1 − reflectance. T_disk follows from the cell side; T_fuel is
- * the temperature that delivers the same Q across the fuel gap.
+ * Q is the heat of one column over one pitch, both faces. It crosses three
+ * gaps in series:
+ *   fuel —(radiation + He conduction)— disk
+ *        —(radiation + He conduction)— vacuum-insulation shell
+ *        —(radiation only)— cells in vacuum.
+ * The shell is thin and isothermal, with one emissivity on both faces.
+ * ε_cell = 1 − reflectance. Helium gaps are the disk stack's Void sheets.
+ * The cells see the shell, so the shell temperature is the TPV emitter.
  */
 export function diskTemperatureFromLayerHeat(options: {
   heatW: number;
   fuelEmissivity: number;
   diskEmissivity: number;
+  shellEmissivity: number;
   cellReflectance: number;
   fuelAreaM2: number;
   tpvAreaM2: number;
+  /** Helium gap on the fuel side of the disk [cm]. */
+  fuelGapCm: number;
+  /** Helium gap between the disk and the vacuum shell [cm]. */
+  tpvGapCm: number;
   tpvCellTempK?: number;
-}): LayerDiskRadiation {
+}): LayerHeatTransfer {
   const tpvCellTempK = options.tpvCellTempK ?? TPV_CELL_TEMP_K;
   const cellEmissivity = emissivityFromReflectance(options.cellReflectance);
+  const shellEmissivity = Math.min(1, Math.max(0.01, options.shellEmissivity));
+  const fuelArea = Math.max(0, 2 * options.fuelAreaM2);
+  const tpvArea = Math.max(0, 2 * options.tpvAreaM2);
   const grFuel = 2 * radiationFactorM2(options.fuelAreaM2, options.fuelEmissivity, options.diskEmissivity);
-  const grTpv = 2 * radiationFactorM2(options.tpvAreaM2, options.diskEmissivity, cellEmissivity);
+  const grDiskShell = 2 * radiationFactorM2(options.tpvAreaM2, options.diskEmissivity, shellEmissivity);
+  const grShellCell = 2 * radiationFactorM2(options.tpvAreaM2, shellEmissivity, cellEmissivity);
+  const fuelGap = gapM(options.fuelGapCm);
+  const tpvGap = gapM(options.tpvGapCm);
   const heatW = Number.isFinite(options.heatW) && options.heatW > 0 ? options.heatW : 0;
-  let diskTempK = tpvCellTempK;
-  let fuelTempK = tpvCellTempK;
-  if (heatW > 0 && grTpv > 0) {
-    const diskT4 = tpvCellTempK ** 4 + heatW / (SIGMA_W_M2_K4 * grTpv);
-    diskTempK = Math.pow(diskT4, 0.25);
-    if (grFuel > 0) {
-      const fuelT4 = diskT4 + heatW / (SIGMA_W_M2_K4 * grFuel);
-      fuelTempK = Math.pow(fuelT4, 0.25);
-    } else {
-      fuelTempK = diskTempK;
-    }
+
+  let shellTempK = tpvCellTempK;
+  if (heatW > 0 && grShellCell > 0) {
+    shellTempK = Math.pow(tpvCellTempK ** 4 + heatW / (SIGMA_W_M2_K4 * grShellCell), 0.25);
   }
+  const diskTempK = solveHotTemperatureK(shellTempK, heatW, grDiskShell, tpvArea, tpvGap);
+  const fuelTempK = solveHotTemperatureK(diskTempK, heatW, grFuel, fuelArea, fuelGap);
+  const diskGap = heatAcrossGapW(diskTempK, shellTempK, grDiskShell, tpvArea, tpvGap);
+  const fuelGapFlow = heatAcrossGapW(fuelTempK, diskTempK, grFuel, fuelArea, fuelGap);
+  const share = (conductionW: number) => (heatW > 0 ? Math.min(1, Math.max(0, conductionW / heatW)) : 0);
+
   return {
     heatW,
     diskTempC: diskTempK - 273.15,
     diskTempK,
+    shellTempC: shellTempK - 273.15,
+    shellTempK,
     fuelTempC: fuelTempK - 273.15,
     fuelTempK,
     tpvCellTempK,
     cellEmissivity,
+    shellEmissivity,
     grFuel,
-    grTpv,
+    grDiskShell,
+    grShellCell,
+    gFuelWPerK: fuelGapFlow.gWPerK,
+    gDiskShellWPerK: diskGap.gWPerK,
+    conductionShareFuel: share(fuelGapFlow.conductionW),
+    conductionShareDisk: share(diskGap.conductionW),
+    fuelGapCm: fuelGap * 100,
+    tpvGapCm: tpvGap * 100,
   };
 }

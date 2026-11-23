@@ -42,6 +42,10 @@ type Props = {
   setup: Setup;
   /** Solid Disk layer thickness from Layer designer (cm, excludes Void). */
   diskThicknessCm: number;
+  /** Helium gap on the fuel side of the disk (leading Void sheets, cm). */
+  fuelGapCm: number;
+  /** Helium gap between the disk and the vacuum shell (trailing Void sheets, cm). */
+  tpvGapCm: number;
   /** One-disk annulus face area from Geometry (m²). */
   diskAreaM2: number;
   /** Solid fuel-stack thickness from Layer designer (cm, excludes Void). */
@@ -268,6 +272,8 @@ function FuelTempChart({ trace }: { trace: FuelTrace }) {
 const ThermodynamicTab: React.FC<Props> = ({
   setup,
   diskThicknessCm,
+  fuelGapCm,
+  tpvGapCm,
   diskAreaM2,
   fuelThicknessCm,
   fuelAreaM2,
@@ -301,22 +307,28 @@ const ThermodynamicTab: React.FC<Props> = ({
         heatW: fuelHeatingPowerW,
         fuelEmissivity: setup.fuel_emissivity,
         diskEmissivity: setup.disk_emissivity,
+        shellEmissivity: setup.shell_emissivity,
         cellReflectance: setup.cell_reflectance,
         fuelAreaM2,
         tpvAreaM2,
+        fuelGapCm,
+        tpvGapCm,
       }),
     [
       fuelHeatingPowerW,
       setup.fuel_emissivity,
       setup.disk_emissivity,
+      setup.shell_emissivity,
       setup.cell_reflectance,
       fuelAreaM2,
       tpvAreaM2,
+      fuelGapCm,
+      tpvGapCm,
     ],
   );
 
-  /** TPV emitter temperature: disk T that radiates the layer heat onto the cells. */
-  const emitterTempC = diskEmitter.diskTempC;
+  /** Cells see the vacuum shell, so the shell temperature is the TPV emitter. */
+  const emitterTempC = diskEmitter.shellTempC;
 
   const modelEffAtEmitter = useMemo(
     () => interpolateTpvValue(effPoints, emitterTempC),
@@ -395,14 +407,15 @@ const ThermodynamicTab: React.FC<Props> = ({
         <div className="border rounded p-3 bg-white h-100">
           <h2 className="h6 mb-3">TPV and fuel temperature</h2>
           <p className="small text-secondary mb-3">
-            Electrical TPV cell loading and conversion efficiency. Disk temperature follows from the heat of one layer,
-            radiated to the disk and then onto the cells.
+            Electrical TPV cell loading and conversion efficiency. The layer heat crosses helium at 1 atm by radiation
+            and conduction, then the vacuum shell radiates it onto the cells.
           </p>
           {renderSlider("tpv_density", "TPV power density (W/cm²)", fixed(2))}
           {renderSlider("tpv_eff_pct", "TPV efficiency", fixed(0, "%"))}
           {renderSlider("fuel_temp_c", "Fuel temperature (°C)", fixed(0))}
           {renderSlider("fuel_emissivity", "Fuel emissivity", fixed(2))}
           {renderSlider("disk_emissivity", "Disk emissivity", fixed(2))}
+          {renderSlider("shell_emissivity", "Vacuum shell emissivity", fixed(2))}
           {renderSlider("cell_reflectance", "Cell reflectance", (value) => `${Math.round(value * 100)}%`)}
 
           <div className="mt-3 pt-3 border-top">
@@ -436,18 +449,20 @@ const ThermodynamicTab: React.FC<Props> = ({
             </div>
             <p className="small text-secondary mb-2">
               Regenerated from the Dada et al. empirical model (Fig.&nbsp;8 mid-band). Emitter temperature is the
-              disk temperature that radiates this layer&apos;s heat onto the cells. Black = slider; ring = model at
-              disk T. The below-gap reflectance above selects the efficiency curve only.
+              vacuum-shell temperature the cells see. Black = slider; ring = model at shell T. The below-gap
+              reflectance above selects the efficiency curve only.
             </p>
             <div className="small mb-2">
-              Disk emitter <strong>{emitterTempC.toFixed(0)} °C</strong>
+              Shell emitter <strong>{emitterTempC.toFixed(0)} °C</strong>
               <span className="text-secondary">
                 {" "}
-                from {(diskEmitter.heatW / 1000).toFixed(1)} kW/layer radiated onto cells at{" "}
-                {(TPV_CELL_TEMP_K - 273.15).toFixed(0)} °C (R=
-                {Math.round(setup.cell_reflectance * 100)}%, ε={diskEmitter.cellEmissivity.toFixed(2)}). Fuel must be{" "}
-                {diskEmitter.fuelTempC.toFixed(0)} °C to deliver that heat. Gr<sub>fuel</sub>=
-                {diskEmitter.grFuel.toFixed(3)}, Gr<sub>tpv</sub>={diskEmitter.grTpv.toFixed(3)}.
+                from {(diskEmitter.heatW / 1000).toFixed(1)} kW/layer. Disk {diskEmitter.diskTempC.toFixed(0)} °C
+                across {diskEmitter.tpvGapCm.toFixed(2)} cm of helium (
+                {Math.round(100 * diskEmitter.conductionShareDisk)}% of the heat by conduction), then the shell
+                radiates in vacuum onto cells at {(TPV_CELL_TEMP_K - 273.15).toFixed(0)} °C (R=
+                {Math.round(setup.cell_reflectance * 100)}%, ε={diskEmitter.cellEmissivity.toFixed(2)}). Fuel{" "}
+                {diskEmitter.fuelTempC.toFixed(0)} °C across {diskEmitter.fuelGapCm.toFixed(2)} cm of helium (
+                {Math.round(100 * diskEmitter.conductionShareFuel)}% conduction).
               </span>
             </div>
             <TpvModelChart
@@ -491,8 +506,9 @@ const ThermodynamicTab: React.FC<Props> = ({
 
           <div className="small text-secondary mt-2">
             The fuel slider sets initial <code>FuelPlate.T</code> for Run Sim ({Math.round(setup.fuel_temp_c + 273.15)}{" "}
-            K) and OpenMC. Disk temperature is solved from the layer heat,{" "}
-            <code>Q = σ Gr (T_hot⁴ − T_cold⁴)</code>, with <code>ε_cell = 1 − R</code> on both faces.
+            K) and OpenMC. Helium gaps are the Void sheets on the disk stack. Across helium,{" "}
+            <code>Q = σ Gr (T_hot⁴ − T_cold⁴) + k_He A ΔT / d</code>. From the shell to the cells the gap is vacuum,
+            so only radiation remains, with <code>ε_cell = 1 − R</code>.
           </div>
           <div className="small text-secondary mt-2">
             Graphite ρ={(GRAPHITE_DENSITY_KG_M3 / 1000).toFixed(2)} g/cm³, cₚ={GRAPHITE_CP_J_KG_K} J/(kg·K), k=

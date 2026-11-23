@@ -28,6 +28,7 @@ import {
   sameMaterialNames,
   setupFromState,
   sharedThickness,
+  diskHeliumGapsCm,
   solidDiskThicknessCm,
   solidFuelThicknessCm,
   thicknessWarning,
@@ -426,6 +427,7 @@ const Explorer: React.FC = () => {
     params.set("fuel_temp_c", setup.fuel_temp_c.toFixed(0));
     params.set("fuel_emissivity", setup.fuel_emissivity.toFixed(2));
     params.set("disk_emissivity", setup.disk_emissivity.toFixed(2));
+    params.set("shell_emissivity", setup.shell_emissivity.toFixed(2));
     params.set("cell_reflectance", setup.cell_reflectance.toFixed(2));
     params.set("enrichment_pct", setup.enrichment_pct.toFixed(1));
     params.set("packing_pct", setup.packing_pct.toFixed(0));
@@ -785,10 +787,13 @@ const Explorer: React.FC = () => {
 
   const diskThicknessCm = useMemo(() => solidDiskThicknessCm(groups.disk), [groups.disk]);
   const fuelThicknessCm = useMemo(() => solidFuelThicknessCm(groups.fuel), [groups.fuel]);
+  const heliumGaps = useMemo(() => diskHeliumGapsCm(groups.disk), [groups.disk]);
   const thermodynamicTab = (
     <ThermodynamicTab
       setup={setup}
       diskThicknessCm={diskThicknessCm}
+      fuelGapCm={heliumGaps.fuelGapCm}
+      tpvGapCm={heliumGaps.tpvGapCm}
       diskAreaM2={layout.totalArea}
       fuelThicknessCm={fuelThicknessCm}
       fuelAreaM2={layout.fuelArea}
