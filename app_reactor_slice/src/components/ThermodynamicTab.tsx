@@ -453,14 +453,22 @@ const ThermodynamicTab: React.FC<Props> = ({
               reflectance above selects the efficiency curve only.
             </p>
             <div className="small mb-2">
-              Shell emitter <strong>{emitterTempC.toFixed(0)} °C</strong>
+              Disk <strong>{diskEmitter.diskTempC.toFixed(0)} °C</strong>
               <span className="text-secondary">
                 {" "}
-                from {(diskEmitter.heatW / 1000).toFixed(1)} kW/layer. Disk {diskEmitter.diskTempC.toFixed(0)} °C
-                across {diskEmitter.tpvGapCm.toFixed(2)} cm of helium (
-                {Math.round(100 * diskEmitter.conductionShareDisk)}% of the heat by conduction), then the shell
-                radiates in vacuum onto cells at {(TPV_CELL_TEMP_K - 273.15).toFixed(0)} °C (R=
-                {Math.round(setup.cell_reflectance * 100)}%, ε={diskEmitter.cellEmissivity.toFixed(2)}). Fuel{" "}
+                ({(diskEmitter.diskTempC - emitterTempC).toFixed(0)} °C above the shell). Lower disk emissivity
+                weakens radiation across the {diskEmitter.tpvGapCm.toFixed(2)} cm helium gap, so this rise grows.
+                Conduction still carries {Math.round(100 * diskEmitter.conductionShareDisk)}% of the{" "}
+                {(diskEmitter.heatW / 1000).toFixed(1)} kW, which keeps the rise modest.
+              </span>
+            </div>
+            <div className="small mb-2">
+              Shell <strong>{emitterTempC.toFixed(0)} °C</strong>
+              <span className="text-secondary">
+                {" "}
+                radiates in vacuum onto the cells at {(TPV_CELL_TEMP_K - 273.15).toFixed(0)} °C (R=
+                {Math.round(setup.cell_reflectance * 100)}%, ε={diskEmitter.cellEmissivity.toFixed(2)}). Fuel
+                emissivity does not change the disk: it changes the fuel temperature needed to deliver the heat,{" "}
                 {diskEmitter.fuelTempC.toFixed(0)} °C across {diskEmitter.fuelGapCm.toFixed(2)} cm of helium (
                 {Math.round(100 * diskEmitter.conductionShareFuel)}% conduction).
               </span>
