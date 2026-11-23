@@ -9,6 +9,7 @@ import {
   RIMAEL_N_SECTIONS,
   diskCircuitArcsFromAngles,
   diskSectionThermal,
+  emissivityFromReflectance,
   graphiteLumpedThermal,
   type DiskCircuitArcs,
 } from "../shared/diskThermal";
@@ -89,6 +90,8 @@ export type RimaelRunOptions = {
   shield2ArcFrac?: number;
   /** Stationary fuel heating power P0 [W] (one disk × one slice, from app Thermal). */
   fuelHeatingPowerW?: number;
+  /** Broadband reflectance of the opaque TPV cells. ε_cell = 1 − R. Default 0.88. */
+  cellReflectance?: number;
 };
 
 /** Model default P0 when the app does not send a value. */
@@ -101,7 +104,7 @@ const DISK_OFFSET_K = 150;
 const DEFAULT_EPS = 0.85;
 const GR_FUEL_REF = 1.009;
 const GR_TPV_REF = 0.156;
-const EPS_TPV = 0.85;
+const DEFAULT_CELL_REFLECTANCE = 0.88;
 const DEFAULT_DISK_THICKNESS_CM = 0.8;
 const DEFAULT_FUEL_THICKNESS_CM = 1.0;
 
@@ -174,6 +177,7 @@ function overrideFlags(
   fuelAreaM2: number,
   arcs: DiskCircuitArcs,
   fuelHeatingPowerW: number,
+  cellReflectance: number,
 ): {
   flags: string;
   grFuel: number;
@@ -189,7 +193,8 @@ function overrideFlags(
   const areaFuel = GR_FUEL_REF * denomRef;
   const areaTpv = GR_TPV_REF * denomRef;
   const grFuel = radiationFactor(areaFuel, fuelEmissivity, diskEmissivity);
-  const grTpv = radiationFactor(areaTpv, EPS_TPV, diskEmissivity);
+  const cellEmissivity = emissivityFromReflectance(cellReflectance);
+  const grTpv = radiationFactor(areaTpv, Math.max(0.05, cellEmissivity), diskEmissivity);
   const thermal = diskSectionThermal(diskAreaM2, diskThicknessCm, RIMAEL_N_SECTIONS);
   const fuelThermal = graphiteLumpedThermal(fuelAreaM2, fuelThicknessCm);
   const { heatCapacitySection, throughThicknessG, massTotalKg } = thermal;
@@ -557,6 +562,10 @@ export async function runRimaelFuelTemperature(
   }
   const arcs = resolveCircuitArcs(options);
   const fuelHeatingPowerW = resolveFuelHeatingPowerW(options.fuelHeatingPowerW);
+  const cellReflectance =
+    options.cellReflectance != null && Number.isFinite(options.cellReflectance)
+      ? options.cellReflectance
+      : DEFAULT_CELL_REFLECTANCE;
   const {
     flags,
     grFuel,
@@ -576,6 +585,7 @@ export async function runRimaelFuelTemperature(
     fuelAreaM2,
     arcs,
     fuelHeatingPowerW,
+    cellReflectance,
   );
   await regenerateAppMoIfNeeded();
   fs.mkdirSync(WORK_DIR, { recursive: true });

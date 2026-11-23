@@ -508,6 +508,7 @@ function rimaelApi(): Plugin {
             shield1ArcFrac: num("shield1_arc_frac"),
             shield2ArcFrac: num("shield2_arc_frac"),
             fuelHeatingPowerW: num("fuel_heating_power_w"),
+            cellReflectance: num("cell_reflectance"),
           });
           res.setHeader("Content-Type", "application/json");
           res.end(JSON.stringify(trace));

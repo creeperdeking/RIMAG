@@ -116,65 +116,100 @@ export function modelicaFuelHeatingPowerW(
 /** Matches Modelica coolWaterTemp / TPV cell sink in RIMAEL.Reactor. */
 export const TPV_CELL_TEMP_K = 333.15;
 
-/** TPV-side emissivity used when building Gr_tpv in the Modelica runner. */
-export const EPS_TPV = 0.85;
+/** Stefan–Boltzmann constant [W/(m²·K⁴)]. */
+export const SIGMA_W_M2_K4 = 5.670374419e-8;
 
-/** Two gray surfaces: Gr = A / (1/ε₁ + 1/ε₂ − 1). */
-export function radiationFactorM2(areaM2: number, epsA: number, epsB: number): number {
+/** Broadband reflectance of the opaque TPV cells. Default 88% → ε = 0.12. */
+export const DEFAULT_CELL_REFLECTANCE = 0.88;
+
+/**
+ * Opaque gray surface: absorptivity = emissivity = 1 − reflectance.
+ * Reflectance is clamped so emissivity stays in (0.01, 1].
+ */
+export function emissivityFromReflectance(reflectance: number): number {
+  if (!Number.isFinite(reflectance)) return 1 - DEFAULT_CELL_REFLECTANCE;
+  const r = Math.min(0.99, Math.max(0, reflectance));
+  return 1 - r;
+}
+
+/** Two gray surfaces: Gr = A / (1/ε₁ + 1/ε₂ − 1) [m²]. */
+export function radiationFactorM2(
+  areaM2: number,
+  epsA: number,
+  epsB: number,
+  minEps = 0.01,
+): number {
   const area = Math.max(areaM2, 0);
-  const ea = Math.min(1, Math.max(0.05, epsA));
-  const eb = Math.min(1, Math.max(0.05, epsB));
+  const floor = Math.min(0.5, Math.max(0.01, minEps));
+  const ea = Math.min(1, Math.max(floor, epsA));
+  const eb = Math.min(1, Math.max(floor, epsB));
   const denom = 1 / ea + 1 / eb - 1;
   return area / Math.max(denom, 1e-9);
 }
 
-export type AverageDiskTemperature = {
-  /** Steady lumped disk temperature (°C) — TPV emitter. */
+export type LayerDiskRadiation = {
+  /** Heat generated in one column over one axial pitch, both faces [W]. */
+  heatW: number;
+  /** Steady lumped disk temperature — the TPV emitter. */
   diskTempC: number;
   diskTempK: number;
+  /** Fuel temperature required to radiate heatW onto the disk. */
+  fuelTempC: number;
   fuelTempK: number;
   tpvCellTempK: number;
+  cellEmissivity: number;
+  /** Both faces: 2 × A / (1/ε_fuel + 1/ε_disk − 1). */
   grFuel: number;
+  /** Both faces: 2 × A_tpv / (1/ε_disk + 1/ε_cell − 1). */
   grTpv: number;
 };
 
 /**
- * Steady-state average disk temperature for Fuel → Disk → TPV radiation.
+ * Disk temperature from the heat of one layer, moved by radiation only.
  *
- * Lumped disk energy balance (σ cancels):
- *   Gr_fuel · (T_fuel⁴ − T_disk⁴) = Gr_tpv · (T_disk⁴ − T_tpv⁴)
- * ⇒ T_disk⁴ = (Gr_fuel · T_fuel⁴ + Gr_tpv · T_tpv⁴) / (Gr_fuel + Gr_tpv)
- *
- * Gr_fuel / Gr_tpv use the facing fuel and TPV areas with gray two-surface factors.
- * Thin-disk limit: through-thickness ΔT ≪ radiation drop, so one T_disk.
+ * Heat of one column over one pitch (both faces) is
+ *   Q = P_electrical / η = 1000 × (2 × ρ × 10 × A_tpv) / (η/100)  [W].
+ * At steady state that heat leaves the fuel by radiation to the disk and
+ * the disk radiates the same heat onto the cells:
+ *   Q = σ Gr_fuel (T_fuel⁴ − T_disk⁴) = σ Gr_tpv (T_disk⁴ − T_cell⁴).
+ * Each Gr covers both faces of the layer. The cells are opaque, so
+ * ε_cell = 1 − reflectance. T_disk follows from the cell side; T_fuel is
+ * the temperature that delivers the same Q across the fuel gap.
  */
-export function averageDiskTemperatureFromRadiation(options: {
-  fuelTempC: number;
+export function diskTemperatureFromLayerHeat(options: {
+  heatW: number;
   fuelEmissivity: number;
   diskEmissivity: number;
+  cellReflectance: number;
   fuelAreaM2: number;
   tpvAreaM2: number;
-  tpvEmissivity?: number;
   tpvCellTempK?: number;
-}): AverageDiskTemperature {
-  const fuelTempK = options.fuelTempC + 273.15;
+}): LayerDiskRadiation {
   const tpvCellTempK = options.tpvCellTempK ?? TPV_CELL_TEMP_K;
-  const tpvEps = options.tpvEmissivity ?? EPS_TPV;
-  const grFuel = radiationFactorM2(options.fuelAreaM2, options.fuelEmissivity, options.diskEmissivity);
-  const grTpv = radiationFactorM2(options.tpvAreaM2, tpvEps, options.diskEmissivity);
-  const sum = grFuel + grTpv;
-  let diskTempK: number;
-  if (!(sum > 0) || !Number.isFinite(fuelTempK) || fuelTempK <= 0) {
-    diskTempK = Math.max(tpvCellTempK, fuelTempK);
-  } else {
-    const t4 = (grFuel * fuelTempK ** 4 + grTpv * tpvCellTempK ** 4) / sum;
-    diskTempK = Math.pow(Math.max(t4, 0), 0.25);
+  const cellEmissivity = emissivityFromReflectance(options.cellReflectance);
+  const grFuel = 2 * radiationFactorM2(options.fuelAreaM2, options.fuelEmissivity, options.diskEmissivity);
+  const grTpv = 2 * radiationFactorM2(options.tpvAreaM2, options.diskEmissivity, cellEmissivity);
+  const heatW = Number.isFinite(options.heatW) && options.heatW > 0 ? options.heatW : 0;
+  let diskTempK = tpvCellTempK;
+  let fuelTempK = tpvCellTempK;
+  if (heatW > 0 && grTpv > 0) {
+    const diskT4 = tpvCellTempK ** 4 + heatW / (SIGMA_W_M2_K4 * grTpv);
+    diskTempK = Math.pow(diskT4, 0.25);
+    if (grFuel > 0) {
+      const fuelT4 = diskT4 + heatW / (SIGMA_W_M2_K4 * grFuel);
+      fuelTempK = Math.pow(fuelT4, 0.25);
+    } else {
+      fuelTempK = diskTempK;
+    }
   }
   return {
+    heatW,
     diskTempC: diskTempK - 273.15,
     diskTempK,
+    fuelTempC: fuelTempK - 273.15,
     fuelTempK,
     tpvCellTempK,
+    cellEmissivity,
     grFuel,
     grTpv,
   };

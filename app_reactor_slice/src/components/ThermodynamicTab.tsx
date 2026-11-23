@@ -8,8 +8,8 @@ import {
   GRAPHITE_K_W_M_K,
   RIMAEL_N_SECTIONS,
   TPV_CELL_TEMP_K,
-  averageDiskTemperatureFromRadiation,
   diskCircuitArcsFromAngles,
+  diskTemperatureFromLayerHeat,
   diskSectionThermal,
   graphiteLumpedThermal,
   modelicaFuelHeatingPowerW,
@@ -290,25 +290,32 @@ const ThermodynamicTab: React.FC<Props> = ({
   const powerPoints = TPV_POWER_W_CM2[bandGapEv];
   const egColor = TPV_EG_META[bandGapEv].color;
 
+  const fuelHeatingPowerW = useMemo(
+    () => modelicaFuelHeatingPowerW(setup.tpv_density, setup.tpv_eff_pct, tpvAreaM2),
+    [setup.tpv_density, setup.tpv_eff_pct, tpvAreaM2],
+  );
+
   const diskEmitter = useMemo(
     () =>
-      averageDiskTemperatureFromRadiation({
-        fuelTempC: setup.fuel_temp_c,
+      diskTemperatureFromLayerHeat({
+        heatW: fuelHeatingPowerW,
         fuelEmissivity: setup.fuel_emissivity,
         diskEmissivity: setup.disk_emissivity,
+        cellReflectance: setup.cell_reflectance,
         fuelAreaM2,
         tpvAreaM2,
       }),
     [
-      setup.fuel_temp_c,
+      fuelHeatingPowerW,
       setup.fuel_emissivity,
       setup.disk_emissivity,
+      setup.cell_reflectance,
       fuelAreaM2,
       tpvAreaM2,
     ],
   );
 
-  /** TPV emitter temperature = steady average disk T (fuel → disk → TPV). */
+  /** TPV emitter temperature: disk T that radiates the layer heat onto the cells. */
   const emitterTempC = diskEmitter.diskTempC;
 
   const modelEffAtEmitter = useMemo(
@@ -342,11 +349,6 @@ const ThermodynamicTab: React.FC<Props> = ({
     () => diskCircuitArcsFromAngles(fuelAngleRad, tpvAngleRad),
     [fuelAngleRad, tpvAngleRad],
   );
-  const fuelHeatingPowerW = useMemo(
-    () => modelicaFuelHeatingPowerW(setup.tpv_density, setup.tpv_eff_pct, tpvAreaM2),
-    [setup.tpv_density, setup.tpv_eff_pct, tpvAreaM2],
-  );
-
   const onRunRim = async () => {
     setRunning(true);
     setError(null);
@@ -362,6 +364,7 @@ const ThermodynamicTab: React.FC<Props> = ({
           fuel_temp_c: setup.fuel_temp_c,
           fuel_emissivity: setup.fuel_emissivity,
           disk_emissivity: setup.disk_emissivity,
+          cell_reflectance: setup.cell_reflectance,
           disk_thickness_cm: diskThicknessCm,
           disk_area_m2: diskAreaM2,
           fuel_thickness_cm: fuelThicknessCm,
@@ -392,14 +395,15 @@ const ThermodynamicTab: React.FC<Props> = ({
         <div className="border rounded p-3 bg-white h-100">
           <h2 className="h6 mb-3">TPV and fuel temperature</h2>
           <p className="small text-secondary mb-3">
-            Electrical TPV cell loading and conversion efficiency, plus the hot-side fuel temperature used for radiative
-            heat balance in RIMAG core characteristics.
+            Electrical TPV cell loading and conversion efficiency. Disk temperature follows from the heat of one layer,
+            radiated to the disk and then onto the cells.
           </p>
           {renderSlider("tpv_density", "TPV power density (W/cm²)", fixed(2))}
           {renderSlider("tpv_eff_pct", "TPV efficiency", fixed(0, "%"))}
           {renderSlider("fuel_temp_c", "Fuel temperature (°C)", fixed(0))}
           {renderSlider("fuel_emissivity", "Fuel emissivity", fixed(2))}
           {renderSlider("disk_emissivity", "Disk emissivity", fixed(2))}
+          {renderSlider("cell_reflectance", "Cell reflectance", (value) => `${Math.round(value * 100)}%`)}
 
           <div className="mt-3 pt-3 border-top">
             <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
@@ -432,16 +436,18 @@ const ThermodynamicTab: React.FC<Props> = ({
             </div>
             <p className="small text-secondary mb-2">
               Regenerated from the Dada et al. empirical model (Fig.&nbsp;8 mid-band). Emitter temperature is the
-              steady average disk T from fuel→disk→TPV radiation (not the fuel slider). Black = slider; ring = model
-              at disk T.
+              disk temperature that radiates this layer&apos;s heat onto the cells. Black = slider; ring = model at
+              disk T. The below-gap reflectance above selects the efficiency curve only.
             </p>
             <div className="small mb-2">
-              Disk emitter{" "}
-              <strong>{emitterTempC.toFixed(0)} °C</strong>
+              Disk emitter <strong>{emitterTempC.toFixed(0)} °C</strong>
               <span className="text-secondary">
                 {" "}
-                (fuel {setup.fuel_temp_c.toFixed(0)} °C → disk → TPV @ {(TPV_CELL_TEMP_K - 273.15).toFixed(0)} °C;
-                Gr<sub>fuel</sub>={diskEmitter.grFuel.toFixed(3)}, Gr<sub>tpv</sub>={diskEmitter.grTpv.toFixed(3)})
+                from {(diskEmitter.heatW / 1000).toFixed(1)} kW/layer radiated onto cells at{" "}
+                {(TPV_CELL_TEMP_K - 273.15).toFixed(0)} °C (R=
+                {Math.round(setup.cell_reflectance * 100)}%, ε={diskEmitter.cellEmissivity.toFixed(2)}). Fuel must be{" "}
+                {diskEmitter.fuelTempC.toFixed(0)} °C to deliver that heat. Gr<sub>fuel</sub>=
+                {diskEmitter.grFuel.toFixed(3)}, Gr<sub>tpv</sub>={diskEmitter.grTpv.toFixed(3)}.
               </span>
             </div>
             <TpvModelChart
@@ -484,8 +490,9 @@ const ThermodynamicTab: React.FC<Props> = ({
           </div>
 
           <div className="small text-secondary mt-2">
-            Fuel temperature sets initial <code>FuelPlate.T</code> for Run Sim ({Math.round(setup.fuel_temp_c + 273.15)} K)
-            and OpenMC. Emissivities set <code>Gr = A / (1/ε₁ + 1/ε₂ − 1)</code>.
+            The fuel slider sets initial <code>FuelPlate.T</code> for Run Sim ({Math.round(setup.fuel_temp_c + 273.15)}{" "}
+            K) and OpenMC. Disk temperature is solved from the layer heat,{" "}
+            <code>Q = σ Gr (T_hot⁴ − T_cold⁴)</code>, with <code>ε_cell = 1 − R</code> on both faces.
           </div>
           <div className="small text-secondary mt-2">
             Graphite ρ={(GRAPHITE_DENSITY_KG_M3 / 1000).toFixed(2)} g/cm³, cₚ={GRAPHITE_CP_J_KG_K} J/(kg·K), k=

@@ -426,6 +426,7 @@ const Explorer: React.FC = () => {
     params.set("fuel_temp_c", setup.fuel_temp_c.toFixed(0));
     params.set("fuel_emissivity", setup.fuel_emissivity.toFixed(2));
     params.set("disk_emissivity", setup.disk_emissivity.toFixed(2));
+    params.set("cell_reflectance", setup.cell_reflectance.toFixed(2));
     params.set("enrichment_pct", setup.enrichment_pct.toFixed(1));
     params.set("packing_pct", setup.packing_pct.toFixed(0));
     params.set("hm_particle_pct", setup.hm_particle_pct.toFixed(0));
