@@ -42,6 +42,17 @@ class MakeAppSliceGeometryResult(BaseModel, arbitrary_types_allowed=True):
     rotary_axle_radius_cm: float
 
 
+# OpenMC gives one boundary condition to a whole surface. The rim cylinder is
+# the fuel/reflector interface on the fuel arc and the vacuum wall everywhere
+# else, so those two jobs cannot share it. The non-fuel vacuum wall sits this
+# far outside the transmission rim. It is far below a plot pixel on a metre-scale
+# disk and does not merge with the rim (geometry surface_precision is 5).
+_RIM_VACUUM_SKIN_CM = 0.02
+# Tangent cuts around each fuel outer corner. The true offset is a quarter
+# circle; these planes sit just outside it.
+_OUTER_REFLECTOR_FILLET_PLANES = 16
+
+
 def _angular_sector(phi0: float, phi1: float) -> openmc.Region:
     """CCW sector from phi0 to phi1 (radians from +x)."""
     span = (phi1 - phi0) % (2.0 * math.pi)
@@ -193,6 +204,83 @@ def _zone_phi_spans(layout: ZoneLayout) -> Dict[str, List[Tuple[float, float]]]:
     return spans
 
 
+def _outward_edge_normal(phi: float, side: str) -> Tuple[float, float]:
+    """Unit normal of a fuel edge, pointing out of the fuel.
+
+    `side` is "right" for the clockwise edge (smaller angle) and "left" for the
+    other. `phi` is the edge angle from +x.
+    """
+
+    if side == "right":
+        return (math.sin(phi), -math.cos(phi))
+    return (-math.sin(phi), math.cos(phi))
+
+
+def _offset_plane(normal: Tuple[float, float], point: Tuple[float, float]) -> openmc.Plane:
+    """Vacuum plane through `point` with outward unit normal.
+
+    The reflector occupies the negative side. The plane is offset from the
+    column center, so it does not merge with the disk sector planes (those pass
+    through the column center) and the disk cells never list it.
+    """
+
+    a, b = normal
+    return openmc.Plane(a=a, b=b, d=a * point[0] + b * point[1], boundary_type="vacuum")
+
+
+def _outer_reflector_area_cm2(r_outer_cm: float, thickness_cm: float, fuel_angle: float) -> float:
+    """Cross-section of the constant-thickness blanket outside the rim.
+
+    Annular cap over the fuel arc, a quarter-circle of radius `thickness_cm` at
+    each outer fuel corner, and the straight run from that bend back to the rim.
+    """
+
+    cap = 0.5 * ((r_outer_cm + thickness_cm) ** 2 - r_outer_cm**2) * fuel_angle
+    bends = 0.5 * math.pi * thickness_cm**2
+    if thickness_cm >= r_outer_cm or thickness_cm <= 0.0:
+        return cap + bends
+    alpha = math.asin(thickness_cm / r_outer_cm)
+    triangle = 0.5 * thickness_cm * (
+        r_outer_cm - math.sqrt(r_outer_cm**2 - thickness_cm**2)
+    )
+    segment = 0.5 * r_outer_cm**2 * (alpha - math.sin(alpha))
+    return cap + bends + 2.0 * (triangle - segment)
+
+
+def _blanket_corner_points(
+    cx: float,
+    cy: float,
+    phi: float,
+    side: str,
+    r_outer_cm: float,
+    thickness_cm: float,
+    n: int = 16,
+) -> List[Tuple[float, float]]:
+    """World points on one corner bend, from the outer arc down to the rim."""
+
+    u = (math.cos(phi), math.sin(phi))
+    normal = _outward_edge_normal(phi, side)
+    corner = (cx + r_outer_cm * u[0], cy + r_outer_cm * u[1])
+    points: List[Tuple[float, float]] = []
+    for step in range(n + 1):
+        theta = (math.pi / 2.0) * step / n
+        direction = (
+            math.cos(theta) * u[0] + math.sin(theta) * normal[0],
+            math.cos(theta) * u[1] + math.sin(theta) * normal[1],
+        )
+        points.append(
+            (
+                corner[0] + thickness_cm * direction[0],
+                corner[1] + thickness_cm * direction[1],
+            )
+        )
+    if thickness_cm < r_outer_cm:
+        alpha = math.asin(thickness_cm / r_outer_cm)
+        q_phi = phi - alpha if side == "right" else phi + alpha
+        points.append((cx + r_outer_cm * math.cos(q_phi), cy + r_outer_cm * math.sin(q_phi)))
+    return points
+
+
 def _union_regions(regions: List[openmc.Region]) -> Optional[openmc.Region]:
     if not regions:
         return None
@@ -209,12 +297,14 @@ def _fill_name_for_zone(
 ) -> str:
     """Map a calculator layer onto the post-make_materials MaterialChoice name."""
     resolved = resolve_material_name(layer_name)
-    # TPV gaps are the coolant role (often Void 2 after material de-duplication).
-    # Check that before the generic Void → void mapping used by disk voids.
+    # A TPV void gap stays the coolant role. Every other sheet keeps its own
+    # catalog material, so Light Water, TZM, and steel are not replaced by void.
     if zone_id == "tpv":
+        if resolved == "Void":
+            return material_choice.coolant
         if resolved == "InGaAs":
             return material_choice.photovoltaic
-        return material_choice.coolant
+        return resolved
     if resolved == "Void":
         return material_choice.void
     if zone_id == "fuel":
@@ -590,6 +680,13 @@ def make_app_slice_geometry(
     half_period = period_cm / 2.0
 
     r_out_cm = layout.r_outer * 100.0
+    # One column has no neighbor. Outside the fuel arc only, add a reflector of
+    # the reflector thickness and let the vacuum boundary bump out with it.
+    # Elsewhere the vacuum wall stays on the rim. Two and three columns touch,
+    # so a bump would overlap the neighbor.
+    outer_reflector_cm = float(setup.refl) * 100.0 if columns == 1 else 0.0
+    if outer_reflector_cm < 1e-6 or layout.fuel_angle < 1e-6:
+        outer_reflector_cm = 0.0
     use_periodic_cones = abs(conical_pitch_deg) >= 1e-12
 
     # Closed cone shells (transmission). The periodic boundary is a pair of
@@ -634,23 +731,106 @@ def make_app_slice_geometry(
 
     # 3) Root instantiates the column fill once per reactor cylinder.
     # Column footprints use r_out only — centers are 2*r_out apart (rims touch).
+    # Translation moves the fill universe; the region cylinder stays in world cm.
     column_cells: List[openmc.Cell] = []
     for index, (cx, cy, rot_deg) in enumerate(shifted):
-        # Vacuum on the column wall. Neutrons that leave the disk radially are
-        # killed here instead of streaming through a helium box around the origin.
-        col_cyl = -openmc.ZCylinder(
-            x0=cx, y0=cy, r=r_out_cm, boundary_type="vacuum",
-        )
-        region = col_cyl & +z_low & -z_high
+        # Transmission at the rim wherever the fuel bump continues past it.
+        # With no bump, this same cylinder is the vacuum wall.
+        active_cyl = openmc.ZCylinder(x0=cx, y0=cy, r=r_out_cm)
+        if outer_reflector_cm <= 0.0:
+            active_cyl.boundary_type = "vacuum"
+        active_region = -active_cyl & +z_low & -z_high
         cell = openmc.Cell(
             name=f"column_{index}",
-            region=region,
+            region=active_region,
             fill=column_fill,
         )
         cell.translation = (cx, cy, 0.0)
         if abs(rot_deg) > 1e-9:
             cell.rotation = (0.0, 0.0, rot_deg)
         column_cells.append(cell)
+        if outer_reflector_cm <= 0.0:
+            continue
+
+        fuel_half = layout.fuel_angle / 2.0
+        phi_mid = math.pi / 2.0 + math.radians(rot_deg)
+        phi_edges = (
+            (phi_mid - fuel_half, "right"),
+            (phi_mid + fuel_half, "left"),
+        )
+        bump_r_cm = r_out_cm + outer_reflector_cm
+        bump_cyl = openmc.ZCylinder(
+            x0=cx, y0=cy, r=bump_r_cm, boundary_type="vacuum",
+        )
+        reflector_name = material_choice.neutron_reflector
+        if reflector_name not in materials_dict:
+            raise ValueError(f"Material '{reflector_name}' not in materials_dict")
+        # Constant thickness as seen from the fuel: the outer arc is a concentric
+        # cylinder, each corner is a quarter-circle bend of radius `refl`, and the
+        # side is the fuel edge shifted out by that same thickness until it meets
+        # the rim (the inner reflector). Fillet planes stand in for the quarter
+        # circle; they lie just outside it.
+        region = +active_cyl & -bump_cyl & +z_low & -z_high
+        side_planes: List[openmc.Plane] = []
+        for phi, side in phi_edges:
+            radial = (math.cos(phi), math.sin(phi))
+            normal = _outward_edge_normal(phi, side)
+            corner = (cx + r_out_cm * radial[0], cy + r_out_cm * radial[1])
+            parallel = _offset_plane(
+                normal,
+                (
+                    cx + normal[0] * outer_reflector_cm,
+                    cy + normal[1] * outer_reflector_cm,
+                ),
+            )
+            region &= -parallel
+            side_planes.append(parallel)
+            for step in range(_OUTER_REFLECTOR_FILLET_PLANES):
+                theta = (step + 0.5) / _OUTER_REFLECTOR_FILLET_PLANES * (math.pi / 2.0)
+                direction = (
+                    math.cos(theta) * radial[0] + math.sin(theta) * normal[0],
+                    math.cos(theta) * radial[1] + math.sin(theta) * normal[1],
+                )
+                touch = (
+                    corner[0] + outer_reflector_cm * direction[0],
+                    corner[1] + outer_reflector_cm * direction[1],
+                )
+                region &= -_offset_plane(direction, touch)
+        reflector_cell = openmc.Cell(
+            name=f"fuel_outer_reflector_{index}",
+            region=region,
+            fill=materials_dict[reflector_name],
+        )
+        reflector_cell.volume = (
+            _outer_reflector_area_cm2(r_out_cm, outer_reflector_cm, layout.fuel_angle)
+            * period_cm
+        )
+        tracked.setdefault(reflector_name, []).append(reflector_cell)
+        column_cells.append(reflector_cell)
+
+        # Everywhere the blanket does not cover the rim, vacuum sits just outside it.
+        skin_r_cm = r_out_cm + _RIM_VACUUM_SKIN_CM
+        skin_cyl = openmc.ZCylinder(
+            x0=cx, y0=cy, r=skin_r_cm, boundary_type="vacuum",
+        )
+        void_name = material_choice.void
+        if void_name not in materials_dict:
+            raise ValueError(f"Material '{void_name}' not in materials_dict")
+        outside_blanket = +side_planes[0] | +side_planes[1]
+        skin_cell = openmc.Cell(
+            name=f"rim_vacuum_skin_{index}",
+            region=+active_cyl & -skin_cyl & outside_blanket & +z_low & -z_high,
+            fill=materials_dict[void_name],
+        )
+        if outer_reflector_cm < r_out_cm:
+            rim_alpha = math.asin(outer_reflector_cm / r_out_cm)
+        else:
+            rim_alpha = math.pi / 2.0
+        skin_angle = max(0.0, 2.0 * math.pi - layout.fuel_angle - 2.0 * rim_alpha)
+        skin_cell.volume = (
+            0.5 * (skin_r_cm**2 - r_out_cm**2) * skin_angle * period_cm
+        )
+        column_cells.append(skin_cell)
 
     bound_z = (-half_period, half_period)
     root = openmc.Universe(cells=column_cells)
@@ -679,22 +859,47 @@ def make_app_slice_geometry(
         f"origin = column-0 fuel mid (shift {-ox:.3f}, {-oy:.3f}, 0) cm"
     )
 
-    # Rectangular box of the column cylinders. The weight-window mesh uses this,
-    # so cells are not spent on the helium that used to surround the origin.
-    ll = (
-        min(cx - r_out_cm for cx, _, _ in shifted),
-        min(cy - r_out_cm for _, cy, _ in shifted),
-        bound_z[0],
+    # Box of the column cylinders. With one column the fuel blanket, including
+    # its corner bends, sticks out past the rim; the weight-window mesh uses this box.
+    xs: List[float] = []
+    ys: List[float] = []
+    for cx, cy, rot_deg in shifted:
+        xs.extend((cx - r_out_cm, cx + r_out_cm))
+        ys.extend((cy - r_out_cm, cy + r_out_cm))
+        if outer_reflector_cm > 0.0:
+            half = layout.fuel_angle / 2.0
+            mid = math.pi / 2.0 + math.radians(rot_deg)
+            bump_r_cm = r_out_cm + outer_reflector_cm
+            for step in range(17):
+                phi = mid - half + layout.fuel_angle * step / 16.0
+                xs.append(cx + bump_r_cm * math.cos(phi))
+                ys.append(cy + bump_r_cm * math.sin(phi))
+            for phi, side in ((mid - half, "right"), (mid + half, "left")):
+                for px, py in _blanket_corner_points(
+                    cx, cy, phi, side, r_out_cm, outer_reflector_cm
+                ):
+                    xs.append(px)
+                    ys.append(py)
+    ll = (min(xs), min(ys), bound_z[0])
+    ur = (max(xs), max(ys), bound_z[1])
+    render_radius = max(
+        math.hypot(x, y) for x, y in zip(xs, ys)
     )
-    ur = (
-        max(cx + r_out_cm for cx, _, _ in shifted),
-        max(cy + r_out_cm for _, cy, _ in shifted),
-        bound_z[1],
-    )
-    render_radius = max(math.hypot(cx, cy) + r_out_cm for cx, cy, _ in shifted)
+    if outer_reflector_cm > 0.0:
+        print(
+            f"Fuel-side reflector: {outer_reflector_cm:.2f} cm of "
+            f"{material_choice.neutron_reflector} outside the fuel, "
+            f"constant thickness, corner bends meeting the rim "
+            f"(fuel angle {math.degrees(layout.fuel_angle):.2f}°)"
+        )
     print(
-        f"Vacuum boundary: column cylinder r={r_out_cm:.1f} cm; "
-        f"weight-window box x[{ll[0]:.1f},{ur[0]:.1f}] "
+        f"Vacuum boundary: rim r={r_out_cm:.1f} cm"
+        + (
+            f", fuel bump r={r_out_cm + outer_reflector_cm:.1f} cm"
+            if outer_reflector_cm > 0.0
+            else ""
+        )
+        + f"; weight-window box x[{ll[0]:.1f},{ur[0]:.1f}] "
         f"y[{ll[1]:.1f},{ur[1]:.1f}] z[{ll[2]:.1f},{ur[2]:.1f}] cm"
     )
     return MakeAppSliceGeometryResult(

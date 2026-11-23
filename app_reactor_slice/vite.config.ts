@@ -294,7 +294,8 @@ function simulationApi(): Plugin {
     if (url === "/api/simulation/stream" && req.method === "GET") {
       res.writeHead(200, {
         "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
+        "Cache-Control": "no-cache, no-transform",
+        "X-Accel-Buffering": "no",
         Connection: "keep-alive",
       });
       void adoptRunningSimulation().then(() => {

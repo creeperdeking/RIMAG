@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import Dict, Iterable, List, Optional
 
 from pydantic import BaseModel
 
@@ -394,12 +394,15 @@ def make_materials_dict(
     materials_def: Dict[str, Material],
     material_mixed_def: Dict[str, MixedMaterial],
     material_choice: MaterialChoice,
+    extra_names: Optional[Iterable[str]] = None,
 ):
     import openmc
 
     materials_dict: Dict[str, openmc.Material] = {}
 
     used_materials = set(material_choice.model_dump().values())
+    if extra_names:
+        used_materials.update(name for name in extra_names if name)
     for name, material in material_mixed_def.items():
         if name in used_materials:
             used_materials.update(material.materials)
@@ -549,6 +552,7 @@ def make_materials(
     moderator_density: float = 1.016,
     gadolinium_oxide_in_fuel_proportion: float = 0.0,
     _colors_only: bool = False,
+    extra_names: Optional[Iterable[str]] = None,
 ):
     natural_uranium = Material(
         composition=[
@@ -1059,16 +1063,14 @@ def make_materials(
         return {}, {}, material_choice
 
     materials_dict = make_materials_dict(
-        materials_def, material_mixed_def, material_choice
+        materials_def, material_mixed_def, material_choice, extra_names
     )
 
     updated_materials_dict, updated_material_choice = separate_duplicate_materials(
         material_choice, materials_dict
     )
-    chosen = set(updated_material_choice.model_dump().values())
     colors = {
         openmc_material: rgb_for_openmc_material_name(name)
         for name, openmc_material in updated_materials_dict.items()
-        if name in chosen
     }
     return updated_materials_dict, colors, updated_material_choice

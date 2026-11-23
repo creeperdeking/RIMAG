@@ -64,7 +64,8 @@ class AppSliceSimulationParams(BaseModel):
     # MAGIC weight-window mesh / groups for seed and refine passes.
     ww_mesh_cm: float = Field(default=40.0, gt=0)
     ww_energy_groups: int = Field(default=10, ge=1, le=200)
-    # Optional thermal power override [MW]. None → use geometry/TPV calculation.
+    # Whole-stack thermal power [MW]. The periodic slice uses
+    # P * (period height / stack height). None → geometry/TPV slice power.
     thermal_power_mw: Optional[float] = Field(default=None, gt=0)
 
 

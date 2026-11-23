@@ -504,9 +504,9 @@ const RunQueueModal: React.FC<Props> = ({
           <FieldLabel
             info={
               <>
-                Scales source strength for DDD (and related tallies). Prefills with Overview thermal
-                power for this geometry. Clear the field to use the OpenMC geometry/TPV calculation
-                instead. Use the same value across shield-thickness runs to avoid fuel-area bias.
+                Whole-stack thermal power. The run gives the periodic slice its share,
+                period height / stack height, before the DDD source strength. Prefills with
+                Overview thermal power. Clear the field to use the geometry/TPV slice power.
               </>
             }
           >

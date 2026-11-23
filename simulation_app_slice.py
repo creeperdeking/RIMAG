@@ -21,6 +21,21 @@ from one_layer_disk_design.disks_core_characteristics import (
 )
 
 
+def period_share_of_stack(stack_m: float, period_cm: float) -> float:
+    """Share of a uniform stack carried by one periodic slice.
+
+    The app's thermal power is the whole stack. The transport model is one
+    period with periodic z boundaries, so tally source strength uses
+    ``P_stack * period_height / stack_height``. A 10 m stack and a 10 cm
+    period therefore run at 1/100 of the entered power.
+    """
+    stack_cm = float(stack_m) * 100.0
+    period = float(period_cm)
+    if stack_cm <= 0.0 or period <= 0.0:
+        return 1.0
+    return min(1.0, period / stack_cm)
+
+
 def main(argv: list[str] | None = None) -> None:
     args = list(sys.argv[1:] if argv is None else argv)
     if not args:
@@ -74,6 +89,7 @@ def main(argv: list[str] | None = None) -> None:
         borated_water_moderator_boron_ppm=0.0,
         moderator_density=1.0,
         gadolinium_oxide_in_fuel_proportion=0.0,
+        extra_names=collect_material_names(setup, sim.nsm_material),
     )
     apply_boron_ppm_to_fuel_graphite(
         materials_dict,
@@ -113,7 +129,10 @@ def main(argv: list[str] | None = None) -> None:
         )
         if sim.thermal_power_mw is not None and sim.thermal_power_mw > 0:
             geometry_mw = core.core_power / 1e6
-            thermal_w = float(sim.thermal_power_mw) * 1e6
+            share = period_share_of_stack(setup.stack_m, geom.vertical_core_height_cm)
+            stack_mw = float(sim.thermal_power_mw)
+            slice_mw = stack_mw * share
+            thermal_w = slice_mw * 1e6
             eff = setup.tpv_eff_pct / 100.0
             core.core_power = thermal_w
             core.core_power_electric = thermal_w * eff
@@ -122,9 +141,11 @@ def main(argv: list[str] | None = None) -> None:
                 energy_in_fuel = core.heavy_metal_mass * (u235_enrichment * 12.0) * 24.0
                 core.fuel_lifetime = energy_in_fuel / (thermal_w / 1e6 * 3600.0)
             print(
-                f"Thermal power override: {sim.thermal_power_mw:g} MW "
-                f"(geometry would give {geometry_mw:.4g} MW thermal / "
-                f"{geometry_mw * eff:.4g} MW electric)"
+                f"Thermal power: {stack_mw:g} MW over {setup.stack_m:g} m, "
+                f"{slice_mw:.4g} MW in the {geom.vertical_core_height_cm:.3f} cm period "
+                f"({share:.4g} of the stack) used for source strength and DDD. "
+                f"Geometry slice would give {geometry_mw:.4g} MW thermal / "
+                f"{geometry_mw * eff:.4g} MW electric."
             )
         return core
 

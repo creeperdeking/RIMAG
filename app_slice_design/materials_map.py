@@ -139,7 +139,5 @@ def ensure_materials_available(
     names: Iterable[str],
 ) -> None:
     missing = sorted({resolve_material_name(name) for name in names} - set(materials_dict))
-    # Stainless Steel may be unused; ignore names we intentionally skipped.
-    missing = [name for name in missing if name not in {"Stainless Steel"}]
     if missing:
         raise ValueError(f"Materials missing from OpenMC catalog after make_materials: {missing}")

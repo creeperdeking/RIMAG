@@ -620,7 +620,12 @@ const Explorer: React.FC = () => {
     <Row className="g-3">
       <Col lg={3}>{geometryControls}</Col>
       <Col lg={6}>
-        <ZoneChart layout={layout} showDims={setup.dims} columns={columns} />
+        <ZoneChart
+          layout={layout}
+          showDims={setup.dims}
+          columns={columns}
+          outerReflector={columns === 1 ? setup.refl : 0}
+        />
         {mergeReflector && (
           <div className="small text-secondary mt-2">
             Reflector and shield moderator use the same materials, so the reflector ({setup.refl.toFixed(2)} m) is
@@ -820,7 +825,7 @@ const Explorer: React.FC = () => {
     <div className="app-shell">
       <main className="app-main">
         <div className="app-main-header">
-          <h1 className="h5 mb-0">Hollow disk zone calculator</h1>
+          <h1 className="h5 mb-0">RIMAEL simulations</h1>
           <div className="config-toolbar">
             <Form.Select
               size="sm"

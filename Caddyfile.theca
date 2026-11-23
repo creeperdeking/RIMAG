@@ -3,8 +3,20 @@
 # Install: sudo cp /home/neyney/RIMAG/Caddyfile.theca /etc/caddy/Caddyfile && sudo systemctl reload caddy
 
 theca.fr {
-	encode gzip
-	reverse_proxy 127.0.0.1:8080
+	# Gzip holds the simulation event stream until a block fills, so the
+	# progress log looks frozen. Serve that path uncompressed and flush
+	# each write. Everything else stays compressed.
+	@sse path /api/simulation/stream
+	handle @sse {
+		reverse_proxy 127.0.0.1:8080 {
+			flush_interval -1
+		}
+	}
+
+	handle {
+		encode gzip
+		reverse_proxy 127.0.0.1:8080
+	}
 }
 
 theca.fr:8443 {

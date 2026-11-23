@@ -181,9 +181,41 @@ export function subscribeQueue(listener: (queue: SimQueueState) => void) {
   return () => job.queueListeners.delete(listener);
 }
 
+function isAccessError(error: unknown): boolean {
+  const code =
+    typeof error === "object" && error !== null && "code" in error
+      ? (error as NodeJS.ErrnoException).code
+      : undefined;
+  return code === "EACCES" || code === "EPERM";
+}
+
+/** Bytecode left by the root OpenMC container. It is not source and must not be copied. */
+function shouldSkipCopyName(name: string): boolean {
+  return name === "__pycache__" || name.endsWith(".pyc") || name.endsWith(".pyo");
+}
+
+function copyFileReplacing(src: string, dest: string) {
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  try {
+    fs.copyFileSync(src, dest);
+  } catch (error) {
+    if (!isAccessError(error) || !fs.existsSync(dest)) throw error;
+    // The container runs as root and leaves mode-644 files behind. Opening
+    // those with O_TRUNC fails; the directory is ours, so unlink then copy.
+    fs.rmSync(dest, { force: true });
+    fs.copyFileSync(src, dest);
+  }
+}
+
 function copyDir(src: string, dest: string) {
   fs.mkdirSync(dest, { recursive: true });
-  fs.cpSync(src, dest, { recursive: true, force: true });
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    if (shouldSkipCopyName(entry.name)) continue;
+    const from = path.join(src, entry.name);
+    const to = path.join(dest, entry.name);
+    if (entry.isDirectory()) copyDir(from, to);
+    else if (entry.isFile()) copyFileReplacing(from, to);
+  }
 }
 
 /** Keep the mounted run directory's Python packages in sync with the repo. */
@@ -213,10 +245,7 @@ export function syncRimagSourcesIntoRunDir() {
       throw new RimagRunnerError(`Missing source path ${src}`);
     }
     if (fs.statSync(src).isDirectory()) copyDir(src, dest);
-    else {
-      fs.mkdirSync(path.dirname(dest), { recursive: true });
-      fs.copyFileSync(src, dest);
-    }
+    else copyFileReplacing(src, dest);
   }
 }
 
@@ -228,7 +257,7 @@ export function syncPlotScriptIntoRunDir() {
   if (!fs.existsSync(src)) {
     throw new RimagRunnerError(`Missing ${src}`);
   }
-  fs.copyFileSync(src, dest);
+  copyFileReplacing(src, dest);
 }
 
 export function writeRunParams(payload: unknown) {
@@ -350,6 +379,10 @@ export function adoptRunningSimulation(): Promise<void> {
       }
       emitQueue();
       maybeStartNextFromQueue();
+    })
+    .catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      emit(`[runner] failed while adopting a run: ${message}`);
     })
     .finally(() => {
       adopting = null;
@@ -785,19 +818,44 @@ export function clearWeightWindows(): boolean {
   return removed;
 }
 
+function failPreparedRun(item: QueueItem, error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  emit(`[runner] failed to prepare run: ${message}`);
+  job.running = false;
+  job.child = null;
+  // Advance on a later turn so a run dir that still rejects the copy fails
+  // each queued item without recursing on the stack or killing this process.
+  finishQueueItem(item.id, 1, "failed", { summary: message }, false);
+  queueMicrotask(() => {
+    try {
+      maybeStartNextFromQueue();
+    } catch (nextError) {
+      const nextMessage = nextError instanceof Error ? nextError.message : String(nextError);
+      emit(`[runner] queue advance failed: ${nextMessage}`);
+    }
+  });
+}
+
 function launchDockerJob(
   payload: unknown,
   item: QueueItem,
   options: { continueAutoRefine?: boolean } = {},
 ) {
-  const runnerPayload = payloadForRunner(payload);
-  writeRunParams(runnerPayload);
-  const threads = threadsFromPayload(runnerPayload);
-  fs.writeFileSync(
-    path.join(RUN_DIR, "simsettings.json"),
-    `${JSON.stringify({ threads }, null, 2)}\n`,
-    "utf8",
-  );
+  let runnerPayload: unknown;
+  let threads: number;
+  try {
+    runnerPayload = payloadForRunner(payload);
+    writeRunParams(runnerPayload);
+    threads = threadsFromPayload(runnerPayload);
+    fs.writeFileSync(
+      path.join(RUN_DIR, "simsettings.json"),
+      `${JSON.stringify({ threads }, null, 2)}\n`,
+      "utf8",
+    );
+  } catch (error) {
+    failPreparedRun(item, error);
+    return;
+  }
   job.lastLines = [];
   job.running = true;
   job.currentId = item.id;

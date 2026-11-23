@@ -74,7 +74,7 @@ export type SimulationParams = {
   ddd_tallies_only: boolean;
   ww_mesh_cm: number;
   ww_energy_groups: number;
-  /** Thermal power [MW]. null → OpenMC path computes from TPV/fuel geometry. */
+  /** Whole-stack thermal power [MW]. The run scales it to one periodic slice. null → geometry/TPV slice power. */
   thermal_power_mw: number | null;
 };
 

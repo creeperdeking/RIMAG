@@ -6,8 +6,8 @@
     "b_pct": 50,
     "w": 1.7,
     "ratio_pct": 40,
-    "tpv_density": 0.89,
-    "enrichment_pct": 9.7,
+    "tpv_density": 0.9,
+    "enrichment_pct": 9.8,
     "packing_pct": 20,
     "hm_particle_pct": 30,
     "cylinder_diameter_mm": 10,
@@ -25,7 +25,7 @@
       "disk": [
         {
           "name": "Void",
-          "cm": 0.05
+          "cm": 0.2
         },
         {
           "name": "Disk",
@@ -70,15 +70,39 @@
       ],
       "tpv": [
         {
+          "name": "TZM",
+          "cm": 0.02
+        },
+        {
+          "name": "Void",
+          "cm": 0.03
+        },
+        {
+          "name": "InGaAs",
+          "cm": 0.02
+        },
+        {
+          "name": "Stainless Steel",
+          "cm": 0.1
+        },
+        {
+          "name": "Light Water",
+          "cm": 0.66
+        },
+        {
+          "name": "Stainless Steel",
+          "cm": 0.1
+        },
+        {
           "name": "InGaAs",
           "cm": 0.02
         },
         {
           "name": "Void",
-          "cm": 0.96
+          "cm": 0.03
         },
         {
-          "name": "InGaAs",
+          "name": "TZM",
           "cm": 0.02
         }
       ]
@@ -91,7 +115,7 @@
       "nsm_thickness": 125,
       "conical_pitch": 15,
       "particle_type": "neutron",
-      "weight_windows": "use",
+      "weight_windows": "no",
       "survival_biasing": false,
       "dose_time": 10,
       "print_core_characteristics": true,
@@ -203,6 +227,133 @@
       "ww_mesh_cm": 40,
       "ww_energy_groups": 10,
       "thermal_power_mw": null
+    }
+  },
+  "fissiovolt-reference": {
+    "a": 2.7,
+    "abs": 0.1,
+    "refl": 0.3,
+    "b_pct": 50,
+    "w": 1.7,
+    "ratio_pct": 40,
+    "tpv_density": 0.9,
+    "enrichment_pct": 9.8,
+    "packing_pct": 20,
+    "hm_particle_pct": 30,
+    "cylinder_diameter_mm": 10,
+    "wall_margin_mm": 0.5,
+    "compact_spacing_mm": 1,
+    "tpv_eff_pct": 33,
+    "fuel_temp_c": 1250,
+    "fuel_emissivity": 0.95,
+    "disk_emissivity": 0.95,
+    "stack_m": 10,
+    "columns": 1,
+    "reload_fraction": "1/4",
+    "dims": true,
+    "layers": {
+      "disk": [
+        {
+          "name": "Void",
+          "cm": 0.2
+        },
+        {
+          "name": "Disk",
+          "cm": 0.8
+        },
+        {
+          "name": "Void",
+          "cm": 0.2
+        }
+      ],
+      "fuel": [
+        {
+          "name": "Graphite",
+          "cm": 0.4827
+        },
+        {
+          "name": "Uranium Dioxide",
+          "cm": 0.0347
+        },
+        {
+          "name": "Graphite",
+          "cm": 0.4826
+        }
+      ],
+      "reflector": [
+        {
+          "name": "Graphite",
+          "cm": 1
+        }
+      ],
+      "shield_moderator": [
+        {
+          "name": "Graphite",
+          "cm": 1
+        }
+      ],
+      "shield_absorber": [
+        {
+          "name": "Boron Carbide",
+          "cm": 1
+        }
+      ],
+      "tpv": [
+        {
+          "name": "TZM",
+          "cm": 0.02
+        },
+        {
+          "name": "Void",
+          "cm": 0.03
+        },
+        {
+          "name": "InGaAs",
+          "cm": 0.02
+        },
+        {
+          "name": "Stainless Steel",
+          "cm": 0.1
+        },
+        {
+          "name": "Light Water",
+          "cm": 0.66
+        },
+        {
+          "name": "Stainless Steel",
+          "cm": 0.1
+        },
+        {
+          "name": "InGaAs",
+          "cm": 0.02
+        },
+        {
+          "name": "Void",
+          "cm": 0.03
+        },
+        {
+          "name": "TZM",
+          "cm": 0.02
+        }
+      ]
+    },
+    "simulation": {
+      "run_mode": "keff",
+      "n_batches": 20,
+      "n_threads": 12,
+      "nsm_material": "Graphite",
+      "nsm_thickness": 125,
+      "conical_pitch": 15,
+      "particle_type": "neutron",
+      "weight_windows": "no",
+      "survival_biasing": false,
+      "dose_time": 10,
+      "print_core_characteristics": true,
+      "boron_concentration_ppm": 200,
+      "ddd_tallies_only": true,
+      "ww_mesh_cm": 40,
+      "ww_energy_groups": 10,
+      "thermal_power_mw": 318
     }
   }
 }

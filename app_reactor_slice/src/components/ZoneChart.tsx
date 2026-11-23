@@ -85,21 +85,80 @@ function polar(r: number, deg: number): Point {
   return [r * Math.cos(rad), r * Math.sin(rad)];
 }
 
+/** Constant-thickness reflector outside the fuel arc.
+
+The outer boundary is the fuel arc offset by `thickness`, with a quarter-circle
+bend at each corner that comes back to the rim beside the fuel, where the inner
+reflector already sits. Angles are degrees from +x. Points are about the origin.
+*/
+function outerReflectorCap(ro: number, thickness: number, startDeg: number, endDeg: number): Point[] {
+  let a0 = startDeg;
+  let a1 = endDeg;
+  if (a1 < a0) a1 += 360;
+  const right = (a0 * Math.PI) / 180;
+  const left = (a1 * Math.PI) / 180;
+  const ratio = thickness / ro;
+  const alpha = ratio < 1 ? Math.asin(ratio) : Math.PI / 2;
+  const points: Point[] = [];
+  const push = (x: number, y: number) => points.push([x, y]);
+
+  const fillet = (phi: number, ang0: number, ang1: number, n = 20) => {
+    const cx = ro * Math.cos(phi);
+    const cy = ro * Math.sin(phi);
+    for (let i = 0; i <= n; i += 1) {
+      const a = ang0 + ((ang1 - ang0) * i) / n;
+      push(cx + thickness * Math.cos(a), cy + thickness * Math.sin(a));
+    }
+  };
+  const turn = (start: number, end: number) => {
+    let delta = end - start;
+    while (delta > Math.PI) delta -= 2 * Math.PI;
+    while (delta < -Math.PI) delta += 2 * Math.PI;
+    return delta;
+  };
+
+  const qRight = right - alpha;
+  const qLeft = left + alpha;
+  const rightOut = Math.atan2(-Math.cos(right), Math.sin(right));
+  const leftOut = Math.atan2(Math.cos(left), -Math.sin(left));
+
+  push(ro * Math.cos(qRight), ro * Math.sin(qRight));
+  fillet(right, rightOut, rightOut + turn(rightOut, right));
+  const nBig = 48;
+  for (let i = 1; i <= nBig; i += 1) {
+    const phi = right + ((left - right) * i) / nBig;
+    push((ro + thickness) * Math.cos(phi), (ro + thickness) * Math.sin(phi));
+  }
+  fillet(left, left, left + turn(left, leftOut));
+  push(ro * Math.cos(qLeft), ro * Math.sin(qLeft));
+  let rimEnd = qRight;
+  if (rimEnd > qLeft) rimEnd -= 2 * Math.PI;
+  const nRim = 48;
+  for (let i = 1; i <= nRim; i += 1) {
+    const phi = qLeft + ((rimEnd - qLeft) * i) / nRim;
+    push(ro * Math.cos(phi), ro * Math.sin(phi));
+  }
+  return points;
+}
+
 type Props = {
   layout: ZoneLayout;
   showDims: boolean;
   columns: number;
+  /** Radial reflector outside the rim, metres. Used for a single column. */
+  outerReflector?: number;
 };
 
-const ZoneChart: React.FC<Props> = ({ layout, showDims, columns }) => {
+const ZoneChart: React.FC<Props> = ({ layout, showDims, columns, outerReflector = 0 }) => {
   const { paths, lines, dots, dot, labels, reach, legend, home } = useMemo(() => {
     const fuelHalf = (layout.fuelAngle * 180) / Math.PI / 2;
     const oppHalf = (layout.oppositeAngle * 180) / Math.PI / 2;
     const ri = layout.rInner;
     const ro = layout.rOuter;
+    const outerPad = columns <= 1 ? Math.max(outerReflector, 0) : 0;
     let box = ro * 1.3;
     for (const [px, py] of columnPoses(columns, ro)) {
-      box = Math.max(box, Math.hypot(px, py) + ro * 1.2);
+      box = Math.max(box, Math.hypot(px, py) + (ro + outerPad) * 1.2);
     }
     // Coordinates are metres. A raw stroke of 1.5 would be 1.5 m wide and cover the rim.
     const hairline = box * 0.0035;
@@ -181,6 +240,18 @@ const ZoneChart: React.FC<Props> = ({ layout, showDims, columns }) => {
         });
         addLegend(zone.name, zone.color);
       });
+
+      if (outerPad > 1e-9 && layout.fuelAngle > 1e-9) {
+        const cap = translate(outerReflectorCap(ro, outerPad, fuel[0], fuel[1]), cx, cy);
+        drawn.push({
+          d: toPath(cap),
+          fill: ZONE_COLORS.reflector,
+          stroke: "white",
+          strokeWidth: zoneEdge,
+          key: `outer-refl-${diskIndex}`,
+        });
+        addLegend("Reflector", ZONE_COLORS.reflector);
+      }
 
       for (const r of [ri, ro]) {
         const circle: Point[] = [];
@@ -308,9 +379,14 @@ const ZoneChart: React.FC<Props> = ({ layout, showDims, columns }) => {
       minY = Math.min(minY, y);
       maxY = Math.max(maxY, y);
     };
-    for (const [px, py] of columnPoses(columns, ro)) {
+    for (const [px, py, rot] of columnPoses(columns, ro)) {
       include(px - ro, py - ro);
       include(px + ro, py + ro);
+      if (outerPad > 1e-9 && layout.fuelAngle > 1e-9) {
+        const a0 = 90 - fuelHalf + rot;
+        const a1 = 90 + fuelHalf + rot;
+        for (const [x, y] of outerReflectorCap(ro, outerPad, a0, a1)) include(px + x, py + y);
+      }
     }
     for (const line of strokeLines) {
       include(line.x1, line.y1);
@@ -327,7 +403,7 @@ const ZoneChart: React.FC<Props> = ({ layout, showDims, columns }) => {
     };
 
     return { paths: drawn, lines: strokeLines, dots, dot, labels: dimLabels, reach: box, legend: legendItems, home };
-  }, [layout, showDims, columns]);
+  }, [layout, showDims, columns, outerReflector]);
 
   const [frame, setFrame] = useState<typeof home | null>(null);
   const [panning, setPanning] = useState(false);

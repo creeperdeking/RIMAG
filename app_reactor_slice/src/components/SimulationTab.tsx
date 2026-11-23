@@ -354,6 +354,8 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup, defaultTherma
         ...params,
         // Default tally runs use keff; seed/refine presets switch to keff_notallies in the modal.
         run_mode: params.run_mode === "keff_notallies" ? "keff" : params.run_mode,
+        // This host has 8 cores. Don't inherit a saved 12-thread setting into Append.
+        n_threads: 8,
       },
     });
   };
