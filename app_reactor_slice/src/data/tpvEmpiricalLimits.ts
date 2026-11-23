@@ -3,7 +3,7 @@
  *
  * Values are regenerated from the paper’s model (not hand-traced):
  *   VF=1, ε_abv=1, IQE=1, Tcell=25°C, Rseries=0.01 Ω·cm²,
- *   Woc = radiative-limit(15 mA/cm²) + 70…140 mV band midpoint,
+ *   Woc = radiative-limit(15 mA/cm²) + 70 mV (solid) or + 140 mV (dashed),
  *   ε_bel = 0.05 (95% R) or 0.01 (99% R).
  *
  * Generator: app_reactor_slice/scripts/tpv_dada_model.py → tpvDadaFig8.json
@@ -14,7 +14,14 @@ import fig8 from "./tpvDadaFig8.json";
 
 export type TpvEgEv = 0.4 | 0.5 | 0.6 | 0.7 | 0.8;
 export type TpvBelowGapReflectancePct = 95 | 99;
+/** Fig. 8 voltage penalty above the radiative-limit Woc at 15 mA/cm². */
+export type TpvWocMv = 70 | 140;
 export type TpvPoint = { tempC: number; value: number };
+
+export const TPV_WOC_OPTIONS: ReadonlyArray<{ mv: TpvWocMv; label: string }> = [
+  { mv: 70, label: "Woc +70 mV (solid)" },
+  { mv: 140, label: "Woc +140 mV (dashed)" },
+];
 
 export const TPV_EG_OPTIONS: TpvEgEv[] = [0.4, 0.5, 0.6, 0.7, 0.8];
 
@@ -32,6 +39,11 @@ type BandSeries = {
   mid: number[];
 };
 
+const WOC_SERIES: Record<TpvWocMv, keyof BandSeries> = {
+  70: "hi_plus70mV",
+  140: "lo_plus140mV",
+};
+
 function seriesToPoints(temps: number[], values: number[]): TpvPoint[] {
   return temps.map((tempC, i) => ({ tempC, value: values[i] }));
 }
@@ -46,19 +58,18 @@ function mapEg(record: Record<string, BandSeries>, which: keyof BandSeries): Rec
   return out;
 }
 
-/** Fig. 8a midpoint — η (%) at 95% below-gap reflectance. */
-export const TPV_EFF_PCT_R95 = mapEg(fig8.efficiency_R95 as Record<string, BandSeries>, "mid");
-
-/** Fig. 8b midpoint — η (%) at 99% below-gap reflectance. */
-export const TPV_EFF_PCT_R99 = mapEg(fig8.efficiency_R99 as Record<string, BandSeries>, "mid");
-
-/** Fig. 8c midpoint — electrical power density (W/cm²). */
-export const TPV_POWER_W_CM2 = mapEg(fig8.power_w_cm2 as Record<string, BandSeries>, "mid");
-
+/** Fig. 8a/b — η (%) for one below-gap reflectance and one Woc penalty. */
 export function efficiencyTable(
   reflectancePct: TpvBelowGapReflectancePct,
+  wocMv: TpvWocMv = 70,
 ): Record<TpvEgEv, TpvPoint[]> {
-  return reflectancePct === 99 ? TPV_EFF_PCT_R99 : TPV_EFF_PCT_R95;
+  const table = reflectancePct === 99 ? fig8.efficiency_R99 : fig8.efficiency_R95;
+  return mapEg(table as Record<string, BandSeries>, WOC_SERIES[wocMv]);
+}
+
+/** Fig. 8c — electrical power density (W/cm²) for one Woc penalty. Reflectance does not enter. */
+export function powerTable(wocMv: TpvWocMv = 70): Record<TpvEgEv, TpvPoint[]> {
+  return mapEg(fig8.power_w_cm2 as Record<string, BandSeries>, WOC_SERIES[wocMv]);
 }
 
 /** Linear interpolation on a sorted table. Clamps outside the domain. */

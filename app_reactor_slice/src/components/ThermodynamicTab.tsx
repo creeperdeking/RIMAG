@@ -17,12 +17,14 @@ import {
 import {
   TPV_EG_META,
   TPV_EG_OPTIONS,
-  TPV_POWER_W_CM2,
+  TPV_WOC_OPTIONS,
   efficiencyTable,
   interpolateTpvValue,
+  powerTable,
   type TpvBelowGapReflectancePct,
   type TpvEgEv,
   type TpvPoint,
+  type TpvWocMv,
 } from "../data/tpvEmpiricalLimits";
 
 type FuelTrace = {
@@ -77,11 +79,14 @@ function TpvModelChart({
   yMax,
   logY,
   valueFormat,
+  dashed,
 }: {
   title: string;
   yLabel: string;
   points: TpvPoint[];
   color: string;
+  /** Fig. 8 dashed series is Woc limit +140 mV. */
+  dashed?: boolean;
   /** Steady average disk temperature used as TPV emitter (°C). */
   emitterTempC: number;
   sliderValue: number;
@@ -142,7 +147,13 @@ function TpvModelChart({
           </g>
         );
       })}
-      <path d={polylinePath(points, xOf, yOf)} fill="none" stroke={color} strokeWidth={2.25} />
+      <path
+        d={polylinePath(points, xOf, yOf)}
+        fill="none"
+        stroke={color}
+        strokeWidth={2.25}
+        strokeDasharray={dashed ? "7 4" : undefined}
+      />
       {opInRange && (
         <g>
           <line
@@ -288,12 +299,14 @@ const ThermodynamicTab: React.FC<Props> = ({
   const [trace, setTrace] = useState<FuelTrace | null>(null);
   const [bandGapEv, setBandGapEv] = useState<TpvEgEv>(0.7);
   const [reflectancePct, setReflectancePct] = useState<TpvBelowGapReflectancePct>(99);
+  const [wocMv, setWocMv] = useState<TpvWocMv>(70);
 
   const effPoints = useMemo(
-    () => efficiencyTable(reflectancePct)[bandGapEv],
-    [reflectancePct, bandGapEv],
+    () => efficiencyTable(reflectancePct, wocMv)[bandGapEv],
+    [reflectancePct, wocMv, bandGapEv],
   );
-  const powerPoints = TPV_POWER_W_CM2[bandGapEv];
+  const powerPoints = useMemo(() => powerTable(wocMv)[bandGapEv], [wocMv, bandGapEv]);
+  const wocDashed = wocMv === 140;
   const egColor = TPV_EG_META[bandGapEv].color;
 
   const fuelHeatingPowerW = useMemo(
@@ -451,12 +464,25 @@ const ThermodynamicTab: React.FC<Props> = ({
                   <option value={95}>95% below-gap R (ε=0.05)</option>
                   <option value={99}>99% below-gap R (ε=0.01)</option>
                 </Form.Select>
+                <Form.Select
+                  size="sm"
+                  style={{ width: "auto" }}
+                  value={String(wocMv)}
+                  onChange={(e) => setWocMv(Number(e.target.value) as TpvWocMv)}
+                  aria-label="Open-circuit voltage penalty"
+                >
+                  {TPV_WOC_OPTIONS.map((option) => (
+                    <option key={option.mv} value={option.mv}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Form.Select>
               </div>
             </div>
             <p className="small text-secondary mb-2">
-              Regenerated from the Dada et al. empirical model (Fig.&nbsp;8 mid-band). Emitter temperature is the
-              vacuum-shell temperature the cells see. Black = slider; ring = model at shell T. The below-gap
-              reflectance above selects the efficiency curve only.
+              Regenerated from the Dada et al. empirical model (Fig.&nbsp;8). Solid is Woc limit +70 mV; dashed is
+              +140 mV. Emitter temperature is the vacuum-shell temperature the cells see. Black = slider; ring =
+              model at shell T. Below-gap reflectance selects the efficiency curve only.
             </p>
             <div className="small mb-2">
               Fuel <strong>{diskEmitter.fuelTempC.toFixed(0)} °C</strong>
@@ -485,10 +511,11 @@ const ThermodynamicTab: React.FC<Props> = ({
               </span>
             </div>
             <TpvModelChart
-              title={`Efficiency — ${reflectancePct}% R_bel · ${TPV_EG_META[bandGapEv].label}`}
+              title={`Efficiency — ${reflectancePct}% R_bel · Woc +${wocMv} mV · ${TPV_EG_META[bandGapEv].label}`}
               yLabel="η (%)"
               points={effPoints}
               color={egColor}
+              dashed={wocDashed}
               emitterTempC={emitterTempC}
               sliderValue={setup.tpv_eff_pct}
               yMin={0}
@@ -496,10 +523,11 @@ const ThermodynamicTab: React.FC<Props> = ({
               valueFormat={(v) => v.toFixed(0)}
             />
             <TpvModelChart
-              title={`Power density — ${TPV_EG_META[bandGapEv].label}`}
+              title={`Power density — Woc +${wocMv} mV · ${TPV_EG_META[bandGapEv].label}`}
               yLabel="P (W/cm²)"
               points={powerPoints}
               color={egColor}
+              dashed={wocDashed}
               emitterTempC={emitterTempC}
               sliderValue={setup.tpv_density}
               yMin={0.1}
