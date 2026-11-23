@@ -5,9 +5,10 @@ Fig. 8 inputs (paper): VF=1, ε_abv=1, IQE=1, Tcell=25°C, Rseries=0.01 Ω·cm²
 Woc = radiative-limit(at 15 mA/cm²) + 70 mV (solid) or +140 mV (dashed),
 ε_bel = 0.05 (95% R) or 0.01 (99% R).
 
-The website solves the same diode at a chosen series resistance. Blackbody
-current and heat for that solve are written to tpvDadaSpectrum.json; this
-script's Fig. 8 tables stay at Rseries = 0.01 Ω·cm².
+The website solves the same diode at a chosen series resistance and view
+factor. Blackbody current and heat for that solve are written to
+tpvDadaSpectrum.json at view factor 1; this script's Fig. 8 tables stay at
+Rseries = 0.01 Ω·cm² and VF = 1.
 """
 from __future__ import annotations
 

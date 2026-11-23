@@ -6,8 +6,9 @@
  * ε_bel = 0.05 (95% R) or 0.01 (99% R).
  *
  * The chart solver uses the same single-diode equation and applies whatever series
- * resistance and Woc penalty are selected. Blackbody current and heat are tabulated
- * in tpvDadaSpectrum.json; tpvDadaFig8.json keeps the published Rs = 0.01 curves.
+ * resistance, view factor, and Woc penalty are selected. Blackbody current and heat
+ * in tpvDadaSpectrum.json are for a view factor of 1; the solver scales both by the
+ * selected view factor. tpvDadaFig8.json keeps the published Rs = 0.01, VF = 1 curves.
  *
  * Generator: app_reactor_slice/scripts/tpv_dada_model.py
  * Source: Dada et al., Sol. Energy Mater. Sol. Cells 289 (2025) 113666.
@@ -152,26 +153,30 @@ function spectrumRow(egEv: number): { wocRadV: number; jsc: number[]; qAbove: nu
 
 /**
  * Efficiency and power density from the Fig. 8 single-diode model.
- * Band gap, Woc penalty, and series resistance are solved directly.
+ * Band gap, Woc penalty, series resistance, and view factor are solved directly.
+ * View factor scales the incident photon flux, so both current and absorbed heat
+ * scale with it; series resistance then makes efficiency depend on that current.
  * Reflectance changes only the below-gap part of the absorbed heat, so efficiency
- * follows that and power density does not move.
+ * follows that and, at a fixed view factor, power density does not move.
  */
 export function empiricalCurves(
   egEv: number,
   reflectancePct: number,
   wocMv: number,
   rseriesOhmCm2 = 0.01,
+  viewFactor = 1,
 ): { efficiency: TpvPoint[]; power: TpvPoint[] } {
   const eg = clamp(egEv, 0.4, 0.8);
   const reflectance = clamp(reflectancePct, 95, 99);
   const emissivity = (100 - reflectance) / 100;
   const wocExtraV = clamp(wocMv, 70, 140) / 1000;
+  const vf = clamp(viewFactor, 0.1, 1);
   const row = spectrumRow(eg);
   const j0 = j0FromWoc(eg, row.wocRadV + wocExtraV);
   const temps = spectrum.temps_C;
-  const power = row.jsc.map((jsc) => maximumPowerDensity(jsc, j0, rseriesOhmCm2));
+  const power = row.jsc.map((jsc) => maximumPowerDensity(jsc * vf, j0, rseriesOhmCm2));
   const efficiency = power.map((value, index) => {
-    const absorbed = row.qAbove[index] + emissivity * row.qBelow[index];
+    const absorbed = vf * (row.qAbove[index] + emissivity * row.qBelow[index]);
     return absorbed > 0 ? (100 * value) / absorbed : 0;
   });
   return {

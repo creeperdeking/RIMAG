@@ -326,10 +326,11 @@ const ThermodynamicTab: React.FC<Props> = ({
   const [reflectancePct, setReflectancePct] = useState(99);
   const [wocMv, setWocMv] = useState(70);
   const [seriesResistance, setSeriesResistance] = useState(0.01);
+  const [viewFactor, setViewFactor] = useState(1);
 
   const curves = useMemo(
-    () => empiricalCurves(bandGapEv, reflectancePct, wocMv, seriesResistance),
-    [bandGapEv, reflectancePct, wocMv, seriesResistance],
+    () => empiricalCurves(bandGapEv, reflectancePct, wocMv, seriesResistance, viewFactor),
+    [bandGapEv, reflectancePct, wocMv, seriesResistance, viewFactor],
   );
   const effPoints = curves.efficiency;
   const powerPoints = curves.power;
@@ -501,11 +502,21 @@ const ThermodynamicTab: React.FC<Props> = ({
               format={(value) => value.toFixed(3)}
               onChange={setSeriesResistance}
             />
+            <LimitSlider
+              label="View factor"
+              value={viewFactor}
+              min={0.1}
+              max={1}
+              step={0.01}
+              format={(value) => value.toFixed(2)}
+              onChange={setViewFactor}
+            />
             <p className="small text-secondary mb-2">
               Single-diode model of Dada et al. Fig.&nbsp;8, solved at the selected band gap and Woc penalty. Series
-              resistance is that diode’s specific resistance; the published curves use 0.010 Ω·cm². Below-gap
-              reflectance changes the absorbed heat, so efficiency moves and power density stays put. View factor is 1.
-              Emitter temperature is the vacuum-shell temperature the cells see. Black = slider; ring = model at shell T.
+              resistance is that diode’s specific resistance, and the view factor scales the photon flux. The published
+              curves use 0.010 Ω·cm² and a view factor of 1. Below-gap reflectance changes the absorbed heat, so
+              efficiency moves and, at a fixed view factor, power density stays put. Emitter temperature is the
+              vacuum-shell temperature the cells see. Black = slider; ring = model at shell T.
             </p>
             <div className="small mb-2">
               Fuel <strong>{diskEmitter.fuelTempC.toFixed(0)} °C</strong>
@@ -534,7 +545,7 @@ const ThermodynamicTab: React.FC<Props> = ({
               </span>
             </div>
             <TpvModelChart
-              title={`Efficiency — ${reflectancePct.toFixed(1)}% R · Woc +${wocMv.toFixed(0)} mV · Rs ${seriesResistance.toFixed(3)} · ${bandGapEv.toFixed(2)} eV`}
+              title={`Efficiency — ${reflectancePct.toFixed(1)}% R · Woc +${wocMv.toFixed(0)} mV · Rs ${seriesResistance.toFixed(3)} · F ${viewFactor.toFixed(2)} · ${bandGapEv.toFixed(2)} eV`}
               yLabel="η (%)"
               points={effPoints}
               color={egColor}
@@ -545,7 +556,7 @@ const ThermodynamicTab: React.FC<Props> = ({
               valueFormat={(v) => v.toFixed(0)}
             />
             <TpvModelChart
-              title={`Power density — Woc +${wocMv.toFixed(0)} mV · Rs ${seriesResistance.toFixed(3)} · ${bandGapEv.toFixed(2)} eV`}
+              title={`Power density — Woc +${wocMv.toFixed(0)} mV · Rs ${seriesResistance.toFixed(3)} · F ${viewFactor.toFixed(2)} · ${bandGapEv.toFixed(2)} eV`}
               yLabel="P (W/cm²)"
               points={powerPoints}
               color={egColor}
