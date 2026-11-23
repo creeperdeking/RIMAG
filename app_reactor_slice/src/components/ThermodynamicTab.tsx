@@ -12,6 +12,7 @@ import {
   diskTemperatureFromLayerHeat,
   diskSectionThermal,
   graphiteLumpedThermal,
+  modelicaFuelHeatingPowerW,
 } from "../../shared/diskThermal";
 import {
   TPV_EG_META,
@@ -295,10 +296,14 @@ const ThermodynamicTab: React.FC<Props> = ({
   const powerPoints = TPV_POWER_W_CM2[bandGapEv];
   const egColor = TPV_EG_META[bandGapEv].color;
 
+  const fuelHeatingPowerW = useMemo(
+    () => modelicaFuelHeatingPowerW(setup.tpv_density, setup.tpv_eff_pct, tpvAreaM2),
+    [setup.tpv_density, setup.tpv_eff_pct, tpvAreaM2],
+  );
   const diskEmitter = useMemo(
     () =>
       diskTemperatureFromLayerHeat({
-        fuelTempC: setup.fuel_temp_c,
+        heatW: fuelHeatingPowerW,
         fuelEmissivity: setup.fuel_emissivity,
         diskEmissivity: setup.disk_emissivity,
         shellEmissivity: setup.shell_emissivity,
@@ -309,7 +314,7 @@ const ThermodynamicTab: React.FC<Props> = ({
         tpvGapCm,
       }),
     [
-      setup.fuel_temp_c,
+      fuelHeatingPowerW,
       setup.fuel_emissivity,
       setup.disk_emissivity,
       setup.shell_emissivity,
@@ -320,7 +325,7 @@ const ThermodynamicTab: React.FC<Props> = ({
       tpvGapCm,
     ],
   );
-  const fuelHeatingPowerW = diskEmitter.heatW;
+  const fuelExceedsMax = diskEmitter.fuelTempC > setup.fuel_temp_c + 0.5;
 
   /** Cells see the vacuum shell, so the shell temperature is the TPV emitter. */
   const emitterTempC = diskEmitter.shellTempC;
@@ -402,12 +407,18 @@ const ThermodynamicTab: React.FC<Props> = ({
         <div className="border rounded p-3 bg-white h-100">
           <h2 className="h6 mb-3">TPV and fuel temperature</h2>
           <p className="small text-secondary mb-3">
-            The fuel temperature is the fixed boundary. Disk and shell temperatures are the ones that carry one
-            heat from that fuel, across helium, and then by radiation onto the cells.
+            Layer heat comes from the TPV power density and efficiency. Fuel temperature is the temperature that
+            heat requires. The slider is the maximum allowed fuel temperature.
           </p>
           {renderSlider("tpv_density", "TPV power density (W/cm²)", fixed(2))}
           {renderSlider("tpv_eff_pct", "TPV efficiency", fixed(0, "%"))}
-          {renderSlider("fuel_temp_c", "Fuel temperature (°C)", fixed(0))}
+          {renderSlider("fuel_temp_c", "Max fuel temperature (°C)", fixed(0))}
+          {fuelExceedsMax && (
+            <Alert variant="warning" className="py-2 px-3 small">
+              Calculated fuel temperature is {diskEmitter.fuelTempC.toFixed(0)} °C, above the{" "}
+              {setup.fuel_temp_c.toFixed(0)} °C maximum.
+            </Alert>
+          )}
           {renderSlider("fuel_emissivity", "Fuel emissivity", fixed(2))}
           {renderSlider("disk_emissivity", "Disk emissivity", fixed(2))}
           {renderSlider("shell_emissivity", "Vacuum shell emissivity", fixed(2))}
@@ -448,11 +459,11 @@ const ThermodynamicTab: React.FC<Props> = ({
               reflectance above selects the efficiency curve only.
             </p>
             <div className="small mb-2">
-              Fuel <strong>{setup.fuel_temp_c.toFixed(0)} °C</strong>
+              Fuel <strong>{diskEmitter.fuelTempC.toFixed(0)} °C</strong>
               <span className="text-secondary">
                 {" "}
-                rejects <strong>{(diskEmitter.heatW / 1000).toFixed(1)} kW</strong>. The same power crosses the disk
-                and reaches the cells.
+                is required to reject {(diskEmitter.heatW / 1000).toFixed(1)} kW. The same power crosses the disk and
+                reaches the cells. Maximum set in the menu: {setup.fuel_temp_c.toFixed(0)} °C.
               </span>
             </div>
             <div className="small mb-2">
@@ -513,8 +524,8 @@ const ThermodynamicTab: React.FC<Props> = ({
           </div>
 
           <div className="small text-secondary mt-2">
-            The fuel slider is the fuel temperature for this balance, for OpenMC, and for the initial{" "}
-            <code>FuelPlate.T</code> of Run Sim ({Math.round(setup.fuel_temp_c + 273.15)} K). Helium gaps are the Void
+            Max fuel temperature is the OpenMC fuel temperature and the initial <code>FuelPlate.T</code> of Run Sim (
+            {Math.round(setup.fuel_temp_c + 273.15)} K). Helium gaps are the Void
             sheets on the disk stack. Across helium,{" "}
             <code>Q = σ Gr (T_hot⁴ − T_cold⁴) + k_He A ΔT / d</code>. From the shell to the cells the gap is vacuum,
             so only radiation remains, with <code>ε_cell = 1 − R</code>.
@@ -542,8 +553,11 @@ const ThermodynamicTab: React.FC<Props> = ({
             <strong>{(100 * circuitArcs.shield1ArcFrac).toFixed(1)}%</strong> → Modelica{" "}
             <code>fuel_arc_frac</code> / <code>tpv_arc_frac</code> / <code>shield*_arc_frac</code>.
             <br />
-            Fuel heating sent to Run Sim is the conserved layer heat at {setup.fuel_temp_c.toFixed(0)} °C:{" "}
-            <code>P0 = {(fuelHeatingPowerW / 1000).toFixed(1)} kW</code> (A_tpv={tpvAreaM2.toFixed(3)} m²).
+            Fuel heating (one disk × one slice):{" "}
+            <code>
+              P0 = 2·ρ·10·A_tpv / η = {(fuelHeatingPowerW / 1000).toFixed(1)} kW
+            </code>{" "}
+            (A_tpv={tpvAreaM2.toFixed(3)} m²).
           </div>
         </div>
       </Col>
