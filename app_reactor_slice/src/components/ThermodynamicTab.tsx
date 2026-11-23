@@ -12,7 +12,6 @@ import {
   diskTemperatureFromLayerHeat,
   diskSectionThermal,
   graphiteLumpedThermal,
-  modelicaFuelHeatingPowerW,
 } from "../../shared/diskThermal";
 import {
   TPV_EG_META,
@@ -296,15 +295,10 @@ const ThermodynamicTab: React.FC<Props> = ({
   const powerPoints = TPV_POWER_W_CM2[bandGapEv];
   const egColor = TPV_EG_META[bandGapEv].color;
 
-  const fuelHeatingPowerW = useMemo(
-    () => modelicaFuelHeatingPowerW(setup.tpv_density, setup.tpv_eff_pct, tpvAreaM2),
-    [setup.tpv_density, setup.tpv_eff_pct, tpvAreaM2],
-  );
-
   const diskEmitter = useMemo(
     () =>
       diskTemperatureFromLayerHeat({
-        heatW: fuelHeatingPowerW,
+        fuelTempC: setup.fuel_temp_c,
         fuelEmissivity: setup.fuel_emissivity,
         diskEmissivity: setup.disk_emissivity,
         shellEmissivity: setup.shell_emissivity,
@@ -315,7 +309,7 @@ const ThermodynamicTab: React.FC<Props> = ({
         tpvGapCm,
       }),
     [
-      fuelHeatingPowerW,
+      setup.fuel_temp_c,
       setup.fuel_emissivity,
       setup.disk_emissivity,
       setup.shell_emissivity,
@@ -326,6 +320,7 @@ const ThermodynamicTab: React.FC<Props> = ({
       tpvGapCm,
     ],
   );
+  const fuelHeatingPowerW = diskEmitter.heatW;
 
   /** Cells see the vacuum shell, so the shell temperature is the TPV emitter. */
   const emitterTempC = diskEmitter.shellTempC;
@@ -407,8 +402,8 @@ const ThermodynamicTab: React.FC<Props> = ({
         <div className="border rounded p-3 bg-white h-100">
           <h2 className="h6 mb-3">TPV and fuel temperature</h2>
           <p className="small text-secondary mb-3">
-            Electrical TPV cell loading and conversion efficiency. The layer heat crosses helium at 1 atm by radiation
-            and conduction, then the vacuum shell radiates it onto the cells.
+            The fuel temperature is the fixed boundary. Disk and shell temperatures are the ones that carry one
+            heat from that fuel, across helium, and then by radiation onto the cells.
           </p>
           {renderSlider("tpv_density", "TPV power density (W/cm²)", fixed(2))}
           {renderSlider("tpv_eff_pct", "TPV efficiency", fixed(0, "%"))}
@@ -453,13 +448,20 @@ const ThermodynamicTab: React.FC<Props> = ({
               reflectance above selects the efficiency curve only.
             </p>
             <div className="small mb-2">
+              Fuel <strong>{setup.fuel_temp_c.toFixed(0)} °C</strong>
+              <span className="text-secondary">
+                {" "}
+                rejects <strong>{(diskEmitter.heatW / 1000).toFixed(1)} kW</strong>. The same power crosses the disk
+                and reaches the cells.
+              </span>
+            </div>
+            <div className="small mb-2">
               Disk <strong>{diskEmitter.diskTempC.toFixed(0)} °C</strong>
               <span className="text-secondary">
                 {" "}
-                ({(diskEmitter.diskTempC - emitterTempC).toFixed(0)} °C above the shell). Lower disk emissivity
-                weakens radiation across the {diskEmitter.tpvGapCm.toFixed(2)} cm helium gap, so this rise grows.
-                Conduction still carries {Math.round(100 * diskEmitter.conductionShareDisk)}% of the{" "}
-                {(diskEmitter.heatW / 1000).toFixed(1)} kW, which keeps the rise modest.
+                ({(diskEmitter.diskTempC - emitterTempC).toFixed(0)} °C above the shell,{" "}
+                {Math.round(100 * diskEmitter.conductionShareDisk)}% of the heat by conduction across{" "}
+                {diskEmitter.tpvGapCm.toFixed(2)} cm of helium).
               </span>
             </div>
             <div className="small mb-2">
@@ -467,10 +469,8 @@ const ThermodynamicTab: React.FC<Props> = ({
               <span className="text-secondary">
                 {" "}
                 radiates in vacuum onto the cells at {(TPV_CELL_TEMP_K - 273.15).toFixed(0)} °C (R=
-                {Math.round(setup.cell_reflectance * 100)}%, ε={diskEmitter.cellEmissivity.toFixed(2)}). Fuel
-                emissivity does not change the disk: it changes the fuel temperature needed to deliver the heat,{" "}
-                {diskEmitter.fuelTempC.toFixed(0)} °C across {diskEmitter.fuelGapCm.toFixed(2)} cm of helium (
-                {Math.round(100 * diskEmitter.conductionShareFuel)}% conduction).
+                {Math.round(setup.cell_reflectance * 100)}%, ε={diskEmitter.cellEmissivity.toFixed(2)}). Across the
+                fuel gap, conduction carries {Math.round(100 * diskEmitter.conductionShareFuel)}% of the heat.
               </span>
             </div>
             <TpvModelChart
@@ -513,8 +513,9 @@ const ThermodynamicTab: React.FC<Props> = ({
           </div>
 
           <div className="small text-secondary mt-2">
-            The fuel slider sets initial <code>FuelPlate.T</code> for Run Sim ({Math.round(setup.fuel_temp_c + 273.15)}{" "}
-            K) and OpenMC. Helium gaps are the Void sheets on the disk stack. Across helium,{" "}
+            The fuel slider is the fuel temperature for this balance, for OpenMC, and for the initial{" "}
+            <code>FuelPlate.T</code> of Run Sim ({Math.round(setup.fuel_temp_c + 273.15)} K). Helium gaps are the Void
+            sheets on the disk stack. Across helium,{" "}
             <code>Q = σ Gr (T_hot⁴ − T_cold⁴) + k_He A ΔT / d</code>. From the shell to the cells the gap is vacuum,
             so only radiation remains, with <code>ε_cell = 1 − R</code>.
           </div>
@@ -541,11 +542,8 @@ const ThermodynamicTab: React.FC<Props> = ({
             <strong>{(100 * circuitArcs.shield1ArcFrac).toFixed(1)}%</strong> → Modelica{" "}
             <code>fuel_arc_frac</code> / <code>tpv_arc_frac</code> / <code>shield*_arc_frac</code>.
             <br />
-            Fuel heating (one disk × one slice, same Thermal formula):{" "}
-            <code>
-              P0 = 2·ρ·10·A_tpv / η = {(fuelHeatingPowerW / 1000).toFixed(1)} kW
-            </code>{" "}
-            (A_tpv={tpvAreaM2.toFixed(3)} m²).
+            Fuel heating sent to Run Sim is the conserved layer heat at {setup.fuel_temp_c.toFixed(0)} °C:{" "}
+            <code>P0 = {(fuelHeatingPowerW / 1000).toFixed(1)} kW</code> (A_tpv={tpvAreaM2.toFixed(3)} m²).
           </div>
         </div>
       </Col>
