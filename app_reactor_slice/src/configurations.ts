@@ -35,6 +35,16 @@ export const NUMERIC_FIELDS = {
   shell_emissivity: [0.05, 1.0, 0.01, 0.3],
   /** Broadband reflectance of the opaque TPV cells (fraction). ε_cell = 1 − R. */
   cell_reflectance: [0.5, 0.98, 0.01, 0.88],
+  /** Empirical-limit chart: cell band gap (eV). */
+  tpv_bandgap_ev: [0.4, 0.8, 0.01, 0.7],
+  /** Empirical-limit chart: below-gap reflectance (%). */
+  tpv_below_gap_r_pct: [95, 99, 0.1, 99],
+  /** Empirical-limit chart: Woc penalty above the radiative limit (mV). */
+  tpv_woc_mv: [70, 140, 1, 70],
+  /** Empirical-limit chart: specific series resistance (Ω·cm²). */
+  tpv_rseries_ohm_cm2: [0, 0.2, 0.005, 0.01],
+  /** Empirical-limit chart: emitter-to-cell view factor. */
+  tpv_view_factor: [0.1, 1, 0.01, 1],
   stack_m: [0.1, 20.0, 0.1, 1.0],
   columns: [1.0, 3.0, 1.0, 1.0],
 } as const;

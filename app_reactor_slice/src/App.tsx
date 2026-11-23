@@ -429,6 +429,11 @@ const Explorer: React.FC = () => {
     params.set("disk_emissivity", setup.disk_emissivity.toFixed(2));
     params.set("shell_emissivity", setup.shell_emissivity.toFixed(2));
     params.set("cell_reflectance", setup.cell_reflectance.toFixed(2));
+    params.set("tpv_bandgap_ev", setup.tpv_bandgap_ev.toFixed(2));
+    params.set("tpv_below_gap_r_pct", setup.tpv_below_gap_r_pct.toFixed(1));
+    params.set("tpv_woc_mv", setup.tpv_woc_mv.toFixed(0));
+    params.set("tpv_rseries_ohm_cm2", setup.tpv_rseries_ohm_cm2.toFixed(3));
+    params.set("tpv_view_factor", setup.tpv_view_factor.toFixed(2));
     params.set("enrichment_pct", setup.enrichment_pct.toFixed(1));
     params.set("packing_pct", setup.packing_pct.toFixed(0));
     params.set("hm_particle_pct", setup.hm_particle_pct.toFixed(0));

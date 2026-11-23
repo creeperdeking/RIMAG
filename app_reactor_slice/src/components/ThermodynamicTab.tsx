@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from "react";
-import { Alert, Button, Col, Form, Row } from "react-bootstrap";
-import type { Setup } from "../configurations";
-import { snap, type NumericKey } from "../configurations";
+import { Alert, Button, Col, Row } from "react-bootstrap";
+import type { NumericKey, Setup } from "../configurations";
 import {
   GRAPHITE_CP_J_KG_K,
   GRAPHITE_DENSITY_KG_M3,
@@ -187,41 +186,6 @@ function TpvModelChart({
   );
 }
 
-function LimitSlider({
-  label,
-  value,
-  min,
-  max,
-  step,
-  format,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  format: (value: number) => string;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <Form.Group className="control-slider mb-1">
-      <Form.Label className="d-flex justify-content-between align-items-baseline w-100 mb-0">
-        <span>{label}</span>
-        <span className="slider-value fw-semibold">{format(value)}</span>
-      </Form.Label>
-      <Form.Range
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        aria-label={label}
-        onChange={(event) => onChange(snap(Number(event.target.value), min, max, step))}
-      />
-    </Form.Group>
-  );
-}
-
 const fixed =
   (digits: number, suffix = "") =>
   (value: number): string =>
@@ -322,11 +286,11 @@ const ThermodynamicTab: React.FC<Props> = ({
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [trace, setTrace] = useState<FuelTrace | null>(null);
-  const [bandGapEv, setBandGapEv] = useState(0.7);
-  const [reflectancePct, setReflectancePct] = useState(99);
-  const [wocMv, setWocMv] = useState(70);
-  const [seriesResistance, setSeriesResistance] = useState(0.01);
-  const [viewFactor, setViewFactor] = useState(1);
+  const bandGapEv = setup.tpv_bandgap_ev;
+  const reflectancePct = setup.tpv_below_gap_r_pct;
+  const wocMv = setup.tpv_woc_mv;
+  const seriesResistance = setup.tpv_rseries_ohm_cm2;
+  const viewFactor = setup.tpv_view_factor;
 
   const curves = useMemo(
     () => empiricalCurves(bandGapEv, reflectancePct, wocMv, seriesResistance, viewFactor),
@@ -466,51 +430,11 @@ const ThermodynamicTab: React.FC<Props> = ({
 
           <div className="mt-3 pt-3 border-top">
             <h3 className="h6 mb-2">Empirical TPV limits (Dada et al.)</h3>
-            <LimitSlider
-              label="Band gap (eV)"
-              value={bandGapEv}
-              min={0.4}
-              max={0.8}
-              step={0.01}
-              format={(value) => value.toFixed(2)}
-              onChange={setBandGapEv}
-            />
-            <LimitSlider
-              label="Below-gap reflectance"
-              value={reflectancePct}
-              min={95}
-              max={99}
-              step={0.1}
-              format={(value) => `${value.toFixed(1)}%`}
-              onChange={setReflectancePct}
-            />
-            <LimitSlider
-              label="Woc penalty (mV)"
-              value={wocMv}
-              min={70}
-              max={140}
-              step={1}
-              format={(value) => `${value.toFixed(0)} mV`}
-              onChange={setWocMv}
-            />
-            <LimitSlider
-              label="Series resistance (Ω·cm²)"
-              value={seriesResistance}
-              min={0}
-              max={0.2}
-              step={0.005}
-              format={(value) => value.toFixed(3)}
-              onChange={setSeriesResistance}
-            />
-            <LimitSlider
-              label="View factor"
-              value={viewFactor}
-              min={0.1}
-              max={1}
-              step={0.01}
-              format={(value) => value.toFixed(2)}
-              onChange={setViewFactor}
-            />
+            {renderSlider("tpv_bandgap_ev", "Band gap (eV)", fixed(2))}
+            {renderSlider("tpv_below_gap_r_pct", "Below-gap reflectance", (value) => `${value.toFixed(1)}%`)}
+            {renderSlider("tpv_woc_mv", "Woc penalty (mV)", (value) => `${value.toFixed(0)} mV`)}
+            {renderSlider("tpv_rseries_ohm_cm2", "Series resistance (Ω·cm²)", fixed(3))}
+            {renderSlider("tpv_view_factor", "View factor", fixed(2))}
             <p className="small text-secondary mb-2">
               Single-diode model of Dada et al. Fig.&nbsp;8, solved at the selected band gap and Woc penalty. Series
               resistance is that diode’s specific resistance, and the view factor scales the photon flux. The published
