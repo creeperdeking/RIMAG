@@ -79,6 +79,8 @@ export type SimulationParams = {
   ddd_tallies_only: boolean;
   ww_mesh_cm: number;
   ww_energy_groups: number;
+  /** Whole-stack thermal power [MW]. The run scales it to one periodic slice. null → thermodynamics-tab period power. */
+  thermal_power_mw: number | null;
 };
 
 export const DEFAULT_SIMULATION_PARAMS: SimulationParams = {
@@ -97,6 +99,7 @@ export const DEFAULT_SIMULATION_PARAMS: SimulationParams = {
   ddd_tallies_only: true,
   ww_mesh_cm: 40,
   ww_energy_groups: 10,
+  thermal_power_mw: null,
 };
 
 function pickBoolean(value: unknown, fallback: boolean): boolean {
@@ -144,6 +147,7 @@ export function normalizeSimulation(raw: unknown): SimulationParams {
   const boronPpm = Number(source.boron_concentration_ppm);
   const wwMesh = Number(source.ww_mesh_cm);
   const wwGroups = Number(source.ww_energy_groups);
+  const thermalMw = Number(source.thermal_power_mw);
   // Legacy "generate" in saved setups maps to "use" for the tally dropdown;
   // seed/refine are started from the WW submenu, not stored as the tally mode.
   const rawWw = typeof source.weight_windows === "string" ? source.weight_windows : "";
@@ -178,6 +182,12 @@ export function normalizeSimulation(raw: unknown): SimulationParams {
     ww_energy_groups: Number.isFinite(wwGroups)
       ? Math.max(1, Math.min(200, Math.round(wwGroups)))
       : DEFAULT_SIMULATION_PARAMS.ww_energy_groups,
+    thermal_power_mw:
+      source.thermal_power_mw == null || source.thermal_power_mw === ""
+        ? null
+        : Number.isFinite(thermalMw) && thermalMw > 0
+          ? thermalMw
+          : null,
   };
 }
 

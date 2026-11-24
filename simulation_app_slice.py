@@ -22,6 +22,20 @@ from one_layer_disk_design.disks_core_characteristics import (
 )
 
 
+def period_share_of_stack(stack_m: float, period_cm: float) -> float:
+    """Share of a uniform stack carried by one periodic slice.
+
+    ``thermal_power_mw`` is the whole stack. The transport model is one period
+    with periodic z boundaries, so source strength uses
+    ``P_stack * period_height / stack_height``.
+    """
+    stack_cm = float(stack_m) * 100.0
+    period = float(period_cm)
+    if stack_cm <= 0.0 or period <= 0.0:
+        return 1.0
+    return min(1.0, period / stack_cm)
+
+
 def main(argv: list[str] | None = None) -> None:
     args = list(sys.argv[1:] if argv is None else argv)
     if not args:
@@ -48,6 +62,14 @@ def main(argv: list[str] | None = None) -> None:
     print(f"print_core_characteristics: {sim.print_core_characteristics}")
     print(f"boron_concentration_ppm: {sim.boron_concentration_ppm}")
     print(f"ddd_tallies_only: {sim.ddd_tallies_only}")
+    print(
+        "thermal_power_mw: "
+        + (
+            f"{sim.thermal_power_mw:g} (stack, shared onto this period)"
+            if sim.thermal_power_mw is not None and sim.thermal_power_mw > 0
+            else "unset (thermodynamics-tab period)"
+        )
+    )
     print(f"columns: {setup.columns}")
     print(f"enrichment_pct: {setup.enrichment_pct}")
     print(f"fuel_temp_c: {setup.fuel_temp_c}")
@@ -96,14 +118,35 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     def calculate_core_characteristics():
-        if (
-            setup.period_thermal_w is None
-            or setup.period_electric_w is None
-            or setup.shell_temp_c is None
-        ):
+        tab_thermal = setup.period_thermal_w
+        tab_electric = setup.period_electric_w
+        use_override = sim.thermal_power_mw is not None and sim.thermal_power_mw > 0
+        if not use_override and (tab_thermal is None or tab_electric is None):
             raise SystemExit(
-                "This run has no thermodynamics-tab power. Queue it from the app."
+                "This run has no thermodynamics-tab power. Queue it from the app, "
+                "or set thermal_power_mw."
             )
+        if use_override:
+            share = period_share_of_stack(setup.stack_m, geom.vertical_core_height_cm)
+            thermal_w = float(sim.thermal_power_mw) * share * 1.0e6
+            if tab_thermal is not None and tab_thermal > 0 and tab_electric is not None:
+                electric_w = tab_electric * (thermal_w / tab_thermal)
+            else:
+                electric_w = thermal_w * (float(setup.tpv_eff_pct) / 100.0)
+            tab_mw = f"{tab_thermal / 1e6:.4g} MW" if tab_thermal is not None else "absent"
+            print(
+                f"Thermal power: {sim.thermal_power_mw:g} MW over {setup.stack_m:g} m, "
+                f"{thermal_w / 1e6:.4g} MW in the {geom.vertical_core_height_cm:.3f} cm period "
+                f"({share:.4g} of the stack) used for source strength and DDD. "
+                f"Thermodynamics-tab period is {tab_mw}."
+            )
+        else:
+            thermal_w = float(tab_thermal)
+            electric_w = float(tab_electric)
+        shell_temp_c = setup.shell_temp_c
+        if shell_temp_c is None:
+            print("This run has no thermodynamics-tab shell temperature.")
+            shell_temp_c = float("nan")
         inventory = disk_inventory(
             tracked_cells=geom.tracked_cells,
             material_choice=material_choice,
@@ -113,9 +156,9 @@ def main(argv: list[str] | None = None) -> None:
         )
         core = characteristics_from_thermodynamics(
             inventory,
-            shell_temp_c=setup.shell_temp_c,
-            thermal_w=setup.period_thermal_w,
-            electric_w=setup.period_electric_w,
+            shell_temp_c=shell_temp_c,
+            thermal_w=thermal_w,
+            electric_w=electric_w,
             absorbed_w_per_cm2=setup.tpv_absorbed_w_per_cm2,
             photovoltaic_power_density=setup.tpv_density,
             fuel_burnup=u235_enrichment * 12.0,
@@ -123,8 +166,9 @@ def main(argv: list[str] | None = None) -> None:
             vertical_core_height=geom.vertical_core_height_cm,
             rotary_axle_radius=geom.rotary_axle_radius_cm,
         )
+        shell_text = f"{shell_temp_c:.1f} °C" if shell_temp_c == shell_temp_c else "not recorded"
         print(
-            f"Thermodynamics tab: shell {setup.shell_temp_c:.1f} °C, "
+            f"Thermodynamics tab: shell {shell_text}, "
             f"{setup.tpv_absorbed_w_per_cm2:.4g} W/cm² absorbed, "
             f"{setup.tpv_density:.4g} W/cm² electric ({setup.tpv_eff_pct:.2f}%). "
             f"This period uses {core.core_power / 1e6:.4g} MW thermal / "

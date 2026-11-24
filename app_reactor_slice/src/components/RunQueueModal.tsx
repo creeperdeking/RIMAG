@@ -121,8 +121,19 @@ const RunQueueModal: React.FC<Props> = ({
 
   useEffect(() => {
     if (!show) return;
-    setDraft(queueSimulationFromRaw(initialSimulation));
-  }, [show, initialSimulation]);
+    const next = queueSimulationFromRaw(initialSimulation);
+    // Append: prefill with the overview stack power so a later geometry can keep it.
+    if (
+      mode === "append" &&
+      next.thermal_power_mw == null &&
+      defaultThermalPowerMw != null &&
+      Number.isFinite(defaultThermalPowerMw) &&
+      defaultThermalPowerMw > 0
+    ) {
+      next.thermal_power_mw = defaultThermalPowerMw;
+    }
+    setDraft(next);
+  }, [show, initialSimulation, mode, defaultThermalPowerMw]);
 
   const setField = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) => {
     setDraft((prev) => ({ ...prev, [key]: value }));
@@ -490,8 +501,41 @@ const RunQueueModal: React.FC<Props> = ({
         </Form.Group>
 
         <Form.Group className="simulation-field">
-          <Form.Label className="small mb-0 simulation-field-label">Thermal power</Form.Label>
-          <div className="small text-secondary">
+          <FieldLabel
+            info={
+              <>
+                Whole-stack thermal power. The run gives the periodic slice its share,
+                period height / stack height, before the source strength and DDD. Prefills
+                with the overview stack power. Clear the field to use the thermodynamics-tab
+                period power, which follows the geometry.
+              </>
+            }
+          >
+            Thermal power (MW)
+          </FieldLabel>
+          <Form.Control
+            size="sm"
+            type="number"
+            min={0}
+            step="any"
+            placeholder={
+              defaultThermalPowerMw != null && defaultThermalPowerMw > 0
+                ? `auto ≈ ${defaultThermalPowerMw.toPrecision(4)} MW`
+                : "thermodynamics-tab period"
+            }
+            value={draft.thermal_power_mw ?? ""}
+            disabled={fieldDisabled}
+            onChange={(event) => {
+              const raw = event.target.value.trim();
+              if (raw === "") {
+                setField("thermal_power_mw", null);
+                return;
+              }
+              const value = Number(raw);
+              setField("thermal_power_mw", Number.isFinite(value) && value > 0 ? value : null);
+            }}
+          />
+          <div className="small text-secondary mt-1">
             {setup.period_thermal_w > 0
               ? `${Number((setup.period_thermal_w / 1e6).toPrecision(4))} MW thermal in the modeled period, from the thermodynamics tab`
               : "The thermodynamics tab has no TPV heat for this geometry."}

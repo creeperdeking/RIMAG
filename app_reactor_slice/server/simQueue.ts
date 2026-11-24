@@ -66,8 +66,11 @@ export function labelFromPayload(payload: unknown): string {
     root.setup && typeof root.setup === "object" && !Array.isArray(root.setup)
       ? (root.setup as Record<string, unknown>)
       : {};
+  const overrideMw = simulation.thermal_power_mw;
   const thermalW = setup.period_thermal_w;
-  if (typeof thermalW === "number" && Number.isFinite(thermalW) && thermalW > 0) {
+  if (typeof overrideMw === "number" && Number.isFinite(overrideMw) && overrideMw > 0) {
+    bits.push(`${Number(overrideMw.toPrecision(4))} MWₜₕ`);
+  } else if (typeof thermalW === "number" && Number.isFinite(thermalW) && thermalW > 0) {
     bits.push(`${Number((thermalW / 1e6).toPrecision(4))} MWₜₕ/period`);
   }
   return bits.join(" · ");
