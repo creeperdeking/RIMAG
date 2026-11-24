@@ -161,9 +161,15 @@ const RunQueueModal: React.FC<Props> = ({
       </Modal.Header>
       <Modal.Body>
         <p className="small text-secondary mb-3">
-          Geometry follows the calculator ({geometryBits}). These fields are the RIMAG run parameters
-          for this queue item.
+          {draft.run_mode === "slab"
+            ? "This item is the 1D slab from Fast simulation. The chord below is the one that will be run."
+            : `Geometry follows the calculator (${geometryBits}). These fields are the RIMAG run parameters for this queue item.`}
         </p>
+        {draft.run_mode === "slab" && (draft.slab_layers?.length ?? 0) > 0 && (
+          <p className="small mb-3 font-monospace">
+            {draft.slab_layers!.map((layer) => `${layer.cm} cm ${layer.name}`).join(" · ")}
+          </p>
+        )}
         {statusLabel && (
           <p className="small mb-3">
             Status: <strong>{statusLabel}</strong>
@@ -218,11 +224,13 @@ const RunQueueModal: React.FC<Props> = ({
             disabled={fieldDisabled}
             onChange={(event) => setField("run_mode", event.target.value as RunMode)}
           >
-            {RUN_MODES.map((modeOption) => (
-              <option key={modeOption} value={modeOption}>
-                {modeOption}
-              </option>
-            ))}
+            {RUN_MODES.filter((modeOption) => modeOption !== "slab" || draft.run_mode === "slab").map(
+              (modeOption) => (
+                <option key={modeOption} value={modeOption}>
+                  {modeOption === "slab" ? "fast slab" : modeOption}
+                </option>
+              ),
+            )}
           </Form.Select>
         </Form.Group>
 

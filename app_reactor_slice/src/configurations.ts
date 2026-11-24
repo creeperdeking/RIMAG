@@ -10,6 +10,7 @@ import {
   type WeightWindows,
 } from "./constants";
 import type { LayerRow } from "./geometry";
+import { parseSlabLayers, type SlabLayerSpec } from "./slabShield";
 
 export type { WeightWindowsRun } from "./constants";
 
@@ -81,6 +82,10 @@ export type SimulationParams = {
   ww_energy_groups: number;
   /** Whole-stack thermal power [MW]. The run scales it to one periodic slice. null → thermodynamics-tab period power. */
   thermal_power_mw: number | null;
+  /** Fixed-source slab only. Neutrons per batch. */
+  slab_particles?: number;
+  /** Fixed-source slab only. Fuel side first, including the 1 cm void score. */
+  slab_layers?: SlabLayerSpec[];
 };
 
 export const DEFAULT_SIMULATION_PARAMS: SimulationParams = {
@@ -148,6 +153,7 @@ export function normalizeSimulation(raw: unknown): SimulationParams {
   const wwMesh = Number(source.ww_mesh_cm);
   const wwGroups = Number(source.ww_energy_groups);
   const thermalMw = Number(source.thermal_power_mw);
+  const slabParticles = Number(source.slab_particles);
   // Legacy "generate" in saved setups maps to "use" for the tally dropdown;
   // seed/refine are started from the WW submenu, not stored as the tally mode.
   const rawWw = typeof source.weight_windows === "string" ? source.weight_windows : "";
@@ -188,6 +194,14 @@ export function normalizeSimulation(raw: unknown): SimulationParams {
         : Number.isFinite(thermalMw) && thermalMw > 0
           ? thermalMw
           : null,
+    ...(pickEnum(source.run_mode, RUN_MODES, DEFAULT_SIMULATION_PARAMS.run_mode) === "slab"
+      ? {
+          slab_particles: Number.isFinite(slabParticles)
+            ? Math.max(1, Math.min(1_000_000, Math.round(slabParticles)))
+            : 8000,
+          slab_layers: parseSlabLayers(source.slab_layers),
+        }
+      : {}),
   };
 }
 

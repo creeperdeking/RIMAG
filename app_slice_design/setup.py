@@ -45,6 +45,12 @@ class AppSliceSetup(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class SlabLayerSpec(BaseModel):
+    name: str
+    cm: float = Field(gt=0)
+    role: Literal["reflector", "moderator", "absorber", "detector"]
+
+
 class AppSliceSimulationParams(BaseModel):
     run_mode: Literal[
         "keff",
@@ -53,6 +59,7 @@ class AppSliceSimulationParams(BaseModel):
         "depletion",
         "keff_emitter_gamma_source",
         "norun",
+        "slab",
     ] = "keff"
     n_batches: int = 200
     n_threads: int = 10
@@ -75,6 +82,10 @@ class AppSliceSimulationParams(BaseModel):
     # so two geometries can be compared at the same stack power. Absent or
     # non-positive means the tab's period heat.
     thermal_power_mw: Optional[float] = None
+    # Fixed-source slab. The layers are the chord drawn in the Fast simulation
+    # dialog, fuel side first. The runner adds the void score itself.
+    slab_particles: int = Field(default=8000, ge=1, le=1_000_000)
+    slab_layers: List[SlabLayerSpec] = Field(default_factory=list)
 
 
 class AppSliceRunConfig(BaseModel):

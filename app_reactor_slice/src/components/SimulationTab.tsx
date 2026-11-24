@@ -6,6 +6,7 @@ import {
   type Setup,
   type SimulationParams,
 } from "../configurations";
+import FastSlabModal from "./FastSlabModal";
 import RunQueueModal, { type QueueModalMode } from "./RunQueueModal";
 
 export type { SimulationParams };
@@ -189,6 +190,9 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup, defaultTherma
   const [queueModal, setQueueModal] = useState<QueueModalState | null>(null);
   const [queueModalError, setQueueModalError] = useState<string | null>(null);
   const [queueModalSaving, setQueueModalSaving] = useState(false);
+  const [fastOpen, setFastOpen] = useState(false);
+  const [fastError, setFastError] = useState<string | null>(null);
+  const [fastSaving, setFastSaving] = useState(false);
   const [dragQueuedId, setDragQueuedId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const logRef = useRef<HTMLPreElement>(null);
@@ -341,6 +345,40 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup, defaultTherma
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
       return false;
+    }
+  };
+
+  const appendFast = async (simulation: SimulationParams) => {
+    setFastSaving(true);
+    setFastError(null);
+    const body = { setup, simulation };
+    try {
+      const response = await fetch("/api/simulation/append", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = (await response.json()) as {
+        ok?: boolean;
+        error?: string;
+        queue?: SimQueue;
+        running?: boolean;
+      };
+      if (!response.ok) {
+        setFastError(data.error || `Append failed (${response.status})`);
+        return;
+      }
+      if (data.queue) setQueue(data.queue);
+      if (data.running) {
+        setRunning(true);
+        openStream(false);
+      }
+      append(`[runner] Queued: fast slab · ${simulation.n_batches} batches`);
+      setFastOpen(false);
+    } catch (err: unknown) {
+      setFastError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setFastSaving(false);
     }
   };
 
@@ -672,6 +710,16 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup, defaultTherma
               Append
             </Button>
             <Button
+              variant="outline-primary"
+              size="sm"
+              onClick={() => {
+                setFastError(null);
+                setFastOpen(true);
+              }}
+            >
+              Fast simulation
+            </Button>
+            <Button
               variant="outline-danger"
               size="sm"
               disabled={!running}
@@ -778,6 +826,20 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup, defaultTherma
           </pre>
         </div>
       </Col>
+
+      <FastSlabModal
+        show={fastOpen}
+        setup={setup}
+        params={params}
+        saving={fastSaving}
+        error={fastError}
+        onHide={() => {
+          if (fastSaving) return;
+          setFastOpen(false);
+          setFastError(null);
+        }}
+        onAppend={(simulation) => void appendFast(simulation)}
+      />
 
       {queueModal && (
         <RunQueueModal

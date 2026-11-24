@@ -107,6 +107,18 @@ def main(argv: list[str] | None = None) -> None:
         collect_material_names(setup, sim.nsm_material),
     )
 
+    if sim.run_mode == "slab":
+        from app_slice_design.slab_shield import run_slab_shield
+
+        run_slab_shield(
+            materials_dict,
+            list(sim.slab_layers),
+            particles=int(sim.slab_particles),
+            batches=max(1, int(sim.n_batches)),
+            threads=threads,
+        )
+        return
+
     geom = make_app_slice_geometry(config, materials_dict, material_choice)
     write_plot_defaults(geom.bounding_box, origin=geom.render_origin)
 

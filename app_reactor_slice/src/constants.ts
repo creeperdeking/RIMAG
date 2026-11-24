@@ -58,6 +58,7 @@ export const RUN_MODES = [
   "depletion",
   "keff_emitter_gamma_source",
   "norun",
+  "slab",
 ] as const;
 export type RunMode = (typeof RUN_MODES)[number];
 
