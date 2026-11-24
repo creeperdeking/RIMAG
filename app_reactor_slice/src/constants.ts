@@ -57,6 +57,7 @@ export const RUN_MODES = [
   "render",
   "depletion",
   "keff_emitter_gamma_source",
+  "keff_gamma_dose",
   "norun",
   "slab",
 ] as const;

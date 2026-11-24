@@ -28,6 +28,9 @@ type QueueResult = {
   ingaasVoxels?: number | null;
   ingaasReachFraction?: number | null;
   ingaasEnergyFraction?: number | null;
+  gammaKGy?: number | null;
+  gammaCi95Pct?: number | null;
+  gammaYears?: number | null;
 };
 
 type Props = {
@@ -99,6 +102,25 @@ function queueSimulationFromRaw(
     : "no";
   return { ...base, weight_windows };
 }
+
+function formatSci(value: number): string {
+  const [coef, exp] = value.toExponential(4).split("e");
+  const sign = exp.startsWith("-") ? "-" : "+";
+  const mag = exp.replace(/^[+-]/, "");
+  return `${coef}e${sign}${mag.padStart(2, "0")}`;
+}
+
+function formatDoseYears(years: number): string {
+  const rounded = Math.round(years);
+  if (Math.abs(years - rounded) < 1e-6) return String(rounded);
+  return String(Number(years.toPrecision(4)));
+}
+
+const RUN_MODE_LABEL: Record<string, string> = {
+  slab: "fast slab",
+  keff_gamma_dose: "InGaAs gamma dose",
+  keff_emitter_gamma_source: "emitter gamma (fixed source)",
+};
 
 const RunQueueModal: React.FC<Props> = ({
   show,
@@ -187,6 +209,13 @@ const RunQueueModal: React.FC<Props> = ({
             ) : (
               <div className="small text-secondary">No keff captured for this run.</div>
             )}
+            {result?.gammaKGy != null && (
+              <div className="font-monospace mt-1">
+                InGaAs gamma dose {formatSci(result.gammaKGy)} kGy
+                {result.gammaYears != null ? ` over ${formatDoseYears(result.gammaYears)} years` : ""}
+                {result.gammaCi95Pct != null ? ` (± ${result.gammaCi95Pct.toFixed(2)}%, 95% CI)` : ""}
+              </div>
+            )}
             {result?.ingaasReachFraction != null && (
               <div className="font-monospace mt-2">
                 InGaAs coverage {(100 * result.ingaasReachFraction).toFixed(0)}%
@@ -224,15 +253,24 @@ const RunQueueModal: React.FC<Props> = ({
             disabled={fieldDisabled}
             onChange={(event) => setField("run_mode", event.target.value as RunMode)}
           >
-            {RUN_MODES.filter((modeOption) => modeOption !== "slab" || draft.run_mode === "slab").map(
-              (modeOption) => (
-                <option key={modeOption} value={modeOption}>
-                  {modeOption === "slab" ? "fast slab" : modeOption}
-                </option>
-              ),
-            )}
+            {RUN_MODES.filter(
+              (modeOption) =>
+                (modeOption !== "slab" && modeOption !== "keff_emitter_gamma_source") ||
+                draft.run_mode === modeOption,
+            ).map((modeOption) => (
+              <option key={modeOption} value={modeOption}>
+                {RUN_MODE_LABEL[modeOption] ?? modeOption}
+              </option>
+            ))}
           </Form.Select>
         </Form.Group>
+        {draft.run_mode === "keff_gamma_dose" && (
+          <p className="small text-secondary mb-3">
+            Coupled neutron–photon keff. Photon heating in every InGaAs sheet is summed into one kGy
+            over the dose time, scaled by this item’s slice of the stack thermal power. Neutron weight
+            windows apply. The photons stay analog.
+          </p>
+        )}
 
         <Form.Group className="simulation-field">
           <Form.Label className="small mb-0 simulation-field-label">Batches</Form.Label>
@@ -334,7 +372,7 @@ const RunQueueModal: React.FC<Props> = ({
           <Form.Select
             size="sm"
             value={draft.particle_type}
-            disabled={fieldDisabled}
+            disabled={fieldDisabled || draft.run_mode === "keff_gamma_dose"}
             onChange={(event) => setField("particle_type", event.target.value as ParticleType)}
           >
             {PARTICLE_TYPES.map((type) => (

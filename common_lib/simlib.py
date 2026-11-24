@@ -25,6 +25,7 @@ from common_lib.tallies import (
     create_fission_energy_weighted_flux_tally,
     create_flux_band_tally,
     create_photovoltaic_flux_tally,
+    create_photovoltaic_gamma_heating_tally,
     create_photovoltaic_heating_absorption_tally,
     print_tallies,
 )
@@ -740,6 +741,8 @@ def make_sim_settings(
     survival_biasing: bool = True,
     ww_mesh_cm: float = 10.0,
     ww_energy_groups: int = 10,
+    *,
+    transport_photons: bool = False,
 ):
     # Define neutron source
     source = openmc.IndependentSource(space=openmc.stats.Point((0, 0, 0)))
@@ -748,7 +751,12 @@ def make_sim_settings(
     settings.inactive = 10
     settings.max_history_splits = 5000  # cap long histories
     UPDATE_INTERVAL = 8
-    settings.photon_transport = particle_type == "photon"
+    settings.photon_transport = particle_type == "photon" or transport_photons
+    if transport_photons and particle_type != "photon":
+        print(
+            "Photon transport: on, coupled to the neutron eigenvalue. "
+            "Photons are analog."
+        )
     settings.source = source
     building_ww = weight_windows in ("generate", "seed", "refine")
     # Periodic z-cones + WW particle splits (on-the-fly MAGIC or applied
@@ -1206,7 +1214,32 @@ def run_sim_with_tallies(
     particle_type: Literal["neutron", "photon"] = "neutron",
     monitored_nuclide: MonitoredNuclide = None,
     ddd_tallies_only: bool = False,
+    gamma_dose_only: bool = False,
 ):
+    if gamma_dose_only:
+        if not photovoltaic_cells:
+            raise SystemExit("InGaAs gamma dose found no InGaAs cells.")
+        print(
+            "Tallies: InGaAs photon heating only "
+            "(coupled fission and capture gammas, both sheets summed)."
+        )
+        tallies = openmc.Tallies(
+            [create_photovoltaic_gamma_heating_tally(photovoltaic_cells)]
+        )
+        run_sim(geometry, settings, materials_dict, tallies, quiet=True)
+        print_tallies(
+            source_strength,
+            emitter_cells,
+            sum(cell.volume for cell in photovoltaic_cells),
+            photovoltaic_density,
+            sum(cell.volume for cell in emitter_cells),
+            electric_power,
+            int(settings.batches),
+            dose_time,
+            gamma_dose_only=True,
+        )
+        return
+
     photovoltaic_flux_tally = create_photovoltaic_flux_tally(
         photovoltaic_cells, particle_type
     )

@@ -26,6 +26,7 @@ const APP_ROOT = path.resolve(HERE, "..");
 const REPO_ROOT = path.resolve(APP_ROOT, "..");
 const RUN_DIR = path.resolve(REPO_ROOT, "runs", "default");
 const PARAMS_FILE = "app_slice_run.json";
+const RESULTSIM_FILE = "resultsim.json";
 /** Prefix for one-off sim containers (Stop / adopt match this). */
 const CONTAINER_PREFIX = "rimag-app-sim";
 /** Legacy fixed name still cleaned up on launch. */
@@ -430,6 +431,71 @@ function payloadForRunner(payload: unknown): unknown {
   return { ...root, weight_windows: "refine" };
 }
 
+function gammaFromLogs(): Pick<QueueItemResult, "gammaKGy" | "gammaCi95Pct" | "gammaYears"> | null {
+  const lineRe =
+    /InGaAs gamma dose:\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*kGy\s+over\s+([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s+years\s+\((?:±|\+\/-)\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?|nan)%\s*,\s*95%\s*CI\)/i;
+  for (let i = job.lastLines.length - 1; i >= 0; i -= 1) {
+    const match = job.lastLines[i].match(lineRe);
+    if (!match) continue;
+    const gammaKGy = Number(match[1]);
+    const gammaYears = Number(match[2]);
+    const gammaCi95Pct = match[3].toLowerCase() === "nan" ? null : Number(match[3]);
+    if (!Number.isFinite(gammaKGy) || !Number.isFinite(gammaYears)) continue;
+    return {
+      gammaKGy,
+      gammaYears,
+      gammaCi95Pct: gammaCi95Pct != null && Number.isFinite(gammaCi95Pct) ? gammaCi95Pct : null,
+    };
+  }
+  return null;
+}
+
+function runModeFromPayload(payload: unknown): string {
+  return String(simulationRecordFromPayload(payload).run_mode ?? "");
+}
+
+function gammaFromResultsim(
+  item: QueueItem,
+): Pick<QueueItemResult, "gammaKGy" | "gammaCi95Pct" | "gammaYears"> | null {
+  const file = path.join(RUN_DIR, RESULTSIM_FILE);
+  if (!fs.existsSync(file)) return null;
+  const stat = fs.statSync(file);
+  const started = item.startedAt ? Date.parse(item.startedAt) : NaN;
+  const finished = item.finishedAt ? Date.parse(item.finishedAt) : Date.now();
+  if (Number.isFinite(started) && stat.mtimeMs < started - 5000) return null;
+  if (Number.isFinite(finished) && stat.mtimeMs > finished + 120_000) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const record = parsed as Record<string, unknown>;
+  if (record.kind !== "gamma_dose") return null;
+  const batches = simulationRecordFromPayload(item.payload).n_batches;
+  if (typeof batches === "number" && record.n_batches !== batches) return null;
+  const raw = Array.isArray(record.gamma_kgy) ? record.gamma_kgy[0] : record.gamma_kgy;
+  const gammaKGy = Number(raw);
+  const years = Number(record.gamma_years);
+  const fraction = record.gamma_ci95p == null ? NaN : Number(record.gamma_ci95p);
+  if (!Number.isFinite(gammaKGy)) return null;
+  return {
+    gammaKGy,
+    gammaYears: Number.isFinite(years) ? years : null,
+    gammaCi95Pct: Number.isFinite(fraction) ? fraction * 100 : null,
+  };
+}
+
+function attachStoredGamma(result: QueueItemResult, item: QueueItem | null | undefined): QueueItemResult {
+  const fromLogs = gammaFromLogs();
+  if (fromLogs) return { ...result, ...fromLogs };
+  if (!item || runModeFromPayload(item.payload) !== "keff_gamma_dose") return result;
+  if (result.gammaKGy != null) return result;
+  const fromFile = gammaFromResultsim(item);
+  return fromFile ? { ...result, ...fromFile } : result;
+}
+
 function resultFromLogs(): QueueItemResult {
   // Prefer OpenMC's final combined keff line; fall back to the last progress k=.
   let keff: number | null = null;
@@ -574,7 +640,7 @@ function onJobEnded(code: number, endedGen?: number) {
     );
 
     if (frac != null && frac >= AUTOREFINE_TARGET) {
-      const base = attachWwCoverage(resultFromLogs(), item.payload);
+      const base = attachWwCoverage(attachStoredGamma(resultFromLogs(), item), item.payload);
       finishQueueItem(
         itemId,
         0,
@@ -589,7 +655,7 @@ function onJobEnded(code: number, endedGen?: number) {
     }
 
     if (job.autoRefinePass >= AUTOREFINE_MAX_PASSES) {
-      const base = attachWwCoverage(resultFromLogs(), item.payload);
+      const base = attachWwCoverage(attachStoredGamma(resultFromLogs(), item), item.payload);
       finishQueueItem(
         itemId,
         0,
@@ -617,7 +683,7 @@ function onJobEnded(code: number, endedGen?: number) {
   const status = stopped ? "cancelled" : effectiveCode === 0 ? "done" : "failed";
   let result: QueueItemResult | null = stopped
     ? { summary: "Stopped by user" }
-    : attachWwCoverage(resultFromLogs(), item?.payload);
+    : attachWwCoverage(attachStoredGamma(resultFromLogs(), item), item?.payload);
 
   // Autorefine must reach InGaAs coverage (or hit max passes as "done") before the
   // next queue item. A crashed/killed refine (e.g. exit 137) used to mark failed
@@ -1039,7 +1105,24 @@ function backfillWwCoverage(item: QueueItem): QueueItem {
   return { ...item, result: enriched };
 }
 
+function backfillGamma(item: QueueItem): QueueItem {
+  if (item.status !== "done") return item;
+  if (runModeFromPayload(item.payload) !== "keff_gamma_dose") return item;
+  if (item.result?.gammaKGy != null) return item;
+  const gamma = gammaFromResultsim(item);
+  if (!gamma) return item;
+  const state = queueSnapshot();
+  const index = state.items.findIndex((entry) => entry.id === item.id);
+  if (index < 0) return { ...item, result: { ...(item.result ?? {}), ...gamma } };
+  const current = state.items[index];
+  if (current.result?.gammaKGy != null) return current;
+  const result = { ...(current.result ?? {}), ...gamma };
+  state.items[index] = { ...current, result };
+  saveQueue(state);
+  return state.items[index];
+}
+
 export function readQueueItem(id: string): QueueItem | null {
   const item = getQueueItem(id);
-  return item ? backfillWwCoverage(item) : null;
+  return item ? backfillGamma(backfillWwCoverage(item)) : null;
 }

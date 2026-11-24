@@ -51,6 +51,9 @@ type QueueItemResult = {
   ingaasVoxels?: number | null;
   ingaasReachFraction?: number | null;
   ingaasEnergyFraction?: number | null;
+  gammaKGy?: number | null;
+  gammaCi95Pct?: number | null;
+  gammaYears?: number | null;
 };
 
 type QueueItem = {

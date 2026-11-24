@@ -21,6 +21,10 @@ export type QueueItemResult = {
   ingaasVoxels?: number | null;
   ingaasReachFraction?: number | null;
   ingaasEnergyFraction?: number | null;
+  /** Cumulative photon heating in the InGaAs, kGy over gammaYears. */
+  gammaKGy?: number | null;
+  gammaCi95Pct?: number | null;
+  gammaYears?: number | null;
 };
 
 export type QueueItem = {
@@ -53,10 +57,12 @@ export function labelFromPayload(payload: unknown): string {
       ? (root.simulation as Record<string, unknown>)
       : root;
   const mode = String(simulation.run_mode ?? "keff");
+  const modeLabel =
+    mode === "keff_gamma_dose" ? "InGaAs gamma dose" : mode === "slab" ? "fast slab" : mode;
   const ww = String(simulation.weight_windows ?? "no");
   const batches = simulation.n_batches;
   const pitch = simulation.conical_pitch;
-  const bits = [mode];
+  const bits = [modeLabel];
   if (ww && ww !== "no") {
     bits.push(ww === "autorefine" ? "ww=autorefine→80%" : `ww=${ww}`);
   }

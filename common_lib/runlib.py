@@ -25,6 +25,7 @@ type RunMode = Literal[
     "render",
     "depletion",
     "keff_emitter_gamma_source",
+    "keff_gamma_dose",
     "norun",
 ]
 
@@ -148,10 +149,11 @@ def start_program(
         lower_left_corner=lower_left_corner,
         upper_right_corner=upper_right_corner,
         geometry=geometry,
-        particle_type=particle_type,
+        particle_type="neutron" if run_mode == "keff_gamma_dose" else particle_type,
         survival_biasing=survival_biasing,
         ww_mesh_cm=ww_mesh_cm,
         ww_energy_groups=ww_energy_groups,
+        transport_photons=run_mode == "keff_gamma_dose",
     )
 
     ### Run simulation
@@ -182,6 +184,34 @@ def start_program(
             coolant_cells=cells_for(material_choice.coolant),
             dose_time=dose_time,
             ddd_tallies_only=ddd_tallies_only,
+        )
+
+    if run_mode == "keff_gamma_dose":
+        if core_characteristics is None:
+            raise SystemExit("InGaAs gamma dose needs the slice thermal power.")
+        run_sim_with_tallies(
+            geometry=geometry,
+            settings=settings,
+            materials_dict=materials_dict,
+            photovoltaic_cells=cells_for(material_choice.photovoltaic),
+            photovoltaic_density=materials_dict[material_choice.photovoltaic].density,
+            emitter_cells=cells_for(material_choice.emitter),
+            fuel_cells=cells_for(material_choice.fuel),
+            moderator_cells=moderator_cells,
+            shield_moderator_cells=cells_for(material_choice.neutron_shield_moderator),
+            electric_power=core_characteristics.core_power_electric,
+            heat_deposition_cells=[
+                *cells_for(material_choice.emitter),
+                *cells_for(material_choice.fuel),
+                *cells_for(material_choice.fuel_cladding),
+            ],
+            source_strength=calculate_source_strength(core_characteristics.core_power),
+            batches=batches,
+            particle_type="neutron",
+            monitored_nuclide=monitored_nuclide,
+            coolant_cells=cells_for(material_choice.coolant),
+            dose_time=dose_time,
+            gamma_dose_only=True,
         )
 
     if run_mode == "keff_notallies":

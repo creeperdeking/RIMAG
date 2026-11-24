@@ -1,3 +1,4 @@
+import json
 import openmc
 from typing import List, Literal, Tuple
 import scipy.constants as cst
@@ -75,6 +76,37 @@ def create_O16_activation_tally(
     tally.nuclides = ["O16"]
     tally.scores = ["(n,p)"]
     return tally
+
+
+def create_photovoltaic_gamma_heating_tally(
+    photovoltaic_cells: List[openmc.Cell],
+):
+    """Photon kerma in every InGaAs sheet. Heating is eV per source neutron."""
+    tally = openmc.Tally(name="photovoltaic_gamma_dose")
+    tally.filters = [
+        openmc.CellFilter(photovoltaic_cells),
+        openmc.ParticleFilter("photon"),
+    ]
+    tally.scores = ["heating"]
+    return tally
+
+
+def cumulative_kgy(
+    heating_ev: float,
+    ev_per_joule: float,
+    mass_g: float,
+    source_strength: float,
+    dose_time_s: float,
+) -> float:
+    """Cumulative kGy. ``ev_per_joule`` is the CODATA joule–eV relationship (eV/J).
+
+    OpenMC ``heating`` is eV per source particle, summed over the InGaAs cells.
+    1 kGy = 1 J/g, so joules per source × neutrons/s / grams × seconds is kGy.
+    """
+    if ev_per_joule <= 0 or mass_g <= 0:
+        return float("nan")
+    joules_per_source = heating_ev / ev_per_joule
+    return joules_per_source * source_strength / mass_g * dose_time_s
 
 
 def create_photovoltaic_flux_tally(
@@ -618,6 +650,67 @@ def _write_ddd_resultsim(
         f.write("}\n")
 
 
+def _write_gamma_resultsim(
+    gamma_kgy: float,
+    gamma_ci95_pct: float,
+    dose_years: float,
+    batches: int,
+) -> None:
+    ci = gamma_ci95_pct / 100 if np.isfinite(gamma_ci95_pct) else None
+    payload = {
+        "kind": "gamma_dose",
+        "gamma_kgy": [float(f"{gamma_kgy:.4e}")],
+        "gamma_ci95p": None if ci is None else float(f"{ci:.6e}"),
+        "gamma_years": None if not np.isfinite(dose_years) else float(f"{dose_years:.6g}"),
+        "n_batches": int(batches),
+    }
+    with open("resultsim.json", "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2)
+        handle.write("\n")
+
+
+def _print_photovoltaic_gamma_dose(
+    sp: openmc.StatePoint,
+    source_strength,
+    photovoltaic_slice_volume,
+    photovoltaic_density,
+    dose_time,
+    batches,
+) -> None:
+    tally = sp.get_tally(name="photovoltaic_gamma_dose")
+    heating_ev, heating_sd = _tally_scalar_mean_sd(tally, ["heating"])
+    mass_g = float(photovoltaic_slice_volume) * float(photovoltaic_density)
+    if not np.isfinite(mass_g) or mass_g <= 0:
+        raise SystemExit(
+            "InGaAs gamma dose has no photovoltaic mass. "
+            "The InGaAs cells have no volume."
+        )
+    ev_per_joule = float(cst.value("joule-electron volt relationship"))
+    kgy = cumulative_kgy(
+        heating_ev, ev_per_joule, mass_g, float(source_strength), float(dose_time)
+    )
+    dose_years = dose_time / (365 * 24 * 60 * 60) if dose_time else float("nan")
+    ci95_pct = (
+        100 * 1.96 * heating_sd / heating_ev if heating_ev != 0 else float("nan")
+    )
+    ci_text = f"{ci95_pct:.2f}" if np.isfinite(ci95_pct) else "nan"
+    print("--------------------------------")
+    print(f"Keff: {sp.keff:.6e}")
+    print(f"Source strength: {source_strength:.4e} neutrons/second")
+    print(
+        f"InGaAs mass: {mass_g:.4e} g "
+        f"(photon heating summed over every sheet)"
+    )
+    print("--------------------------------")
+    print(
+        f"InGaAs gamma dose: {kgy:.4e} kGy "
+        f"over {dose_years:g} years "
+        f"(± {ci_text}%, 95% CI)"
+    )
+    print("--------------------------------")
+    _write_gamma_resultsim(kgy, ci95_pct, dose_years, batches)
+
+
 def _print_photovoltaic_ddd(
     sp: openmc.StatePoint,
     source_strength,
@@ -666,9 +759,21 @@ def print_tallies(
     batches,
     dose_time,
     ddd_tallies_only: bool = False,
+    gamma_dose_only: bool = False,
 ):
     sp = openmc.StatePoint(f"statepoint.{batches}.h5")
     k_eff = sp.keff  # keff (mean)
+
+    if gamma_dose_only:
+        _print_photovoltaic_gamma_dose(
+            sp,
+            source_strength,
+            photovoltaic_slice_volume,
+            photovoltaic_density,
+            dose_time,
+            batches,
+        )
+        return
 
     if ddd_tallies_only:
         _print_photovoltaic_ddd(
