@@ -52,6 +52,8 @@ export type RimaelFuelTrace = {
   fuelTempC: number[];
   diskTempC: number[];
   shellTempC: number[];
+  /** Disk sector whose window starts at 0°. */
+  section0TempC: number[];
   stopTimeS: number;
   fuelTempStartC: number;
   fuelEmissivity: number;
@@ -432,6 +434,7 @@ function parseFuelCsv(csvPath: string): {
   fuelTempK: number[];
   diskTempK: number[];
   shellTempK: number[];
+  section0TempK: number[];
 } {
   const raw = fs.readFileSync(csvPath, "utf8");
   const lines = raw.split(/\r?\n/).filter((line) => line.trim().length > 0);
@@ -441,6 +444,7 @@ function parseFuelCsv(csvPath: string): {
   const tempIdx = columnIndex(header, "FuelPlate.T");
   const diskIdx = columnIndex(header, "disk.T_mean");
   const shellIdx = columnIndex(header, "VacuumShell.T");
+  const section0Idx = columnIndex(header, "disk.T_section0");
   if (timeIdx < 0 || tempIdx < 0) {
     throw new RimaelRunnerError(`CSV missing time/FuelPlate.T columns: ${header.join(", ")}`);
   }
@@ -448,6 +452,7 @@ function parseFuelCsv(csvPath: string): {
   const fuelTempK: number[] = [];
   const diskTempK: number[] = [];
   const shellTempK: number[] = [];
+  const section0TempK: number[] = [];
   for (const line of lines.slice(1)) {
     const cells = line.split(",");
     const t = Number(cells[timeIdx]);
@@ -457,11 +462,13 @@ function parseFuelCsv(csvPath: string): {
     fuelTempK.push(temp);
     const disk = diskIdx >= 0 ? Number(cells[diskIdx]) : Number.NaN;
     const shell = shellIdx >= 0 ? Number(cells[shellIdx]) : Number.NaN;
+    const section0 = section0Idx >= 0 ? Number(cells[section0Idx]) : Number.NaN;
     if (Number.isFinite(disk)) diskTempK.push(disk);
     if (Number.isFinite(shell)) shellTempK.push(shell);
+    if (Number.isFinite(section0)) section0TempK.push(section0);
   }
   if (!timeS.length) throw new RimaelRunnerError("No samples parsed from CSV.");
-  return { timeS, fuelTempK, diskTempK, shellTempK };
+  return { timeS, fuelTempK, diskTempK, shellTempK, section0TempK };
 }
 
 function canReuseBinary(): boolean {
@@ -573,7 +580,7 @@ simulate(
   method = "dassl",
   tolerance = 1e-6,
   outputFormat = "csv",
-  variableFilter = "time|FuelPlate\\\\.T|VacuumShell\\\\.T|disk\\\\.T_mean",
+  variableFilter = "time|FuelPlate\\\\.T|VacuumShell\\\\.T|disk\\\\.T_mean|disk\\\\.T_section0",
   simflags = "-override=${escaped}"
 );
 getErrorString();
@@ -693,7 +700,7 @@ export async function runRimaelFuelTemperature(
     await compileAndSimulateWithOmc(flags, launcher);
   }
 
-  const { timeS, fuelTempK, diskTempK, shellTempK } = parseFuelCsv(CSV);
+  const { timeS, fuelTempK, diskTempK, shellTempK, section0TempK } = parseFuelCsv(CSV);
   const fuelPct = (100 * arcs.fuelArcFrac).toFixed(1);
   const p0Kw = (fuelHeatingPowerW / 1000).toFixed(1);
   const shellC = (shellStartK - 273.15).toFixed(0);
@@ -703,6 +710,7 @@ export async function runRimaelFuelTemperature(
     fuelTempC: fuelTempK.map((k) => k - 273.15),
     diskTempC: diskTempK.map((k) => k - 273.15),
     shellTempC: shellTempK.map((k) => k - 273.15),
+    section0TempC: section0TempK.map((k) => k - 273.15),
     stopTimeS: timeS[timeS.length - 1] ?? 700,
     fuelTempStartC,
     fuelEmissivity,

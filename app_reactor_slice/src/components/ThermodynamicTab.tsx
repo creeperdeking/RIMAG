@@ -25,6 +25,7 @@ type FuelTrace = {
   fuelTempC: number[];
   diskTempC?: number[];
   shellTempC?: number[];
+  section0TempC?: number[];
   stopTimeS: number;
   fuelTempStartC: number;
   fuelArcFrac?: number;
@@ -215,6 +216,7 @@ function FuelTempChart({ trace }: { trace: FuelTrace }) {
   const { paths, yMin, yMax, xMax } = useMemo(() => {
     const series = [
       { name: "Fuel", color: "#c2410c", values: trace.fuelTempC },
+      { name: "Section 0", color: "#7c3aed", values: trace.section0TempC ?? [] },
       { name: "Disk", color: "#0f766e", values: trace.diskTempC ?? [] },
       { name: "Shell", color: "#1d4ed8", values: trace.shellTempC ?? [] },
     ].filter((item) => item.values.length === trace.timeS.length && item.values.length > 0);
@@ -250,14 +252,14 @@ function FuelTempChart({ trace }: { trace: FuelTrace }) {
       {paths.map((item, index) => (
         <g key={item.name}>
           <line
-            x1={pad.left + index * 72}
-            x2={pad.left + index * 72 + 16}
+            x1={pad.left + index * 92}
+            x2={pad.left + index * 92 + 16}
             y1={14}
             y2={14}
             stroke={item.color}
             strokeWidth={2}
           />
-          <text x={pad.left + index * 72 + 20} y={18} className="rimael-chart-label">
+          <text x={pad.left + index * 92 + 20} y={18} className="rimael-chart-label">
             {item.name}
           </text>
         </g>
