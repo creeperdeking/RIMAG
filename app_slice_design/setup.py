@@ -70,6 +70,11 @@ class AppSliceSimulationParams(BaseModel):
     # MAGIC weight-window mesh / groups for seed and refine passes.
     ww_mesh_cm: float = Field(default=40.0, gt=0)
     ww_energy_groups: int = Field(default=10, ge=1, le=200)
+    # Whole-stack thermal power [MW]. When set, the modeled period uses its
+    # height share of this value instead of the thermodynamics-tab period heat,
+    # so two geometries can be compared at the same stack power. Absent or
+    # non-positive means the tab's period heat.
+    thermal_power_mw: Optional[float] = None
 
 
 class AppSliceRunConfig(BaseModel):
