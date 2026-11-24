@@ -291,10 +291,19 @@ const ThermodynamicTab: React.FC<Props> = ({
   const wocMv = setup.tpv_woc_mv;
   const seriesResistance = setup.tpv_rseries_ohm_cm2;
   const viewFactor = setup.tpv_view_factor;
+  const j02MicroAPerCm2 = setup.tpv_j02_ua_cm2;
 
   const curves = useMemo(
-    () => empiricalCurves(bandGapEv, reflectancePct, wocMv, seriesResistance, viewFactor),
-    [bandGapEv, reflectancePct, wocMv, seriesResistance, viewFactor],
+    () =>
+      empiricalCurves(
+        bandGapEv,
+        reflectancePct,
+        wocMv,
+        seriesResistance,
+        viewFactor,
+        j02MicroAPerCm2 * 1e-6,
+      ),
+    [bandGapEv, reflectancePct, wocMv, seriesResistance, viewFactor, j02MicroAPerCm2],
   );
   const effPoints = curves.efficiency;
   const powerPoints = curves.power;
@@ -435,12 +444,14 @@ const ThermodynamicTab: React.FC<Props> = ({
             {renderSlider("tpv_woc_mv", "Woc penalty (mV)", (value) => `${value.toFixed(0)} mV`)}
             {renderSlider("tpv_rseries_ohm_cm2", "Series resistance (Ω·cm²)", fixed(3))}
             {renderSlider("tpv_view_factor", "View factor", fixed(2))}
+            {renderSlider("tpv_j02_ua_cm2", "Second diode J02 (μA/cm²)", fixed(2))}
             <p className="small text-secondary mb-2">
-              Single-diode model of Dada et al. Fig.&nbsp;8, solved at the selected band gap and Woc penalty. Series
-              resistance is that diode’s specific resistance, and the view factor scales the photon flux. The published
-              curves use 0.010 Ω·cm² and a view factor of 1. Below-gap reflectance changes the absorbed heat, so
-              efficiency moves and, at a fixed view factor, power density stays put. Emitter temperature is the
-              vacuum-shell temperature the cells see. Black = slider; ring = model at shell T.
+              Two-diode model. The Woc penalty sets the n = 1 diffusion diode, and J02 is the n = 2 depletion diode.
+              J02 = 0 with 0.010 Ω·cm² and a view factor of 1 is Dada et al. Fig.&nbsp;8. The 0.74 eV air-bridge cell
+              in Roy-Layinde et al. Table S4.1 is J02 = 1.97 μA/cm² and Rs = 0.030 Ω·cm², with the n = 1 diode near
+              Woc +76 mV. Below-gap reflectance changes the absorbed heat, so efficiency moves and, at a fixed view
+              factor, power density stays put. Emitter temperature is the vacuum-shell temperature the cells see.
+              Black = slider; ring = model at shell T.
             </p>
             <div className="small mb-2">
               Fuel <strong>{diskEmitter.fuelTempC.toFixed(0)} °C</strong>
@@ -469,7 +480,7 @@ const ThermodynamicTab: React.FC<Props> = ({
               </span>
             </div>
             <TpvModelChart
-              title={`Efficiency — ${reflectancePct.toFixed(1)}% R · Woc +${wocMv.toFixed(0)} mV · Rs ${seriesResistance.toFixed(3)} · F ${viewFactor.toFixed(2)} · ${bandGapEv.toFixed(2)} eV`}
+              title={`Efficiency — ${reflectancePct.toFixed(1)}% R · Woc +${wocMv.toFixed(0)} mV · Rs ${seriesResistance.toFixed(3)} · F ${viewFactor.toFixed(2)} · J02 ${j02MicroAPerCm2.toFixed(2)} · ${bandGapEv.toFixed(2)} eV`}
               yLabel="η (%)"
               points={effPoints}
               color={egColor}
@@ -480,7 +491,7 @@ const ThermodynamicTab: React.FC<Props> = ({
               valueFormat={(v) => v.toFixed(0)}
             />
             <TpvModelChart
-              title={`Power density — Woc +${wocMv.toFixed(0)} mV · Rs ${seriesResistance.toFixed(3)} · F ${viewFactor.toFixed(2)} · ${bandGapEv.toFixed(2)} eV`}
+              title={`Power density — Woc +${wocMv.toFixed(0)} mV · Rs ${seriesResistance.toFixed(3)} · F ${viewFactor.toFixed(2)} · J02 ${j02MicroAPerCm2.toFixed(2)} · ${bandGapEv.toFixed(2)} eV`}
               yLabel="P (W/cm²)"
               points={powerPoints}
               color={egColor}

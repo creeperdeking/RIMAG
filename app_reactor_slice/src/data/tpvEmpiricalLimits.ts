@@ -5,10 +5,15 @@
  * Woc = radiative-limit(15 mA/cm²) + 70 mV (solid) or + 140 mV (dashed),
  * ε_bel = 0.05 (95% R) or 0.01 (99% R).
  *
- * The chart solver uses the same single-diode equation and applies whatever series
- * resistance, view factor, and Woc penalty are selected. Blackbody current and heat
- * in tpvDadaSpectrum.json are for a view factor of 1; the solver scales both by the
- * selected view factor. tpvDadaFig8.json keeps the published Rs = 0.01, VF = 1 curves.
+ * The chart solver uses a two-diode equation. The n = 1 diode follows the selected Woc
+ * penalty, and the n = 2 diode is an extra recombination current. Series resistance and
+ * view factor are selected too. Blackbody current and heat in tpvDadaSpectrum.json are
+ * for a view factor of 1; the solver scales both by the selected view factor.
+ * tpvDadaFig8.json keeps the published single-diode curves (J02 = 0, Rs = 0.01, VF = 1).
+ *
+ * Roy-Layinde et al., Joule 8, 2135 (2024), Table S4.1, for the 0.74 eV air-bridge cell
+ * at 25°C: J01 = 1.47e-9 A/cm² (about Woc +76 mV), J02 = 1.97e-6 A/cm², Rs = 0.030 Ω·cm².
+ * With n = 1 and n = 2 that pair reproduces their measured power to about 5%.
  *
  * Generator: app_reactor_slice/scripts/tpv_dada_model.py
  * Source: Dada et al., Sol. Energy Mater. Sol. Cells 289 (2025) 113666.
@@ -108,24 +113,31 @@ function j0FromWoc(egEv: number, wocV: number): number {
 }
 
 /**
- * Maximum power density of J = −Jsc + J0 (exp(q(V − J Rs)/kT) − 1).
- * Jsc and J0 are in A/cm², Rs in Ω·cm², and the result is in W/cm².
+ * Maximum power density of the two-diode cell
+ * J = −Jsc + J01 (exp(q(V − J Rs)/kT) − 1) + J02 (exp(q(V − J Rs)/(2kT)) − 1).
+ * Currents are in A/cm², Rs in Ω·cm², and the result is in W/cm².
+ * J02 = 0 is the Fig. 8 single diode. The n = 1 open-circuit voltage is above the
+ * real one once J02 is present, so the voltage scan still covers the maximum.
  */
-function maximumPowerDensity(jsc: number, j0: number, rseriesOhmCm2: number): number {
-  if (!(jsc > 0) || !(j0 > 0) || !Number.isFinite(j0)) return 0;
+function maximumPowerDensity(jsc: number, j01: number, rseriesOhmCm2: number, j02 = 0): number {
+  if (!(jsc > 0) || !(j01 > 0) || !Number.isFinite(j01)) return 0;
   const rs = Math.max(0, rseriesOhmCm2);
+  const recombination = Math.max(0, j02);
   const vt = THERMAL_VOLTAGE_V;
-  const voc = vt * Math.log(jsc / j0 + 1);
+  const voc = vt * Math.log(jsc / j01 + 1);
   const steps = 200;
   let best = 0;
   for (let i = 1; i < steps; i++) {
     const voltage = (voc * 1.05 * i) / (steps - 1);
     let current = -jsc;
     for (let iteration = 0; iteration < 40; iteration++) {
-      const arg = Math.min((voltage - current * rs) / vt, 80);
-      const exponential = Math.exp(arg);
-      const residual = current + jsc - j0 * (exponential - 1);
-      const slope = 1 + j0 * exponential * (rs / vt);
+      const overdrive = voltage - current * rs;
+      const arg1 = Math.min(overdrive / vt, 80);
+      const arg2 = Math.min(overdrive / (2 * vt), 80);
+      const exp1 = Math.exp(arg1);
+      const exp2 = recombination > 0 ? Math.exp(arg2) : 0;
+      const residual = current + jsc - j01 * (exp1 - 1) - recombination * (exp2 - 1);
+      const slope = 1 + j01 * exp1 * (rs / vt) + recombination * exp2 * (rs / (2 * vt));
       const next = current - residual / slope;
       if (Math.abs(next - current) < 1e-12) {
         current = next;
@@ -152,12 +164,11 @@ function spectrumRow(egEv: number): { wocRadV: number; jsc: number[]; qAbove: nu
 }
 
 /**
- * Efficiency and power density from the Fig. 8 single-diode model.
- * Band gap, Woc penalty, series resistance, and view factor are solved directly.
- * View factor scales the incident photon flux, so both current and absorbed heat
- * scale with it; series resistance then makes efficiency depend on that current.
- * Reflectance changes only the below-gap part of the absorbed heat, so efficiency
- * follows that and, at a fixed view factor, power density does not move.
+ * Efficiency and power density from the two-diode model.
+ * Band gap, Woc penalty, series resistance, view factor, and the n = 2 saturation
+ * current are solved directly. View factor scales the incident photon flux, so both
+ * current and absorbed heat scale with it. Reflectance changes only the below-gap
+ * part of the absorbed heat, so at a fixed view factor it moves efficiency and not power.
  */
 export function empiricalCurves(
   egEv: number,
@@ -165,16 +176,18 @@ export function empiricalCurves(
   wocMv: number,
   rseriesOhmCm2 = 0.01,
   viewFactor = 1,
+  j02APerCm2 = 0,
 ): { efficiency: TpvPoint[]; power: TpvPoint[] } {
   const eg = clamp(egEv, 0.4, 0.8);
   const reflectance = clamp(reflectancePct, 95, 99);
   const emissivity = (100 - reflectance) / 100;
   const wocExtraV = clamp(wocMv, 70, 140) / 1000;
   const vf = clamp(viewFactor, 0.1, 1);
+  const j02 = Math.max(0, j02APerCm2);
   const row = spectrumRow(eg);
   const j0 = j0FromWoc(eg, row.wocRadV + wocExtraV);
   const temps = spectrum.temps_C;
-  const power = row.jsc.map((jsc) => maximumPowerDensity(jsc * vf, j0, rseriesOhmCm2));
+  const power = row.jsc.map((jsc) => maximumPowerDensity(jsc * vf, j0, rseriesOhmCm2, j02));
   const efficiency = power.map((value, index) => {
     const absorbed = vf * (row.qAbove[index] + emissivity * row.qBelow[index]);
     return absorbed > 0 ? (100 * value) / absorbed : 0;

@@ -434,6 +434,7 @@ const Explorer: React.FC = () => {
     params.set("tpv_woc_mv", setup.tpv_woc_mv.toFixed(0));
     params.set("tpv_rseries_ohm_cm2", setup.tpv_rseries_ohm_cm2.toFixed(3));
     params.set("tpv_view_factor", setup.tpv_view_factor.toFixed(2));
+    params.set("tpv_j02_ua_cm2", setup.tpv_j02_ua_cm2.toFixed(2));
     params.set("enrichment_pct", setup.enrichment_pct.toFixed(1));
     params.set("packing_pct", setup.packing_pct.toFixed(0));
     params.set("hm_particle_pct", setup.hm_particle_pct.toFixed(0));

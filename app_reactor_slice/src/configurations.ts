@@ -45,6 +45,8 @@ export const NUMERIC_FIELDS = {
   tpv_rseries_ohm_cm2: [0, 0.2, 0.005, 0.01],
   /** Empirical-limit chart: emitter-to-cell view factor. */
   tpv_view_factor: [0.1, 1, 0.01, 1],
+  /** Empirical-limit chart: n = 2 depletion-diode saturation current (μA/cm²). 0 is the Fig. 8 single diode. */
+  tpv_j02_ua_cm2: [0, 5, 0.01, 0],
   stack_m: [0.1, 20.0, 0.1, 1.0],
   columns: [1.0, 3.0, 1.0, 1.0],
 } as const;
