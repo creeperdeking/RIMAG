@@ -36,6 +36,7 @@ import {
 } from "./layers";
 import { materialLibrary, materialLines } from "./materials";
 import { airbridgeOperatingPoint } from "./data/tpvEmpiricalLimits";
+import { chooseSetupToOpen, readStoredSetup, usesSavedFile, writeStoredSetup } from "./openSetup";
 
 const TAB_STORAGE_KEY = "reactor-slice-active-tab";
 const SETUPS_URL = "/api/setups";
@@ -288,23 +289,22 @@ const Explorer: React.FC = () => {
         if (cancelled) return;
         setSaved(all);
         const names = Object.keys(all);
-        const cfg = boot.cfg;
-        if (cfg && all[cfg]) {
-          const target = all[cfg];
-          if (boot.hasUrlState) {
-            setSetup((prev) => ({ ...prev, layers: hydratePlaceholders(prev.layers, target) }));
-          } else {
+        const remembered = readStoredSetup();
+        const name = chooseSetupToOpen(names, boot.cfg, remembered);
+        if (name && all[name]) {
+          const target = all[name];
+          const openedFromMemory = !boot.cfg && name === remembered;
+          if (usesSavedFile(boot.hasUrlState, openedFromMemory)) {
             setSetup(target);
+          } else {
+            setSetup((prev) => ({ ...prev, layers: hydratePlaceholders(prev.layers, target) }));
           }
-          setLoadedCfg(cfg);
-          setChoice(cfg);
-        } else if (cfg) {
+          setLoadedCfg(name);
+          setChoice(name);
+          writeStoredSetup(name);
+        } else if (boot.cfg) {
           setLoadedCfg(null);
-        } else if (names.length === 1) {
-          const only = all[names[0]];
-          setSetup((prev) => ({ ...prev, layers: hydratePlaceholders(prev.layers, only) }));
-          setLoadedCfg(names[0]);
-          setChoice(names[0]);
+          if (readStoredSetup() === boot.cfg) writeStoredSetup(null);
         }
       })
       .catch((error: unknown) => {
@@ -515,6 +515,7 @@ const Explorer: React.FC = () => {
       setSaved(persisted);
       setChoice(trimmed);
       setLoadedCfg(trimmed);
+      writeStoredSetup(trimmed);
       setNotice({ kind: "success", text: message ?? `Saved ${trimmed}.` });
     } catch (error) {
       setNotice({ kind: "danger", text: error instanceof Error ? error.message : String(error) });
@@ -543,6 +544,7 @@ const Explorer: React.FC = () => {
     if (!target) return;
     setSetup(target);
     setLoadedCfg(name);
+    writeStoredSetup(name);
     setNotice({ kind: "success", text: `Loaded ${name}.` });
   };
 
@@ -580,6 +582,7 @@ const Explorer: React.FC = () => {
       const persisted = await putSetups(next);
       setSaved(persisted);
       if (loadedCfg === name) setLoadedCfg(null);
+      if (readStoredSetup() === name) writeStoredSetup(null);
       setNotice({ kind: "success", text: `Deleted ${name}.` });
     } catch (error) {
       setNotice({ kind: "danger", text: error instanceof Error ? error.message : String(error) });
