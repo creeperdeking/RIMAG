@@ -394,7 +394,6 @@ const Explorer: React.FC = () => {
       fuelGapCm: gaps.fuelGapCm,
       tpvGapCm: gaps.tpvGapCm,
       cellIndex: setup.tpv_airbridge_cell,
-      viewFactor: setup.tpv_view_factor,
     });
   }, [
     groups.disk,
@@ -403,7 +402,6 @@ const Explorer: React.FC = () => {
     setup.disk_emissivity,
     setup.shell_emissivity,
     setup.tpv_airbridge_cell,
-    setup.tpv_view_factor,
     layout.fuelArea,
     oppositeArea,
   ]);
@@ -454,7 +452,6 @@ const Explorer: React.FC = () => {
     params.set("disk_emissivity", setup.disk_emissivity.toFixed(2));
     params.set("shell_emissivity", setup.shell_emissivity.toFixed(2));
     params.set("tpv_airbridge_cell", String(setup.tpv_airbridge_cell));
-    params.set("tpv_view_factor", setup.tpv_view_factor.toFixed(2));
     params.set("enrichment_pct", setup.enrichment_pct.toFixed(1));
     params.set("packing_pct", setup.packing_pct.toFixed(0));
     params.set("hm_particle_pct", setup.hm_particle_pct.toFixed(0));

@@ -279,11 +279,10 @@ const ThermodynamicTab: React.FC<Props> = ({
   const [error, setError] = useState<string | null>(null);
   const [trace, setTrace] = useState<FuelTrace | null>(null);
   const cellIndex = setup.tpv_airbridge_cell;
-  const viewFactor = setup.tpv_view_factor;
 
   const curves = useMemo(
-    () => airbridgeCurves(cellIndex, viewFactor, setup.shell_emissivity),
-    [cellIndex, viewFactor, setup.shell_emissivity],
+    () => airbridgeCurves(cellIndex, setup.shell_emissivity),
+    [cellIndex, setup.shell_emissivity],
   );
   const effPoints = curves.efficiency;
   const powerPoints = curves.power;
@@ -383,12 +382,10 @@ const ThermodynamicTab: React.FC<Props> = ({
                 </Button>
               ))}
             </div>
-            {renderSlider("tpv_view_factor", "View factor", fixed(2))}
             <p className="small text-secondary mb-2">
               Reflected light returns to the shell, so the shell emissivity and the measured absorptance set the
-              intensity in the gap. The view factor scales that illumination. The deposited scripts, which are the
-              black-shell case, use 0.35, 0.3214, and 0.27. The 0.90 and 1.10 files integrate at 0.88 and 1.08 eV.
-              The mark is the vacuum-shell temperature the cells see.
+              intensity in the gap. The gap is closed, so the view factor is 1. The 0.90 and 1.10 files integrate at
+              0.88 and 1.08 eV. The mark is the vacuum-shell temperature the cells see.
             </p>
             <div className="small mb-2">
               Fuel <strong>{setup.fuel_temp_c.toFixed(0)} °C</strong>
@@ -417,7 +414,7 @@ const ThermodynamicTab: React.FC<Props> = ({
               </span>
             </div>
             <TpvModelChart
-              title={`Efficiency — ${curves.label} · ε ${setup.shell_emissivity.toFixed(2)} · F ${viewFactor.toFixed(2)}`}
+              title={`Efficiency — ${curves.label} · ε ${setup.shell_emissivity.toFixed(2)}`}
               yLabel="η (%)"
               points={effPoints}
               color={egColor}
@@ -427,7 +424,7 @@ const ThermodynamicTab: React.FC<Props> = ({
               valueFormat={(v) => v.toFixed(0)}
             />
             <TpvModelChart
-              title={`Power density — ${curves.label} · ε ${setup.shell_emissivity.toFixed(2)} · F ${viewFactor.toFixed(2)}`}
+              title={`Power density — ${curves.label} · ε ${setup.shell_emissivity.toFixed(2)}`}
               yLabel="P (W/cm²)"
               points={powerPoints}
               color={egColor}

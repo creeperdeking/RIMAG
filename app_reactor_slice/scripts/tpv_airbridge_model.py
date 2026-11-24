@@ -5,7 +5,8 @@ Each cell is the corresponding ddiode_simulation_*.m script: measured FTIR
 absorptance, a constant internal quantum efficiency, and the two-diode fit.
 The page integrates each spectrum. A black shell reproduces the scripts.
 A gray shell uses the closed-gap exchange, with reflected light returned to
-the shell. The view factor stays a multiplier on that illumination.
+the shell. The reactor gap is closed, so the view factor is 1. The script
+ill_factors are recorded and are not applied.
 
 Spectra are the deposited files (doi:10.7302/7qsw-je08):
   ftir_0.74ev_narrow_exp2.txt  column 2 is reflectance

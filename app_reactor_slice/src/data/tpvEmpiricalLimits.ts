@@ -4,8 +4,8 @@
  * shell is the measured FTIR absorptance times a blackbody. A gray shell uses
  * the closed-gap exchange: reflected light returns, so
  *   A ε / (ε + A (1 − ε))
- * replaces A. The view factor then scales that illumination, and the page
- * solves the script's two-diode equation.
+ * replaces A. The reactor gap is closed, so the view factor is 1 and is not
+ * scaled. The page solves the script's two-diode equation.
  * Data: doi:10.7302/7qsw-je08. Generator: scripts/tpv_airbridge_model.py.
  */
 import { heatFromFuelToShell } from "../../shared/diskThermal";
@@ -98,7 +98,6 @@ export const AIRBRIDGE_CELLS = CELLS.map((cell, index) => ({
   id: cell.id,
   label: cell.label,
   color: cell.color,
-  scriptViewFactor: cell.script_view_factor,
 }));
 
 /** Positive current is the generated current, as in the deposited scripts. */
@@ -148,20 +147,15 @@ type AirbridgeCurveSet = {
 
 const curveCache = new Map<string, AirbridgeCurveSet>();
 
-export function airbridgeCurves(
-  cellIndex: number,
-  viewFactor: number,
-  shellEmissivity = 1,
-): AirbridgeCurveSet {
+export function airbridgeCurves(cellIndex: number, shellEmissivity = 1): AirbridgeCurveSet {
   const cell = CELLS[Math.min(CELLS.length - 1, Math.max(0, Math.round(cellIndex)))] ?? CELLS[0];
-  const vf = Math.min(1, Math.max(0.1, viewFactor));
   const eps = Math.min(1, Math.max(0, shellEmissivity));
-  const cacheKey = `${cell.id}|${vf}|${eps}`;
+  const cacheKey = `${cell.id}|${eps}`;
   const cached = curveCache.get(cacheKey);
   if (cached) return cached;
   const optics = TEMPS_C.map((tempC) => opticsAt(cell, tempC, eps));
-  const power = optics.map((row) => maximumPowerDensity(row.jsc * vf, cell));
-  const absorbed = optics.map((row) => vf * row.qabs);
+  const power = optics.map((row) => maximumPowerDensity(row.jsc, cell));
+  const absorbed = optics.map((row) => row.qabs);
   const efficiency = power.map((value, index) => {
     const heat = absorbed[index];
     return heat > 0 ? (100 * value) / heat : 0;
@@ -227,9 +221,8 @@ export function airbridgeOperatingPoint(options: {
   fuelGapCm: number;
   tpvGapCm: number;
   cellIndex: number;
-  viewFactor: number;
 }): AirbridgeOperatingPoint {
-  const curves = airbridgeCurves(options.cellIndex, options.viewFactor, options.shellEmissivity);
+  const curves = airbridgeCurves(options.cellIndex, options.shellEmissivity);
   const bothFacesM2 = 2 * Math.max(0, options.tpvAreaM2);
   const at = (shellTempC: number) => ({
     power: interpolateTpvValue(curves.power, shellTempC) ?? 0,

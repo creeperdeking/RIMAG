@@ -36,8 +36,6 @@ export const NUMERIC_FIELDS = {
   shell_emissivity: [0.05, 1.0, 0.01, 0.3],
   /** Air-bridge chart: 0 = 0.74 eV, 1 = 0.90 eV, 2 = 1.10 eV. */
   tpv_airbridge_cell: [0, 2, 1, 0],
-  /** Air-bridge chart: emitter-to-cell view factor. Scales current and absorbed heat. */
-  tpv_view_factor: [0.1, 1, 0.01, 0.35],
   stack_m: [0.1, 20.0, 0.1, 1.0],
   columns: [1.0, 3.0, 1.0, 1.0],
 } as const;
