@@ -49,7 +49,7 @@ if [[ ! -f "$RUN_DIR/geometry.xml" || ! -f "$RUN_DIR/materials.xml" ]]; then
   echo "geometry.xml et materials.xml sont absents de :" >&2
   echo "  $RUN_DIR" >&2
   echo "Générez-les d'abord avec un run en mode render, par exemple :" >&2
-  echo "  docker compose run --rm rimag python simulation_paper.py my_params.json" >&2
+  echo "  Queue a render run from the app. It writes the XML through simulation_app_slice.py." >&2
   exit 1
 fi
 

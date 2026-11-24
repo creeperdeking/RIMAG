@@ -4,30 +4,10 @@ from typing import Dict, List
 import openmc
 from pydantic import BaseModel
 
-from common_lib.light import (
-    calc_T2_radiative_heat_flux_between_plates,
-)
 from common_lib.materials import (
     MaterialChoice,
     heavy_metal_density,
 )
-
-
-def sanity_check_triso_fuel_volume(hm_volume: float, graphite_volume: float):
-    actual_volume_ratio = hm_volume / (hm_volume + graphite_volume)
-    TRISO_HM_VOLUME_FRACTION = 0.3
-    MAX_TRISO_PACKING_FRACTION = 0.3
-    PACKED_TRISO_VOLUME_RATIO = (
-        TRISO_HM_VOLUME_FRACTION * MAX_TRISO_PACKING_FRACTION * 0.75
-    )  # cm3 / cm3
-    if actual_volume_ratio > PACKED_TRISO_VOLUME_RATIO:
-        raise ValueError(
-            f"❌ Actual volume ratio {actual_volume_ratio} is greater than the maximum allowed {PACKED_TRISO_VOLUME_RATIO}"
-        )
-    else:
-        print(
-            f"✅ Actual volume ratio {actual_volume_ratio} is less than the maximum allowed {PACKED_TRISO_VOLUME_RATIO}"
-        )
 
 
 class CoreCharacteristics(BaseModel):
@@ -122,85 +102,6 @@ def characteristics_from_thermodynamics(
         photovoltaic_area=inventory.photovoltaic_area,
         photovoltaic_power_density=photovoltaic_power_density,
         photovoltaic_power_per_m=per_m,
-        rotary_axle_radius=rotary_axle_radius,
-        vertical_core_height=vertical_core_height,
-    )
-
-
-# The paper script still solves its own gray emitter. The reactor app uses
-# characteristics_from_thermodynamics and does not call this.
-def calculate_disk_core_characteristics(
-    tracked_cells: Dict[str, List[openmc.Cell]],
-    material_choice: MaterialChoice,
-    materials_dict: Dict[str, openmc.Material],
-    hot_temp: float,
-    photovoltaic_efficiency: float,
-    photovoltaic_power_density: float,
-    photovoltaic_thickness: float,
-    fuel_burnup: float,
-    fuel_thickness: float,
-    vertical_core_height: float,
-    rotary_axle_radius: float,
-    min_cold_temp: float,
-) -> CoreCharacteristics:
-    inventory = disk_inventory(
-        tracked_cells,
-        material_choice,
-        materials_dict,
-        photovoltaic_thickness,
-        fuel_thickness,
-    )
-    fuel_emissive_area = inventory.fuel_emissive_area
-    photovoltaic_area = inventory.photovoltaic_area
-    ratio_photovoltaic_to_fuel = photovoltaic_area / fuel_emissive_area
-
-    photovoltaic_power = photovoltaic_area * photovoltaic_power_density
-
-    photovoltaic_power_density_total = (
-        photovoltaic_power_density / photovoltaic_efficiency
-    )
-    photovoltaic_power_per_m2_fuel_area = (
-        photovoltaic_power_density_total * 10000 * ratio_photovoltaic_to_fuel
-    )
-
-    cold_temp = calc_T2_radiative_heat_flux_between_plates(
-        hot_temp,
-        photovoltaic_power_per_m2_fuel_area,
-        0.96,
-        0.96,
-    )
-    assert cold_temp > 0 and cold_temp < hot_temp
-    if cold_temp < min_cold_temp:
-        print(
-            f"❌ The cold temperature {cold_temp - 273}°C is below the minimum allowed {min_cold_temp - 273}°C"
-        )
-
-    core_power = photovoltaic_power_per_m2_fuel_area * fuel_emissive_area / 10000
-    core_power_electric = core_power * photovoltaic_efficiency
-
-    photovoltaic_power_per_m = photovoltaic_power * (100 / vertical_core_height)
-
-    assert math.isclose(core_power_electric, photovoltaic_power)
-
-    heavy_metal_mass = inventory.heavy_metal_mass
-
-    energy_in_fuel = heavy_metal_mass * fuel_burnup * 24  # MWh
-
-    fuel_lifetime = energy_in_fuel / (core_power / 1e6 * 3600)
-
-    return CoreCharacteristics(
-        heavy_metal_mass=heavy_metal_mass,
-        fuel_emissive_area=fuel_emissive_area,
-        fuel_thickness=fuel_thickness,
-        core_power=core_power,
-        core_power_electric=core_power_electric,
-        cold_temp=cold_temp,
-        radiative_flux=photovoltaic_power_per_m2_fuel_area,
-        fuel_lifetime=fuel_lifetime,
-        photovoltaic_power=photovoltaic_power,
-        photovoltaic_area=photovoltaic_area,
-        photovoltaic_power_density=photovoltaic_power_density,
-        photovoltaic_power_per_m=photovoltaic_power_per_m,
         rotary_axle_radius=rotary_axle_radius,
         vertical_core_height=vertical_core_height,
     )

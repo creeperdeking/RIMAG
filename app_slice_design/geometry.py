@@ -85,7 +85,7 @@ def _sector_area_cm2(
 
 
 def _z_scaling(conical_pitch_deg: float) -> float:
-    """Map material-stack thickness to vertical period (paper get_z_scaling)."""
+    """Map material-stack thickness to the vertical period."""
     if abs(conical_pitch_deg) < 1e-12:
         return 1.0
     return 1.0 / math.sin(math.radians(90.0 - conical_pitch_deg))
@@ -597,7 +597,7 @@ def _transport_layer_count(
     n_above = math.ceil(0.5 - lower_z / period_cm)
     n_below = math.ceil(0.5 + upper_z / period_cm)
     n_layers = max(1, int(n_above + n_below + 1))
-    # Same insurance as common_lib.geometry.make_module_stack_surfaces.
+    # Extra shells so a steep cone does not leak past the outer radius.
     n_layers *= 2
     return n_layers, int(n_below)
 
@@ -613,8 +613,7 @@ def _build_column_stack_universe(
     """
     Tile the shared slice universe for one periodic period.
 
-    Parent cells are named boundary_layer_* so stochastic volume checks skip them
-    (same convention as the paper geometry).
+    Parent cells are named boundary_layer_* so stochastic volume checks skip them.
     """
     z_scale = _z_scaling(conical_pitch_deg)
     # Exact outer radius: centers are 2*R apart, so +padding would overlap neighbors.

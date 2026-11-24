@@ -24,25 +24,7 @@ This updates the image only. The container executes the copy already stored in `
 bash ./show_geometry.sh
 ```
 
-Those XML files are produced by a render run. Put a parameter file in `runs/default` (for example `my_params.json`) with `run_mode` set to `render`:
-
-```json
-{
-    "nsm_material": "Graphite",
-    "nsm_thickness": 25.0,
-    "conical_pitch": 15.0,
-    "n_batches": 200,
-    "run_mode": "render"
-}
-```
-
-Then, from the repository root:
-
-```powershell
-docker compose run --rm rimag python simulation_paper.py my_params.json
-```
-
-`n_batches` is still required by `simulation_paper.py`. Render mode writes the XML files and `plot.png` into `runs/default` and does not run a transport simulation.
+Those XML files are produced by a render run from the app. The app writes `runs/default/app_slice_run.json` and runs `simulation_app_slice.py`, which builds the geometry in `app_slice_design/geometry.py`. Render mode writes the XML files and `plot.png` into `runs/default` and does not run a transport simulation.
 
 ## Plot the simulation curves
 
