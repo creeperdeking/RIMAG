@@ -79,8 +79,6 @@ export type SimulationParams = {
   ddd_tallies_only: boolean;
   ww_mesh_cm: number;
   ww_energy_groups: number;
-  /** Whole-stack thermal power [MW]. The run scales it to one periodic slice. null → geometry/TPV slice power. */
-  thermal_power_mw: number | null;
 };
 
 export const DEFAULT_SIMULATION_PARAMS: SimulationParams = {
@@ -99,7 +97,6 @@ export const DEFAULT_SIMULATION_PARAMS: SimulationParams = {
   ddd_tallies_only: true,
   ww_mesh_cm: 40,
   ww_energy_groups: 10,
-  thermal_power_mw: null,
 };
 
 function pickBoolean(value: unknown, fallback: boolean): boolean {
@@ -117,6 +114,14 @@ export type Setup = {
   tpv_density: number;
   /** Conversion efficiency from the air-bridge chart [%]. Calculated. */
   tpv_eff_pct: number;
+  /** Heat the cell absorbs, one face [W/cm²]. Calculated. */
+  tpv_absorbed_w_per_cm2: number;
+  /** Vacuum-shell temperature the cells see [°C]. Calculated. */
+  shell_temp_c: number;
+  /** Thermodynamics-tab heat for one pitch and every column [W]. */
+  period_thermal_w: number;
+  /** Thermodynamics-tab electrical power for one pitch and every column [W]. */
+  period_electric_w: number;
   reload_fraction: ReloadFraction;
   dims: boolean;
   layers: Record<LayerGroupId, LayerRow[]>;
@@ -139,7 +144,6 @@ export function normalizeSimulation(raw: unknown): SimulationParams {
   const boronPpm = Number(source.boron_concentration_ppm);
   const wwMesh = Number(source.ww_mesh_cm);
   const wwGroups = Number(source.ww_energy_groups);
-  const thermalMw = Number(source.thermal_power_mw);
   // Legacy "generate" in saved setups maps to "use" for the tally dropdown;
   // seed/refine are started from the WW submenu, not stored as the tally mode.
   const rawWw = typeof source.weight_windows === "string" ? source.weight_windows : "";
@@ -174,12 +178,6 @@ export function normalizeSimulation(raw: unknown): SimulationParams {
     ww_energy_groups: Number.isFinite(wwGroups)
       ? Math.max(1, Math.min(200, Math.round(wwGroups)))
       : DEFAULT_SIMULATION_PARAMS.ww_energy_groups,
-    thermal_power_mw:
-      source.thermal_power_mw == null || source.thermal_power_mw === ""
-        ? null
-        : Number.isFinite(thermalMw) && thermalMw > 0
-          ? thermalMw
-          : null,
   };
 }
 
@@ -218,6 +216,10 @@ export function defaultSetup(): Setup {
   }
   values.tpv_density = 0;
   values.tpv_eff_pct = 0;
+  values.tpv_absorbed_w_per_cm2 = 0;
+  values.shell_temp_c = 0;
+  values.period_thermal_w = 0;
+  values.period_electric_w = 0;
   values.reload_fraction = "1/4";
   values.dims = true;
   values.layers = normalizeLayers(null);
@@ -238,12 +240,24 @@ export function normalizeSetup(data: unknown): Setup {
     if (!Number.isFinite(number)) number = def;
     values[key] = snap(number, low, high, step);
   }
-  const output = (key: "tpv_density" | "tpv_eff_pct") => {
+  const output = (
+    key:
+      | "tpv_density"
+      | "tpv_eff_pct"
+      | "tpv_absorbed_w_per_cm2"
+      | "shell_temp_c"
+      | "period_thermal_w"
+      | "period_electric_w",
+  ) => {
     const number = Number(raw[key]);
     values[key] = Number.isFinite(number) ? number : 0;
   };
   output("tpv_density");
   output("tpv_eff_pct");
+  output("tpv_absorbed_w_per_cm2");
+  output("shell_temp_c");
+  output("period_thermal_w");
+  output("period_electric_w");
   const reload = raw.reload_fraction;
   values.reload_fraction =
     typeof reload === "string" && (RELOAD_FRACTIONS as readonly string[]).includes(reload)

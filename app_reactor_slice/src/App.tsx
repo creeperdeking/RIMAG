@@ -491,11 +491,18 @@ const Explorer: React.FC = () => {
     setSetup((prev) => ({ ...prev, layers: { ...prev.layers, [id]: rows } }));
   };
 
-  const currentSetup = (): Setup => ({
-    ...normalizeSetup(setupFromState(setup, groups)),
+  const withOperatingPoint = (base: Setup): Setup => ({
+    ...base,
     tpv_density: operatingPoint.powerWPerCm2,
     tpv_eff_pct: operatingPoint.efficiencyPct,
+    tpv_absorbed_w_per_cm2: operatingPoint.absorbedWPerCm2,
+    shell_temp_c: operatingPoint.shellTempC,
+    period_thermal_w: sliceThermalKw * 1000,
+    period_electric_w: slicePower * 1000,
   });
+
+  const currentSetup = (): Setup =>
+    withOperatingPoint(normalizeSetup(setupFromState(setup, groups)));
 
   const persistNamed = async (name: string, message?: string) => {
     const trimmed = name.trim();
@@ -841,11 +848,7 @@ const Explorer: React.FC = () => {
     <SimulationTab
       params={setup.simulation}
       onChange={onSimulationChange}
-      setup={{
-        ...setup,
-        tpv_density: operatingPoint.powerWPerCm2,
-        tpv_eff_pct: operatingPoint.efficiencyPct,
-      }}
+      setup={withOperatingPoint(setup)}
       defaultThermalPowerMw={thermalPower == null ? null : thermalPower / 1000}
     />
   );

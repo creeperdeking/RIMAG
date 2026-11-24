@@ -17,23 +17,9 @@ from app_slice_design.setup import load_app_slice_run_config
 from common_lib.materials import apply_boron_ppm_to_fuel_graphite, make_materials
 from common_lib.runlib import start_program
 from one_layer_disk_design.disks_core_characteristics import (
-    calculate_disk_core_characteristics,
+    characteristics_from_thermodynamics,
+    disk_inventory,
 )
-
-
-def period_share_of_stack(stack_m: float, period_cm: float) -> float:
-    """Share of a uniform stack carried by one periodic slice.
-
-    The app's thermal power is the whole stack. The transport model is one
-    period with periodic z boundaries, so tally source strength uses
-    ``P_stack * period_height / stack_height``. A 10 m stack and a 10 cm
-    period therefore run at 1/100 of the entered power.
-    """
-    stack_cm = float(stack_m) * 100.0
-    period = float(period_cm)
-    if stack_cm <= 0.0 or period <= 0.0:
-        return 1.0
-    return min(1.0, period / stack_cm)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -62,9 +48,6 @@ def main(argv: list[str] | None = None) -> None:
     print(f"print_core_characteristics: {sim.print_core_characteristics}")
     print(f"boron_concentration_ppm: {sim.boron_concentration_ppm}")
     print(f"ddd_tallies_only: {sim.ddd_tallies_only}")
-    print(
-        f"thermal_power_mw: {sim.thermal_power_mw if sim.thermal_power_mw is not None else 'auto (geometry)'}"
-    )
     print(f"columns: {setup.columns}")
     print(f"enrichment_pct: {setup.enrichment_pct}")
     print(f"fuel_temp_c: {setup.fuel_temp_c}")
@@ -113,40 +96,41 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     def calculate_core_characteristics():
-        core = calculate_disk_core_characteristics(
+        if (
+            setup.period_thermal_w is None
+            or setup.period_electric_w is None
+            or setup.shell_temp_c is None
+        ):
+            raise SystemExit(
+                "This run has no thermodynamics-tab power. Queue it from the app."
+            )
+        inventory = disk_inventory(
             tracked_cells=geom.tracked_cells,
             material_choice=material_choice,
             materials_dict=materials_dict,
-            hot_temp=float(setup.fuel_temp_c) + 273.0,
-            photovoltaic_efficiency=setup.tpv_eff_pct / 100.0,
-            photovoltaic_power_density=setup.tpv_density,
             photovoltaic_thickness=geom.photovoltaic_thickness_cm,
+            fuel_thickness=geom.fuel_thickness_cm,
+        )
+        core = characteristics_from_thermodynamics(
+            inventory,
+            shell_temp_c=setup.shell_temp_c,
+            thermal_w=setup.period_thermal_w,
+            electric_w=setup.period_electric_w,
+            absorbed_w_per_cm2=setup.tpv_absorbed_w_per_cm2,
+            photovoltaic_power_density=setup.tpv_density,
             fuel_burnup=u235_enrichment * 12.0,
             fuel_thickness=geom.fuel_thickness_cm,
             vertical_core_height=geom.vertical_core_height_cm,
             rotary_axle_radius=geom.rotary_axle_radius_cm,
-            min_cold_temp=1100 + 273,
         )
-        if sim.thermal_power_mw is not None and sim.thermal_power_mw > 0:
-            geometry_mw = core.core_power / 1e6
-            share = period_share_of_stack(setup.stack_m, geom.vertical_core_height_cm)
-            stack_mw = float(sim.thermal_power_mw)
-            slice_mw = stack_mw * share
-            thermal_w = slice_mw * 1e6
-            eff = setup.tpv_eff_pct / 100.0
-            core.core_power = thermal_w
-            core.core_power_electric = thermal_w * eff
-            core.photovoltaic_power = core.core_power_electric
-            if thermal_w > 0:
-                energy_in_fuel = core.heavy_metal_mass * (u235_enrichment * 12.0) * 24.0
-                core.fuel_lifetime = energy_in_fuel / (thermal_w / 1e6 * 3600.0)
-            print(
-                f"Thermal power: {stack_mw:g} MW over {setup.stack_m:g} m, "
-                f"{slice_mw:.4g} MW in the {geom.vertical_core_height_cm:.3f} cm period "
-                f"({share:.4g} of the stack) used for source strength and DDD. "
-                f"Geometry slice would give {geometry_mw:.4g} MW thermal / "
-                f"{geometry_mw * eff:.4g} MW electric."
-            )
+        print(
+            f"Thermodynamics tab: shell {setup.shell_temp_c:.1f} °C, "
+            f"{setup.tpv_absorbed_w_per_cm2:.4g} W/cm² absorbed, "
+            f"{setup.tpv_density:.4g} W/cm² electric ({setup.tpv_eff_pct:.2f}%). "
+            f"This period uses {core.core_power / 1e6:.4g} MW thermal / "
+            f"{core.core_power_electric / 1e6:.4g} MW electric "
+            f"for source strength and DDD."
+        )
         return core
 
     start_program(

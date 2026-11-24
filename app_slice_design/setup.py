@@ -29,6 +29,12 @@ class AppSliceSetup(BaseModel):
     wall_margin_mm: float
     compact_spacing_mm: float
     tpv_eff_pct: float
+    # Thermodynamics-tab outputs for one transport period (every column, both
+    # faces). The run uses these and does not solve its own temperature or flux.
+    shell_temp_c: Optional[float] = None
+    period_thermal_w: Optional[float] = Field(default=None, ge=0)
+    period_electric_w: Optional[float] = Field(default=None, ge=0)
+    tpv_absorbed_w_per_cm2: float = 0.0
     stack_m: float
     columns: float
     fuel_temp_c: float = 1150.0
@@ -64,9 +70,6 @@ class AppSliceSimulationParams(BaseModel):
     # MAGIC weight-window mesh / groups for seed and refine passes.
     ww_mesh_cm: float = Field(default=40.0, gt=0)
     ww_energy_groups: int = Field(default=10, ge=1, le=200)
-    # Whole-stack thermal power [MW]. The periodic slice uses
-    # P * (period height / stack height). None → geometry/TPV slice power.
-    thermal_power_mw: Optional[float] = Field(default=None, gt=0)
 
 
 class AppSliceRunConfig(BaseModel):
