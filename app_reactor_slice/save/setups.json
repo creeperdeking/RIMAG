@@ -6,26 +6,32 @@
     "b_pct": 50,
     "w": 1.7,
     "ratio_pct": 40,
-    "tpv_density": 0.9,
-    "enrichment_pct": 9.8,
+    "enrichment_pct": 9.7,
     "packing_pct": 20,
     "hm_particle_pct": 30,
     "cylinder_diameter_mm": 10,
     "wall_margin_mm": 0.5,
     "compact_spacing_mm": 1,
-    "tpv_eff_pct": 33,
     "fuel_temp_c": 1250,
     "fuel_emissivity": 0.95,
     "disk_emissivity": 0.95,
+    "shell_emissivity": 0.95,
+    "tpv_airbridge_cell": 0,
     "stack_m": 10,
     "columns": 1,
+    "tpv_density": 0.9941282143868063,
+    "tpv_eff_pct": 34.9241677812296,
+    "tpv_absorbed_w_per_cm2": 2.846578933518303,
+    "shell_temp_c": 1174.3292420240782,
+    "period_thermal_w": 687478.1694870521,
+    "period_electric_w": 240092.2163143237,
     "reload_fraction": "1/4",
     "dims": true,
     "layers": {
       "disk": [
         {
           "name": "Void",
-          "cm": 0.2
+          "cm": 0.05
         },
         {
           "name": "Disk",
@@ -70,39 +76,15 @@
       ],
       "tpv": [
         {
-          "name": "TZM",
-          "cm": 0.02
-        },
-        {
-          "name": "Void",
-          "cm": 0.03
-        },
-        {
-          "name": "InGaAs",
-          "cm": 0.02
-        },
-        {
-          "name": "Stainless Steel",
-          "cm": 0.1
-        },
-        {
-          "name": "Light Water",
-          "cm": 0.66
-        },
-        {
-          "name": "Stainless Steel",
-          "cm": 0.1
-        },
-        {
           "name": "InGaAs",
           "cm": 0.02
         },
         {
           "name": "Void",
-          "cm": 0.03
+          "cm": 0.96
         },
         {
-          "name": "TZM",
+          "name": "InGaAs",
           "cm": 0.02
         }
       ]
@@ -115,7 +97,7 @@
       "nsm_thickness": 125,
       "conical_pitch": 15,
       "particle_type": "neutron",
-      "weight_windows": "no",
+      "weight_windows": "use",
       "survival_biasing": false,
       "dose_time": 10,
       "print_core_characteristics": true,
@@ -123,7 +105,7 @@
       "ddd_tallies_only": true,
       "ww_mesh_cm": 40,
       "ww_energy_groups": 10,
-      "thermal_power_mw": 318
+      "thermal_power_mw": null
     }
   },
   "fissiovolt-paper-ddd-check": {
@@ -133,19 +115,25 @@
     "b_pct": 50,
     "w": 1.7,
     "ratio_pct": 40,
-    "tpv_density": 0.89,
     "enrichment_pct": 9.7,
     "packing_pct": 20,
     "hm_particle_pct": 30,
     "cylinder_diameter_mm": 10,
     "wall_margin_mm": 0.5,
     "compact_spacing_mm": 1,
-    "tpv_eff_pct": 33,
     "fuel_temp_c": 1250,
     "fuel_emissivity": 0.95,
     "disk_emissivity": 0.95,
+    "shell_emissivity": 0.3,
+    "tpv_airbridge_cell": 0,
     "stack_m": 10,
     "columns": 1,
+    "tpv_density": 0.89,
+    "tpv_eff_pct": 33,
+    "tpv_absorbed_w_per_cm2": 0,
+    "shell_temp_c": 0,
+    "period_thermal_w": 0,
+    "period_electric_w": 0,
     "reload_fraction": "1/4",
     "dims": true,
     "layers": {
@@ -236,19 +224,25 @@
     "b_pct": 50,
     "w": 1.7,
     "ratio_pct": 40,
-    "tpv_density": 0.9,
     "enrichment_pct": 9.8,
     "packing_pct": 20,
     "hm_particle_pct": 30,
     "cylinder_diameter_mm": 10,
     "wall_margin_mm": 0.5,
     "compact_spacing_mm": 1,
-    "tpv_eff_pct": 33,
     "fuel_temp_c": 1250,
     "fuel_emissivity": 0.95,
     "disk_emissivity": 0.95,
+    "shell_emissivity": 0.95,
+    "tpv_airbridge_cell": 0,
     "stack_m": 10,
     "columns": 1,
+    "tpv_density": 0.8913810994770395,
+    "tpv_eff_pct": 34.98831677043301,
+    "tpv_absorbed_w_per_cm2": 2.5476535467529926,
+    "shell_temp_c": 1149.9863556306022,
+    "period_thermal_w": 615284.6057369594,
+    "period_electric_w": 215277.72842273468,
     "reload_fraction": "1/4",
     "dims": true,
     "layers": {
@@ -353,7 +347,7 @@
       "ddd_tallies_only": true,
       "ww_mesh_cm": 40,
       "ww_energy_groups": 10,
-      "thermal_power_mw": 318
+      "thermal_power_mw": null
     }
   }
 }
