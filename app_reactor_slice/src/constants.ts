@@ -40,7 +40,7 @@ export const TAB_KEYS = [
 ] as const;
 export type TabKey = (typeof TAB_KEYS)[number];
 
-/** Materials accepted as neutron shield moderator in simulation_paper.py runs. */
+/** Materials accepted as the neutron shield moderator. */
 export const NSM_MATERIALS = [
   "Graphite",
   "Beryllium Oxide",

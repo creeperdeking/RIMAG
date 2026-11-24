@@ -4,10 +4,6 @@ import openmc
 import openmc.deplete
 from typing import Any, List, Dict, Literal, Optional
 from common_lib.materials import MonitoredNuclide
-from common_lib.geometry_utils import (
-    get_geometry_bounding_box,
-)
-from common_lib.geometry_types import GeometrySettings
 from common_lib.simlib import (
     add_xe135_to_geometry,
     calculate_source_strength,
@@ -43,7 +39,6 @@ def start_program(
     geometry: openmc.Geometry,
     colors: Dict[Any, Any],
     materials_dict: Dict[str, openmc.Material],
-    geometry_settings: Optional[GeometrySettings],
     batches: float,
     weight_windows: UseWeightWindows,
     particle_type: ParticleType,
@@ -81,7 +76,6 @@ def start_program(
             material_cells,
             geometry,
             materials_dict,
-            geometry_settings,
             bounding_box=bounding_box,
         )
 
@@ -113,12 +107,9 @@ def start_program(
     if print_characteristics:
         print_core_characteristics(core_characteristics)
 
-    if bounding_box is not None:
-        lower_left_corner, upper_right_corner = bounding_box
-    else:
-        if geometry_settings is None:
-            raise ValueError("geometry_settings or bounding_box is required")
-        lower_left_corner, upper_right_corner = get_geometry_bounding_box(geometry_settings)
+    if bounding_box is None:
+        raise ValueError("bounding_box is required")
+    lower_left_corner, upper_right_corner = bounding_box
 
     if weight_windows in ("generate", "seed", "refine"):
         settings = make_sim_settings(
@@ -231,21 +222,11 @@ def start_program(
         )
 
     if run_mode == "render":
-        if render_view is not None:
-            disk_radius = float(render_view["universe_radius"])
-            universe_height = float(render_view.get("universe_height", disk_radius * 1.5))
-            origin = tuple(render_view.get("origin", (0.0, 0.0, 0.0)))
-        else:
-            if geometry_settings is None:
-                raise ValueError("geometry_settings or render_view is required for render")
-            disk_radius = geometry_settings.rotary_assembly_desc.rotary_assembly_radius
-            universe_height = geometry_settings.core_desc.core_height * 1.5
-            origin = (
-                geometry_settings.rotary_assembly_desc.assembly_core_distance,
-                0,
-                (disk_radius * 2 + 10) / 2,
-            )
-            disk_radius = disk_radius + 10
+        if render_view is None:
+            raise ValueError("render_view is required for render")
+        disk_radius = float(render_view["universe_radius"])
+        universe_height = float(render_view.get("universe_height", disk_radius * 1.5))
+        origin = tuple(render_view.get("origin", (0.0, 0.0, 0.0)))
         render_geometry(
             universe,
             universe_radius=disk_radius,

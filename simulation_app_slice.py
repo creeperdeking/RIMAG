@@ -140,7 +140,6 @@ def main(argv: list[str] | None = None) -> None:
         geometry=geom.geometry,
         colors=colors,
         materials_dict=materials_dict,
-        geometry_settings=None,
         batches=int(sim.n_batches),
         weight_windows=sim.weight_windows,
         survival_biasing=sim.survival_biasing,

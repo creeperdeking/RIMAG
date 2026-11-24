@@ -15,8 +15,6 @@ import h5py
 import math
 import re
 import sys
-from common_lib.geometry_utils import get_geometry_bounding_box
-from common_lib.geometry_types import GeometrySettings
 from common_lib.tallies import (
     create_C14_production_tally,
     create_tritium_production_tally,
@@ -946,7 +944,6 @@ def stochastic_volume_calculation(
     cells: List[openmc.Cell],
     geometry: openmc.Geometry,
     materials_dict: Dict[str, openmc.Material],
-    geometry_settings: GeometrySettings = None,
     samples: int = 10000000,
     bounding_box=None,
 ):
@@ -957,12 +954,9 @@ def stochastic_volume_calculation(
     # tilted-shell box misses thin gaps (a 0.05 cm absorber void is ~1e-5 of the box).
     pending = [cell for cell in cells if cell.volume is None]
     if pending:
-        if bounding_box is not None:
-            lower_left_corner, upper_right_corner = bounding_box
-        else:
-            lower_left_corner, upper_right_corner = get_geometry_bounding_box(
-                geometry_settings
-            )
+        if bounding_box is None:
+            raise ValueError("bounding_box is required when a cell has no volume")
+        lower_left_corner, upper_right_corner = bounding_box
         # 1e5 samples per cell is usually enough for <1 % error
         volcalc = openmc.VolumeCalculation(
             domains=pending,

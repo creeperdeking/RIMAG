@@ -2,7 +2,7 @@
 
 OpenMC 0.16.0 only applies a periodic boundary to planes. A tilted RIMAG pitch is a cone, so the web app used to fake that boundary: it stacked many copies of one pitch (`boundary_layer_*`) inside a flat periodic slab, enough copies for the cone to cross the slab out at the outer radius. At 15° that stack is about 200 shells. At 2° it is already several times one shell.
 
-The patch teaches OpenMC to translate a neutron between two coaxial z-cones. The web-app geometry then keeps a single shell. `conical_pitch = 0` still uses periodic planes. The paper geometry (`common_lib/geometry.py`, `simulation_paper.py`) is unchanged.
+The patch teaches OpenMC to translate a neutron between two coaxial z-cones. The web-app geometry then keeps a single shell. `conical_pitch = 0` still uses periodic planes. The app geometry is `app_slice_design/geometry.py`.
 
 A 2° keff on the calculator setup matched the stacked-shell result and ran about 2–3× faster. That comparison was made in the app. The checks below are the ones run while building the patch.
 

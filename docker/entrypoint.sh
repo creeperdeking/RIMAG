@@ -13,8 +13,8 @@ fi
 
 cd "$WORKDIR"
 
-# start_sim/simlib currently read simsettings.json from the current
-# working directory. Let RIMAG_THREADS override it reproducibly.
+# simlib reads simsettings.json from the current working directory.
+# Let RIMAG_THREADS override it reproducibly.
 if [ -n "${RIMAG_THREADS:-}" ]; then
     printf '{ "threads": %s }\n' "$RIMAG_THREADS" > simsettings.json
 elif [ ! -f simsettings.json ]; then
