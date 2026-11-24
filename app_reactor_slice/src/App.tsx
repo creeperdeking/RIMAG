@@ -498,7 +498,6 @@ const Explorer: React.FC = () => {
     ...normalizeSetup(setupFromState(setup, groups)),
     tpv_density: operatingPoint.powerWPerCm2,
     tpv_eff_pct: operatingPoint.efficiencyPct,
-    cell_reflectance: operatingPoint.cellReflectance ?? 0,
   });
 
   const persistNamed = async (name: string, message?: string) => {
@@ -849,7 +848,6 @@ const Explorer: React.FC = () => {
         ...setup,
         tpv_density: operatingPoint.powerWPerCm2,
         tpv_eff_pct: operatingPoint.efficiencyPct,
-        cell_reflectance: operatingPoint.cellReflectance ?? 0,
       }}
       defaultThermalPowerMw={thermalPower == null ? null : thermalPower / 1000}
     />

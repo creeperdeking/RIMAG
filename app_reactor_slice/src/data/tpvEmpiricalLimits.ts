@@ -1,11 +1,14 @@
 /**
  * Air-bridge TPV curves from Roy-Layinde et al., Joule 8, 2135 (2024).
- * The optical integrals are the deposited ddiode_simulation scripts: measured
- * FTIR absorptance times a blackbody, stored at view factor 1. The page
- * multiplies by the selected view factor and solves that script's two-diode
- * equation. Data: doi:10.7302/7qsw-je08. Generator: scripts/tpv_airbridge_model.py.
+ * The optical integrals are the deposited ddiode_simulation scripts. A black
+ * shell is the measured FTIR absorptance times a blackbody. A gray shell uses
+ * the closed-gap exchange: reflected light returns, so
+ *   A ε / (ε + A (1 − ε))
+ * replaces A. The view factor then scales that illumination, and the page
+ * solves the script's two-diode equation.
+ * Data: doi:10.7302/7qsw-je08. Generator: scripts/tpv_airbridge_model.py.
  */
-import { cellReflectanceForHeat, heatFromFuelToShell } from "../../shared/diskThermal";
+import { heatFromFuelToShell } from "../../shared/diskThermal";
 import table from "./tpvAirbridge.json";
 
 export type TpvPoint = { tempC: number; value: number };
@@ -20,13 +23,75 @@ type AirbridgeCell = {
   rs_ohm_cm2: number;
   rsh_ohm_cm2: number | null;
   script_view_factor: number;
-  jsc_A_cm2_vf1: number[];
-  qabs_W_cm2_vf1: number[];
+  energy_eV: number[];
+  absorptance: number[];
 };
 
 const TEMPS_C = table.temps_C;
 const CELLS = table.cells as AirbridgeCell[];
 const THERMAL_VOLTAGE_V = 8.617330350e-5 * table.cell_temperature_K;
+const IQE = table.iqe;
+
+/** Closed-gap weight. A black shell returns the FTIR absorptance. */
+function cavityWeight(absorptance: number, emissivity: number): number {
+  const a = Math.min(1, Math.max(0, absorptance));
+  const eps = Math.min(1, Math.max(0, emissivity));
+  if (eps >= 1) return a;
+  const denom = eps + a * (1 - eps);
+  return denom > 0 ? (a * eps) / denom : 0;
+}
+
+function photonFlux(energyEV: number, tempK: number): number {
+  const x = energyEV / (table.kB_eV_K * tempK);
+  if (x > 700) return 0;
+  const denom = table.c_cm_s ** 2 * table.h_eV_s ** 3 * Math.expm1(x);
+  return (2 * Math.PI * energyEV * energyEV) / denom;
+}
+
+const fluxByCell = new WeakMap<AirbridgeCell, Map<number, Float64Array>>();
+
+function blackbodyFlux(cell: AirbridgeCell, tempC: number): Float64Array {
+  let byTemp = fluxByCell.get(cell);
+  if (!byTemp) {
+    byTemp = new Map();
+    fluxByCell.set(cell, byTemp);
+  }
+  const cached = byTemp.get(tempC);
+  if (cached) return cached;
+  const tempK = tempC + 273.15;
+  const flux = new Float64Array(cell.energy_eV.length);
+  for (let i = 0; i < flux.length; i += 1) flux[i] = photonFlux(cell.energy_eV[i], tempK);
+  byTemp.set(tempC, flux);
+  return flux;
+}
+
+/** Current and absorbed heat at view factor 1. */
+function opticsAt(cell: AirbridgeCell, tempC: number, emissivity: number): { jsc: number; qabs: number } {
+  const energy = cell.energy_eV;
+  const absorptance = cell.absorptance;
+  const flux = blackbodyFlux(cell, tempC);
+  let photon = 0;
+  let heat = 0;
+  let prevE = energy[0];
+  let prevFlux = flux[0];
+  let prevWeight = cavityWeight(absorptance[0], emissivity);
+  let prevAbove = prevE >= cell.eg_eV;
+  for (let i = 1; i < energy.length; i += 1) {
+    const e = energy[i];
+    const nextFlux = flux[i];
+    const weight = cavityWeight(absorptance[i], emissivity);
+    const span = e - prevE;
+    heat += 0.5 * (prevFlux * prevE * prevWeight + nextFlux * e * weight) * span;
+    if (prevAbove && e >= cell.eg_eV) {
+      photon += 0.5 * (prevFlux * prevWeight + nextFlux * weight) * span;
+    }
+    prevE = e;
+    prevFlux = nextFlux;
+    prevWeight = weight;
+    prevAbove = e >= cell.eg_eV;
+  }
+  return { jsc: table.q_C * photon * IQE, qabs: table.q_C * heat };
+}
 
 export const AIRBRIDGE_CELLS = CELLS.map((cell, index) => ({
   index,
@@ -73,25 +138,43 @@ function maximumPowerDensity(jsc: number, cell: AirbridgeCell): number {
   return best;
 }
 
+type AirbridgeCurveSet = {
+  efficiency: TpvPoint[];
+  power: TpvPoint[];
+  absorbed: TpvPoint[];
+  color: string;
+  label: string;
+};
+
+const curveCache = new Map<string, AirbridgeCurveSet>();
+
 export function airbridgeCurves(
   cellIndex: number,
   viewFactor: number,
-): { efficiency: TpvPoint[]; power: TpvPoint[]; absorbed: TpvPoint[]; color: string; label: string } {
+  shellEmissivity = 1,
+): AirbridgeCurveSet {
   const cell = CELLS[Math.min(CELLS.length - 1, Math.max(0, Math.round(cellIndex)))] ?? CELLS[0];
   const vf = Math.min(1, Math.max(0.1, viewFactor));
-  const power = cell.jsc_A_cm2_vf1.map((jsc) => maximumPowerDensity(jsc * vf, cell));
-  const absorbed = cell.qabs_W_cm2_vf1.map((value) => vf * value);
+  const eps = Math.min(1, Math.max(0, shellEmissivity));
+  const cacheKey = `${cell.id}|${vf}|${eps}`;
+  const cached = curveCache.get(cacheKey);
+  if (cached) return cached;
+  const optics = TEMPS_C.map((tempC) => opticsAt(cell, tempC, eps));
+  const power = optics.map((row) => maximumPowerDensity(row.jsc * vf, cell));
+  const absorbed = optics.map((row) => vf * row.qabs);
   const efficiency = power.map((value, index) => {
     const heat = absorbed[index];
     return heat > 0 ? (100 * value) / heat : 0;
   });
-  return {
+  const curves = {
     color: cell.color,
     label: cell.label,
     efficiency: TEMPS_C.map((tempC, index) => ({ tempC, value: efficiency[index] })),
     power: TEMPS_C.map((tempC, index) => ({ tempC, value: power[index] })),
     absorbed: TEMPS_C.map((tempC, index) => ({ tempC, value: absorbed[index] })),
   };
+  curveCache.set(cacheKey, curves);
+  return curves;
 }
 
 /** Linear interpolation on a sorted table. Clamps outside the domain. */
@@ -124,9 +207,6 @@ export type AirbridgeOperatingPoint = {
   absorbedWPerCm2: number;
   /** Absorbed heat of one column over one pitch, both faces [W]. */
   heatW: number;
-  /** Null when the shell cannot emit the absorbed heat at any reflectance in [0, 1). */
-  cellReflectance: number | null;
-  cellEmissivity: number | null;
   conductionShareFuel: number;
   conductionShareDisk: number;
   /** The helium-gap heat meets the chart absorption at the shell temperature. */
@@ -135,8 +215,7 @@ export type AirbridgeOperatingPoint = {
 
 /**
  * Fuel temperature is fixed. The shell temperature is where the heat the helium
- * gaps can carry equals the heat the selected cell absorbs. Power, efficiency,
- * and the gray cell reflectance are that operating point.
+ * gaps can carry equals the heat the selected cell absorbs from the gray shell.
  */
 export function airbridgeOperatingPoint(options: {
   fuelTempC: number;
@@ -150,7 +229,7 @@ export function airbridgeOperatingPoint(options: {
   cellIndex: number;
   viewFactor: number;
 }): AirbridgeOperatingPoint {
-  const curves = airbridgeCurves(options.cellIndex, options.viewFactor);
+  const curves = airbridgeCurves(options.cellIndex, options.viewFactor, options.shellEmissivity);
   const bothFacesM2 = 2 * Math.max(0, options.tpvAreaM2);
   const at = (shellTempC: number) => ({
     power: interpolateTpvValue(curves.power, shellTempC) ?? 0,
@@ -186,12 +265,6 @@ export function airbridgeOperatingPoint(options: {
   const flow = heatFromFuelToShell({ ...options, shellTempC });
   const chart = at(shellTempC);
   const heatW = chart.absorbed * bothFacesM2 * 1e4;
-  const gray = cellReflectanceForHeat({
-    heatW,
-    shellTempK: shellTempC + 273.15,
-    shellEmissivity: options.shellEmissivity,
-    tpvAreaM2: options.tpvAreaM2,
-  });
   return {
     shellTempC,
     diskTempC: flow.diskTempC,
@@ -199,8 +272,6 @@ export function airbridgeOperatingPoint(options: {
     efficiencyPct: chart.efficiency,
     absorbedWPerCm2: chart.absorbed,
     heatW,
-    cellReflectance: gray?.reflectance ?? null,
-    cellEmissivity: gray?.emissivity ?? null,
     conductionShareFuel: flow.conductionShareFuel,
     conductionShareDisk: flow.conductionShareDisk,
     balanced,

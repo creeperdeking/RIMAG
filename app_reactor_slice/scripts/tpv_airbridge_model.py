@@ -3,8 +3,9 @@ Precompute the Roy-Layinde air-bridge cells for the chart.
 
 Each cell is the corresponding ddiode_simulation_*.m script: measured FTIR
 absorptance, a constant internal quantum efficiency, and the two-diode fit.
-The view factor is a multiplier on current and absorbed heat, so this file
-stores both at a view factor of 1. The page scales them and solves the diode.
+The page integrates each spectrum. A black shell reproduces the scripts.
+A gray shell uses the closed-gap exchange, with reflected light returned to
+the shell. The view factor stays a multiplier on that illumination.
 
 Spectra are the deposited files (doi:10.7302/7qsw-je08):
   ftir_0.74ev_narrow_exp2.txt  column 2 is reflectance
@@ -99,14 +100,27 @@ def photon_flux(energy_eV: list[float], temp_k: float) -> list[float]:
     return out
 
 
-def optics_at_view_factor_one(energy: list[float], absorptance: list[float], eg_eV: float, temp_c: float) -> tuple[float, float]:
+def cavity_weight(absorptance: float, emissivity: float) -> float:
+    """Closed-gap absorptance. A black shell returns the FTIR absorptance."""
+    if emissivity >= 1:
+        return absorptance
+    return absorptance * emissivity / (emissivity + absorptance * (1.0 - emissivity))
+
+
+def optics_at_view_factor_one(
+    energy: list[float],
+    absorptance: list[float],
+    eg_eV: float,
+    temp_c: float,
+    emissivity: float = 1,
+) -> tuple[float, float]:
     flux = photon_flux(energy, temp_c + 273.15)
-    above_e = [e for e, a in zip(energy, absorptance) if e >= eg_eV]
-    above_flux = [b * a for e, a, b in zip(energy, absorptance, flux) if e >= eg_eV]
-    incident = [b * e for b, e in zip(flux, energy)]
-    reflected = [b * e * (1.0 - a) for b, e, a in zip(flux, energy, absorptance)]
+    weight = [cavity_weight(a, emissivity) for a in absorptance]
+    above_e = [e for e, w in zip(energy, weight) if e >= eg_eV]
+    above_flux = [b * w for e, w, b in zip(energy, weight, flux) if e >= eg_eV]
+    heat = [b * e * w for b, e, w in zip(flux, energy, weight)]
     jsc = Q_C * trapz(above_e, above_flux) * IQE
-    qabs = Q_C * (trapz(energy, incident) - trapz(energy, reflected))
+    qabs = Q_C * trapz(energy, heat)
     return jsc, qabs
 
 
@@ -116,12 +130,13 @@ def main() -> None:
     cells = []
     for cell in CELLS:
         energy, absorptance = load_absorptance(spectra / cell["spectrum"], cell["column_is_reflectance"])
-        jsc = []
-        qabs = []
-        for temp_c in temps:
-            j, q = optics_at_view_factor_one(energy, absorptance, cell["eg_eV"], temp_c)
-            jsc.append(j)
-            qabs.append(q)
+        black = optics_at_view_factor_one(energy, absorptance, cell["eg_eV"], 1150)
+        gray = optics_at_view_factor_one(energy, absorptance, cell["eg_eV"], 1150, 0.2)
+        print(
+            f"{cell['id']} 1150°C black J {black[0]:.4f} q {black[1]:.4f}; "
+            f"ε=0.2 J {gray[0]:.4f} ({100 * gray[0] / black[0]:.1f}%) "
+            f"q {gray[1]:.4f} ({100 * gray[1] / black[1]:.1f}%)"
+        )
         cells.append({
             "id": cell["id"],
             "label": cell["label"],
@@ -132,15 +147,22 @@ def main() -> None:
             "rs_ohm_cm2": cell["rs_ohm_cm2"],
             "rsh_ohm_cm2": cell["rsh_ohm_cm2"],
             "script_view_factor": cell["script_view_factor"],
-            "jsc_A_cm2_vf1": jsc,
-            "qabs_W_cm2_vf1": qabs,
+            "energy_eV": energy,
+            "absorptance": absorptance,
         })
     out = {
         "temps_C": temps,
         "cell_temperature_K": TC_K,
         "iqe": IQE,
+        "c_cm_s": C_CM_S,
+        "h_eV_s": H_EV_S,
+        "kB_eV_K": KB_EV_K,
+        "q_C": Q_C,
         "cells": cells,
-        "note": "Roy-Layinde et al. air-bridge scripts. jsc and qabs are at view factor 1; both scale linearly with the view factor.",
+        "note": (
+            "Roy-Layinde et al. air-bridge spectra. The page integrates them. "
+            "A black shell matches the scripts. A gray shell uses the closed-gap exchange."
+        ),
     }
     dest = Path(__file__).resolve().parents[1] / "src" / "data" / "tpvAirbridge.json"
     dest.write_text(json.dumps(out))

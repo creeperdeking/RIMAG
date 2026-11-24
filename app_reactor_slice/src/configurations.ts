@@ -29,7 +29,10 @@ export const NUMERIC_FIELDS = {
   fuel_temp_c: [800.0, 1600.0, 10.0, 1150.0],
   fuel_emissivity: [0.05, 1.0, 0.01, 0.85],
   disk_emissivity: [0.05, 1.0, 0.01, 0.85],
-  /** Gray emissivity of the thin vacuum-insulation shell, both faces. */
+  /**
+   * Gray emissivity of the vacuum shell, both faces. The disk side uses it in the
+   * helium gap. The cell side uses it in the closed-gap spectrum.
+   */
   shell_emissivity: [0.05, 1.0, 0.01, 0.3],
   /** Air-bridge chart: 0 = 0.74 eV, 1 = 0.90 eV, 2 = 1.10 eV. */
   tpv_airbridge_cell: [0, 2, 1, 0],
@@ -116,8 +119,6 @@ export type Setup = {
   tpv_density: number;
   /** Conversion efficiency from the air-bridge chart [%]. Calculated. */
   tpv_eff_pct: number;
-  /** Gray cell reflectance that carries the chart heat. Calculated. */
-  cell_reflectance: number;
   reload_fraction: ReloadFraction;
   dims: boolean;
   layers: Record<LayerGroupId, LayerRow[]>;
@@ -219,7 +220,6 @@ export function defaultSetup(): Setup {
   }
   values.tpv_density = 0;
   values.tpv_eff_pct = 0;
-  values.cell_reflectance = 0;
   values.reload_fraction = "1/4";
   values.dims = true;
   values.layers = normalizeLayers(null);
@@ -240,13 +240,12 @@ export function normalizeSetup(data: unknown): Setup {
     if (!Number.isFinite(number)) number = def;
     values[key] = snap(number, low, high, step);
   }
-  const output = (key: "tpv_density" | "tpv_eff_pct" | "cell_reflectance") => {
+  const output = (key: "tpv_density" | "tpv_eff_pct") => {
     const number = Number(raw[key]);
     values[key] = Number.isFinite(number) ? number : 0;
   };
   output("tpv_density");
   output("tpv_eff_pct");
-  output("cell_reflectance");
   const reload = raw.reload_fraction;
   values.reload_fraction =
     typeof reload === "string" && (RELOAD_FRACTIONS as readonly string[]).includes(reload)

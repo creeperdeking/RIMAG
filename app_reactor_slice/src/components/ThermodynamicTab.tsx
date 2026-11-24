@@ -281,7 +281,10 @@ const ThermodynamicTab: React.FC<Props> = ({
   const cellIndex = setup.tpv_airbridge_cell;
   const viewFactor = setup.tpv_view_factor;
 
-  const curves = useMemo(() => airbridgeCurves(cellIndex, viewFactor), [cellIndex, viewFactor]);
+  const curves = useMemo(
+    () => airbridgeCurves(cellIndex, viewFactor, setup.shell_emissivity),
+    [cellIndex, viewFactor, setup.shell_emissivity],
+  );
   const effPoints = curves.efficiency;
   const powerPoints = curves.power;
   const egColor = curves.color;
@@ -317,9 +320,6 @@ const ThermodynamicTab: React.FC<Props> = ({
           fuel_temp_c: setup.fuel_temp_c,
           fuel_emissivity: setup.fuel_emissivity,
           disk_emissivity: setup.disk_emissivity,
-          ...(operatingPoint.cellReflectance != null
-            ? { cell_reflectance: operatingPoint.cellReflectance }
-            : {}),
           disk_thickness_cm: diskThicknessCm,
           disk_area_m2: diskAreaM2,
           fuel_thickness_cm: fuelThicknessCm,
@@ -350,8 +350,8 @@ const ThermodynamicTab: React.FC<Props> = ({
         <div className="border rounded p-3 bg-white h-100">
           <h2 className="h6 mb-3">TPV and fuel temperature</h2>
           <p className="small text-secondary mb-3">
-            Fuel temperature is fixed. Power density, efficiency, and cell reflectance are what the selected cell
-            produces when the shell sits at the temperature that carries that heat.
+            Fuel temperature is fixed. Power density and efficiency are what the selected cell produces when the
+            shell sits at the temperature that carries that heat.
           </p>
           {renderSlider("fuel_temp_c", "Fuel temperature (°C)", fixed(0))}
           {renderSlider("fuel_emissivity", "Fuel emissivity", fixed(2))}
@@ -362,22 +362,6 @@ const ThermodynamicTab: React.FC<Props> = ({
             <span className="text-secondary"> · efficiency </span>
             <strong>{operatingPoint.efficiencyPct.toFixed(1)}%</strong>
           </div>
-          <div className="small mb-2">
-            Cell reflectance{" "}
-            {operatingPoint.cellReflectance != null && operatingPoint.cellEmissivity != null ? (
-              <strong>
-                {(100 * operatingPoint.cellReflectance).toFixed(1)}%
-                <span className="text-secondary"> (ε={operatingPoint.cellEmissivity.toFixed(3)})</span>
-              </strong>
-            ) : (
-              <strong>no solution</strong>
-            )}
-          </div>
-          {operatingPoint.cellReflectance == null && (
-            <Alert variant="warning" className="py-2 px-3 small">
-              The shell cannot emit the heat this cell absorbs. Raise the shell emissivity or lower the view factor.
-            </Alert>
-          )}
 
           <div className="mt-3 pt-3 border-top">
             <h3 className="h6 mb-2">Air-bridge TPV cells (Roy-Layinde et al.)</h3>
@@ -395,9 +379,10 @@ const ThermodynamicTab: React.FC<Props> = ({
             </div>
             {renderSlider("tpv_view_factor", "View factor", fixed(2))}
             <p className="small text-secondary mb-2">
-              Each curve is that cell’s measured reflectance and its two-diode fit. The view factor scales the
-              current and the absorbed heat together. The deposited scripts use 0.35, 0.3214, and 0.27. The 0.90 and
-              1.10 files integrate at 0.88 and 1.08 eV. The mark is the vacuum-shell temperature the cells see.
+              Reflected light returns to the shell, so the shell emissivity and the measured absorptance set the
+              intensity in the gap. The view factor scales that illumination. The deposited scripts, which are the
+              black-shell case, use 0.35, 0.3214, and 0.27. The 0.90 and 1.10 files integrate at 0.88 and 1.08 eV.
+              The mark is the vacuum-shell temperature the cells see.
             </p>
             <div className="small mb-2">
               Fuel <strong>{setup.fuel_temp_c.toFixed(0)} °C</strong>
@@ -426,7 +411,7 @@ const ThermodynamicTab: React.FC<Props> = ({
               </span>
             </div>
             <TpvModelChart
-              title={`Efficiency — ${curves.label} · F ${viewFactor.toFixed(2)}`}
+              title={`Efficiency — ${curves.label} · ε ${setup.shell_emissivity.toFixed(2)} · F ${viewFactor.toFixed(2)}`}
               yLabel="η (%)"
               points={effPoints}
               color={egColor}
@@ -436,7 +421,7 @@ const ThermodynamicTab: React.FC<Props> = ({
               valueFormat={(v) => v.toFixed(0)}
             />
             <TpvModelChart
-              title={`Power density — ${curves.label} · F ${viewFactor.toFixed(2)}`}
+              title={`Power density — ${curves.label} · ε ${setup.shell_emissivity.toFixed(2)} · F ${viewFactor.toFixed(2)}`}
               yLabel="P (W/cm²)"
               points={powerPoints}
               color={egColor}
@@ -452,8 +437,9 @@ const ThermodynamicTab: React.FC<Props> = ({
             Fuel temperature is the OpenMC fuel temperature and the initial <code>FuelPlate.T</code> of Run Sim (
             {Math.round(setup.fuel_temp_c + 273.15)} K). Helium gaps are the Void
             sheets on the disk stack. Across helium,{" "}
-            <code>Q = σ Gr (T_hot⁴ − T_cold⁴) + k_He A ΔT / d</code>. From the shell to the cells the gap is vacuum,
-            so only radiation remains, with <code>ε_cell = 1 − R</code>.
+            <code>Q = σ Gr (T_hot⁴ − T_cold⁴) + k_He A ΔT / d</code>. From the shell to the cells the gap is vacuum
+            and reflected light returns, so the absorbed fraction of the blackbody is{" "}
+            <code>A ε / (ε + A (1 − ε))</code>.
           </div>
           <div className="small text-secondary mt-2">
             Graphite ρ={(GRAPHITE_DENSITY_KG_M3 / 1000).toFixed(2)} g/cm³, cₚ={GRAPHITE_CP_J_KG_K} J/(kg·K), k=
