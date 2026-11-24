@@ -47,4 +47,4 @@ RUN sed -i 's/\r$//' /usr/local/bin/rimag-entrypoint && chmod +x /usr/local/bin/
 
 ENTRYPOINT ["rimag-entrypoint"]
 
-CMD ["python", "start_sim.py", "Simulation data.ods", "7", "--run-mode", "keff"]
+CMD ["python", "simulation_app_slice.py", "app_slice_run.json"]

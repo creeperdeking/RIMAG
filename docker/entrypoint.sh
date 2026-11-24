@@ -6,8 +6,8 @@ WORKDIR="${RIMAG_WORKDIR:-/work}"
 mkdir -p "$WORKDIR"
 
 # Copy the source tree from the image into the writable run directory
-# only if the run directory does not already contain a checkout/copy.
-if [ ! -f "$WORKDIR/start_sim.py" ]; then
+# only if the run directory does not already contain the app runner.
+if [ ! -f "$WORKDIR/simulation_app_slice.py" ]; then
     cp -a /opt/rimag/. "$WORKDIR/"
 fi
 

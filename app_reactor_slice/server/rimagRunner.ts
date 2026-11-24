@@ -221,15 +221,9 @@ function copyDir(src: string, dest: string) {
 /** Keep the mounted run directory's Python packages in sync with the repo. */
 export function syncRimagSourcesIntoRunDir() {
   fs.mkdirSync(RUN_DIR, { recursive: true });
-  // entrypoint.sh copies /opt/rimag → /work only when start_sim.py is missing.
-  // Always refresh the marker so an older run directory does not keep the
-  // removed paper launcher, and a fresh run directory is not clobbered by the image.
-  const marker = path.join(RUN_DIR, "start_sim.py");
-  const markerSrc = path.join(REPO_ROOT, "start_sim.py");
-  if (!fs.existsSync(markerSrc)) {
-    throw new RimagRunnerError(`Missing ${markerSrc}`);
-  }
-  copyFileReplacing(markerSrc, marker);
+  // entrypoint.sh copies /opt/rimag → /work only when simulation_app_slice.py
+  // is missing. Copying it first keeps a fresh run directory from being
+  // replaced by the image tree.
   const pairs: Array<[string, string]> = [
     ["simulation_app_slice.py", "simulation_app_slice.py"],
     ["plot_geometry_slice.py", "plot_geometry_slice.py"],
