@@ -20,21 +20,17 @@ export const NUMERIC_FIELDS = {
   b_pct: [1.0, 100.0, 1.0, 100.0],
   w: [0.3, 3.0, 0.1, 1.0],
   ratio_pct: [10.0, 50.0, 1.0, 30.0],
-  tpv_density: [0.01, 10.0, 0.01, 0.89],
   enrichment_pct: [0.1, 20.0, 0.1, 5.0],
   packing_pct: [1.0, 30.0, 1.0, 30.0],
   hm_particle_pct: [20.0, 60.0, 1.0, 30.0],
   cylinder_diameter_mm: [2.0, 30.0, 0.1, 10.0],
   wall_margin_mm: [0.0, 5.0, 0.1, 0.5],
   compact_spacing_mm: [0.0, 10.0, 0.1, 1.0],
-  tpv_eff_pct: [1.0, 50.0, 1.0, 33.0],
   fuel_temp_c: [800.0, 1600.0, 10.0, 1150.0],
   fuel_emissivity: [0.05, 1.0, 0.01, 0.85],
   disk_emissivity: [0.05, 1.0, 0.01, 0.85],
   /** Gray emissivity of the thin vacuum-insulation shell, both faces. */
   shell_emissivity: [0.05, 1.0, 0.01, 0.3],
-  /** Broadband reflectance of the opaque TPV cells (fraction). ε_cell = 1 − R. */
-  cell_reflectance: [0.5, 0.98, 0.01, 0.88],
   /** Air-bridge chart: 0 = 0.74 eV, 1 = 0.90 eV, 2 = 1.10 eV. */
   tpv_airbridge_cell: [0, 2, 1, 0],
   /** Air-bridge chart: emitter-to-cell view factor. Scales current and absorbed heat. */
@@ -116,6 +112,12 @@ function pickBoolean(value: unknown, fallback: boolean): boolean {
 export type Setup = {
   [K in NumericKey]: number;
 } & {
+  /** Electrical power density from the air-bridge chart [W/cm²]. Calculated. */
+  tpv_density: number;
+  /** Conversion efficiency from the air-bridge chart [%]. Calculated. */
+  tpv_eff_pct: number;
+  /** Gray cell reflectance that carries the chart heat. Calculated. */
+  cell_reflectance: number;
   reload_fraction: ReloadFraction;
   dims: boolean;
   layers: Record<LayerGroupId, LayerRow[]>;
@@ -215,6 +217,9 @@ export function defaultSetup(): Setup {
   for (const [key, [, , , def]] of Object.entries(NUMERIC_FIELDS) as Array<[NumericKey, readonly [number, number, number, number]]>) {
     values[key] = def;
   }
+  values.tpv_density = 0;
+  values.tpv_eff_pct = 0;
+  values.cell_reflectance = 0;
   values.reload_fraction = "1/4";
   values.dims = true;
   values.layers = normalizeLayers(null);
@@ -233,9 +238,15 @@ export function normalizeSetup(data: unknown): Setup {
   >) {
     let number = Number(raw[key] ?? def);
     if (!Number.isFinite(number)) number = def;
-    if (key === "tpv_density" && number > high) number /= 10;
     values[key] = snap(number, low, high, step);
   }
+  const output = (key: "tpv_density" | "tpv_eff_pct" | "cell_reflectance") => {
+    const number = Number(raw[key]);
+    values[key] = Number.isFinite(number) ? number : 0;
+  };
+  output("tpv_density");
+  output("tpv_eff_pct");
+  output("cell_reflectance");
   const reload = raw.reload_fraction;
   values.reload_fraction =
     typeof reload === "string" && (RELOAD_FRACTIONS as readonly string[]).includes(reload)

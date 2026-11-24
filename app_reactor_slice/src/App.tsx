@@ -35,6 +35,7 @@ import {
   type Groups,
 } from "./layers";
 import { materialLibrary, materialLines } from "./materials";
+import { airbridgeOperatingPoint } from "./data/tpvEmpiricalLimits";
 
 const TAB_STORAGE_KEY = "reactor-slice-active-tab";
 const SETUPS_URL = "/api/setups";
@@ -381,11 +382,37 @@ const Explorer: React.FC = () => {
   // -- Power ----------------------------------------------------------------
   const columns = Math.round(setup.columns);
   const oppositeArea = layout.oppositeArea <= 1e-6 * layout.totalArea ? 0 : layout.oppositeArea;
+  const operatingPoint = useMemo(() => {
+    const gaps = diskHeliumGapsCm(groups.disk);
+    return airbridgeOperatingPoint({
+      fuelTempC: setup.fuel_temp_c,
+      fuelEmissivity: setup.fuel_emissivity,
+      diskEmissivity: setup.disk_emissivity,
+      shellEmissivity: setup.shell_emissivity,
+      fuelAreaM2: layout.fuelArea,
+      tpvAreaM2: oppositeArea,
+      fuelGapCm: gaps.fuelGapCm,
+      tpvGapCm: gaps.tpvGapCm,
+      cellIndex: setup.tpv_airbridge_cell,
+      viewFactor: setup.tpv_view_factor,
+    });
+  }, [
+    groups.disk,
+    setup.fuel_temp_c,
+    setup.fuel_emissivity,
+    setup.disk_emissivity,
+    setup.shell_emissivity,
+    setup.tpv_airbridge_cell,
+    setup.tpv_view_factor,
+    layout.fuelArea,
+    oppositeArea,
+  ]);
   // Both TPV faces count. 1 W/cm² over 1 m² is 10 kW.
-  const slicePower = 2 * setup.tpv_density * 10 * oppositeArea * columns;
+  const slicePower = 2 * operatingPoint.powerWPerCm2 * 10 * oppositeArea * columns;
   const nSlices = layerCm === null ? null : setup.stack_m / (layerCm / 100);
   const stackPower = nSlices === null ? null : slicePower * nSlices;
-  const thermalPower = stackPower === null ? null : stackPower / (setup.tpv_eff_pct / 100);
+  const sliceThermalKw = 2 * operatingPoint.absorbedWPerCm2 * 10 * oppositeArea * columns;
+  const thermalPower = nSlices === null ? null : sliceThermalKw * nSlices;
 
   // -- Fuel / materials -----------------------------------------------------
   const { specs, mixed } = useMemo(() => materialLibrary(setup.enrichment_pct), [setup.enrichment_pct]);
@@ -422,13 +449,10 @@ const Explorer: React.FC = () => {
     params.set("b_pct", setup.b_pct.toFixed(0));
     params.set("w", setup.w.toFixed(2));
     params.set("ratio_pct", setup.ratio_pct.toFixed(0));
-    params.set("tpv_density", setup.tpv_density.toFixed(2));
-    params.set("tpv_eff_pct", setup.tpv_eff_pct.toFixed(0));
     params.set("fuel_temp_c", setup.fuel_temp_c.toFixed(0));
     params.set("fuel_emissivity", setup.fuel_emissivity.toFixed(2));
     params.set("disk_emissivity", setup.disk_emissivity.toFixed(2));
     params.set("shell_emissivity", setup.shell_emissivity.toFixed(2));
-    params.set("cell_reflectance", setup.cell_reflectance.toFixed(2));
     params.set("tpv_airbridge_cell", String(setup.tpv_airbridge_cell));
     params.set("tpv_view_factor", setup.tpv_view_factor.toFixed(2));
     params.set("enrichment_pct", setup.enrichment_pct.toFixed(1));
@@ -470,7 +494,12 @@ const Explorer: React.FC = () => {
     setSetup((prev) => ({ ...prev, layers: { ...prev.layers, [id]: rows } }));
   };
 
-  const currentSetup = (): Setup => normalizeSetup(setupFromState(setup, groups));
+  const currentSetup = (): Setup => ({
+    ...normalizeSetup(setupFromState(setup, groups)),
+    tpv_density: operatingPoint.powerWPerCm2,
+    tpv_eff_pct: operatingPoint.efficiencyPct,
+    cell_reflectance: operatingPoint.cellReflectance ?? 0,
+  });
 
   const persistNamed = async (name: string, message?: string) => {
     const trimmed = name.trim();
@@ -802,6 +831,7 @@ const Explorer: React.FC = () => {
       fuelAngleRad={layout.fuelAngle}
       tpvAngleRad={layout.oppositeAngle}
       tpvAreaM2={oppositeArea}
+      operatingPoint={operatingPoint}
       renderSlider={renderSlider}
       onNumericChange={setNumber}
     />
@@ -815,7 +845,12 @@ const Explorer: React.FC = () => {
     <SimulationTab
       params={setup.simulation}
       onChange={onSimulationChange}
-      setup={setup}
+      setup={{
+        ...setup,
+        tpv_density: operatingPoint.powerWPerCm2,
+        tpv_eff_pct: operatingPoint.efficiencyPct,
+        cell_reflectance: operatingPoint.cellReflectance ?? 0,
+      }}
       defaultThermalPowerMw={thermalPower == null ? null : thermalPower / 1000}
     />
   );

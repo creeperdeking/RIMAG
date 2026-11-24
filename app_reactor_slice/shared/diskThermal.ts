@@ -240,6 +240,119 @@ function solveHotTemperatureK(
   return 0.5 * (lo + hi);
 }
 
+export type FuelToShellHeat = {
+  /** Heat of one column over one pitch, both faces [W]. */
+  heatW: number;
+  diskTempC: number;
+  diskTempK: number;
+  shellTempK: number;
+  fuelTempK: number;
+  shellEmissivity: number;
+  grFuel: number;
+  grDiskShell: number;
+  gFuelWPerK: number;
+  gDiskShellWPerK: number;
+  conductionShareFuel: number;
+  conductionShareDisk: number;
+};
+
+/**
+ * Heat that flows from a fixed fuel temperature to a chosen shell temperature.
+ * Cell reflectance does not enter: the vacuum gap is downstream of the shell.
+ * fuel —(radiation + He)— disk —(radiation + He)— shell.
+ */
+export function heatFromFuelToShell(options: {
+  fuelTempC: number;
+  shellTempC: number;
+  fuelEmissivity: number;
+  diskEmissivity: number;
+  shellEmissivity: number;
+  fuelAreaM2: number;
+  tpvAreaM2: number;
+  fuelGapCm: number;
+  tpvGapCm: number;
+}): FuelToShellHeat {
+  const fuelTempK = options.fuelTempC + 273.15;
+  const shellTempK = options.shellTempC + 273.15;
+  const shellEmissivity = Math.min(1, Math.max(0.01, options.shellEmissivity));
+  const fuelArea = Math.max(0, 2 * options.fuelAreaM2);
+  const tpvArea = Math.max(0, 2 * options.tpvAreaM2);
+  const grFuel = 2 * radiationFactorM2(options.fuelAreaM2, options.fuelEmissivity, options.diskEmissivity);
+  const grDiskShell = 2 * radiationFactorM2(options.tpvAreaM2, options.diskEmissivity, shellEmissivity);
+  const fuelGap = gapM(options.fuelGapCm);
+  const tpvGap = gapM(options.tpvGapCm);
+  const empty = {
+    heatW: 0,
+    diskTempC: options.fuelTempC,
+    diskTempK: fuelTempK,
+    shellTempK,
+    fuelTempK,
+    shellEmissivity,
+    grFuel,
+    grDiskShell,
+    gFuelWPerK: 0,
+    gDiskShellWPerK: 0,
+    conductionShareFuel: 0,
+    conductionShareDisk: 0,
+  };
+  if (!(shellTempK < fuelTempK) || !(fuelArea > 0) || !(tpvArea > 0)) return empty;
+
+  let lo = shellTempK;
+  let hi = fuelTempK;
+  for (let i = 0; i < 60; i += 1) {
+    const mid = 0.5 * (lo + hi);
+    const fromFuel = flowW(fuelTempK, mid, grFuel, fuelArea, fuelGap);
+    const toShell = flowW(mid, shellTempK, grDiskShell, tpvArea, tpvGap);
+    if (fromFuel > toShell) lo = mid;
+    else hi = mid;
+  }
+  const diskTempK = 0.5 * (lo + hi);
+  const fuelGapFlow = heatAcrossGapW(fuelTempK, diskTempK, grFuel, fuelArea, fuelGap);
+  const diskGap = heatAcrossGapW(diskTempK, shellTempK, grDiskShell, tpvArea, tpvGap);
+  const heatW = fuelGapFlow.totalW;
+  const share = (conductionW: number) => (heatW > 0 ? Math.min(1, Math.max(0, conductionW / heatW)) : 0);
+  return {
+    heatW,
+    diskTempC: diskTempK - 273.15,
+    diskTempK,
+    shellTempK,
+    fuelTempK,
+    shellEmissivity,
+    grFuel,
+    grDiskShell,
+    gFuelWPerK: fuelGapFlow.gWPerK,
+    gDiskShellWPerK: diskGap.gWPerK,
+    conductionShareFuel: share(fuelGapFlow.conductionW),
+    conductionShareDisk: share(diskGap.conductionW),
+  };
+}
+
+/**
+ * Gray cell reflectance that makes the vacuum gap carry heatW at this shell temperature.
+ * Null when no reflectance in [0, 1) can do it: the shell cannot emit that much heat.
+ */
+export function cellReflectanceForHeat(options: {
+  heatW: number;
+  shellTempK: number;
+  shellEmissivity: number;
+  tpvAreaM2: number;
+  tpvCellTempK?: number;
+}): { reflectance: number; emissivity: number } | null {
+  const heatW = options.heatW;
+  const shellTempK = options.shellTempK;
+  const cellTempK = options.tpvCellTempK ?? TPV_CELL_TEMP_K;
+  const shellEmissivity = Math.min(1, Math.max(0.01, options.shellEmissivity));
+  const oneFaceM2 = options.tpvAreaM2;
+  if (!(heatW > 0) || !(oneFaceM2 > 0) || !(shellTempK > cellTempK)) return null;
+  const delta = shellTempK ** 4 - cellTempK ** 4;
+  const exchange = (SIGMA_W_M2_K4 * 2 * oneFaceM2 * delta) / heatW;
+  const invEmissivity = exchange - 1 / shellEmissivity + 1;
+  if (!(invEmissivity >= 1)) return null;
+  const emissivity = 1 / invEmissivity;
+  if (!(emissivity > 0) || emissivity > 1) return null;
+  return { reflectance: 1 - emissivity, emissivity };
+}
+
 /**
  * Steady temperatures for one layer in helium at 1 atm.
  *

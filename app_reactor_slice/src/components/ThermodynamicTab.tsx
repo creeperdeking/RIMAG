@@ -8,15 +8,14 @@ import {
   RIMAEL_N_SECTIONS,
   TPV_CELL_TEMP_K,
   diskCircuitArcsFromAngles,
-  diskTemperatureFromLayerHeat,
   diskSectionThermal,
   graphiteLumpedThermal,
-  modelicaFuelHeatingPowerW,
 } from "../../shared/diskThermal";
 import {
   AIRBRIDGE_CELLS,
   airbridgeCurves,
   interpolateTpvValue,
+  type AirbridgeOperatingPoint,
   type TpvPoint,
 } from "../data/tpvEmpiricalLimits";
 
@@ -52,8 +51,10 @@ type Props = {
   tpvAngleRad: number;
   /** TPV (opposite) face area of one disk from Geometry (m²). */
   tpvAreaM2: number;
+  /** Shell temperature, power, efficiency, and reflectance at the fixed fuel temperature. */
+  operatingPoint: AirbridgeOperatingPoint;
   renderSlider: (key: NumericKey, label: string, format: (value: number) => string) => React.ReactNode;
-  /** Apply a numeric setup field (e.g. set η / ρ from the empirical model). */
+  /** Apply a numeric setup field (the air-bridge cell choice). */
   onNumericChange?: (key: NumericKey, value: number) => void;
 };
 
@@ -67,7 +68,6 @@ function TpvModelChart({
   points,
   color,
   emitterTempC,
-  sliderValue,
   yMin,
   yMax,
   logY,
@@ -77,9 +77,8 @@ function TpvModelChart({
   yLabel: string;
   points: TpvPoint[];
   color: string;
-  /** Steady average disk temperature used as TPV emitter (°C). */
+  /** Vacuum-shell temperature the cells see (°C). */
   emitterTempC: number;
-  sliderValue: number;
   yMin: number;
   yMax: number;
   logY?: boolean;
@@ -153,22 +152,14 @@ function TpvModelChart({
             stroke="#64748b"
             strokeDasharray="3 3"
           />
-          <circle
-            cx={xOf(emitterTempC)}
-            cy={yOf(Math.max(yMin, Math.min(yMax, sliderValue)))}
-            r={5}
-            fill="#0f172a"
-            stroke="#fff"
-            strokeWidth={1.5}
-          />
           {modelAtEmitter != null && (
             <circle
               cx={xOf(emitterTempC)}
               cy={yOf(Math.max(yMin, Math.min(yMax, modelAtEmitter)))}
               r={5}
-              fill="none"
-              stroke={color}
-              strokeWidth={2}
+              fill={color}
+              stroke="#fff"
+              strokeWidth={1.5}
             />
           )}
         </g>
@@ -280,6 +271,7 @@ const ThermodynamicTab: React.FC<Props> = ({
   fuelAngleRad,
   tpvAngleRad,
   tpvAreaM2,
+  operatingPoint,
   renderSlider,
   onNumericChange,
 }) => {
@@ -294,58 +286,9 @@ const ThermodynamicTab: React.FC<Props> = ({
   const powerPoints = curves.power;
   const egColor = curves.color;
 
-  const fuelHeatingPowerW = useMemo(
-    () => modelicaFuelHeatingPowerW(setup.tpv_density, setup.tpv_eff_pct, tpvAreaM2),
-    [setup.tpv_density, setup.tpv_eff_pct, tpvAreaM2],
-  );
-  const diskEmitter = useMemo(
-    () =>
-      diskTemperatureFromLayerHeat({
-        heatW: fuelHeatingPowerW,
-        fuelEmissivity: setup.fuel_emissivity,
-        diskEmissivity: setup.disk_emissivity,
-        shellEmissivity: setup.shell_emissivity,
-        cellReflectance: setup.cell_reflectance,
-        fuelAreaM2,
-        tpvAreaM2,
-        fuelGapCm,
-        tpvGapCm,
-      }),
-    [
-      fuelHeatingPowerW,
-      setup.fuel_emissivity,
-      setup.disk_emissivity,
-      setup.shell_emissivity,
-      setup.cell_reflectance,
-      fuelAreaM2,
-      tpvAreaM2,
-      fuelGapCm,
-      tpvGapCm,
-    ],
-  );
-  const fuelExceedsMax = diskEmitter.fuelTempC > setup.fuel_temp_c + 0.5;
-
   /** Cells see the vacuum shell, so the shell temperature is the TPV emitter. */
-  const emitterTempC = diskEmitter.shellTempC;
-
-  const modelEffAtEmitter = useMemo(
-    () => interpolateTpvValue(effPoints, emitterTempC),
-    [effPoints, emitterTempC],
-  );
-  const modelPowerAtEmitter = useMemo(
-    () => interpolateTpvValue(powerPoints, emitterTempC),
-    [powerPoints, emitterTempC],
-  );
-
-  const applyModelEfficiency = () => {
-    if (modelEffAtEmitter == null || !onNumericChange) return;
-    onNumericChange("tpv_eff_pct", Math.max(1, Math.min(50, Math.round(modelEffAtEmitter))));
-  };
-  const applyModelPower = () => {
-    if (modelPowerAtEmitter == null || !onNumericChange) return;
-    const rounded = Math.round(modelPowerAtEmitter * 100) / 100;
-    onNumericChange("tpv_density", Math.max(0.01, Math.min(10, rounded)));
-  };
+  const emitterTempC = operatingPoint.shellTempC;
+  const fuelHeatingPowerW = operatingPoint.heatW;
 
   const diskThermal = useMemo(
     () => diskSectionThermal(diskAreaM2, diskThicknessCm, RIMAEL_N_SECTIONS),
@@ -364,7 +307,7 @@ const ThermodynamicTab: React.FC<Props> = ({
     setError(null);
     try {
       if (!(fuelHeatingPowerW > 0)) {
-        setError("TPV area or efficiency is zero — cannot set Modelica fuel heating power P0.");
+        setError("TPV area is zero — cannot set Modelica fuel heating power P0.");
         return;
       }
       const response = await fetch("/api/rimael/run", {
@@ -374,7 +317,9 @@ const ThermodynamicTab: React.FC<Props> = ({
           fuel_temp_c: setup.fuel_temp_c,
           fuel_emissivity: setup.fuel_emissivity,
           disk_emissivity: setup.disk_emissivity,
-          cell_reflectance: setup.cell_reflectance,
+          ...(operatingPoint.cellReflectance != null
+            ? { cell_reflectance: operatingPoint.cellReflectance }
+            : {}),
           disk_thickness_cm: diskThicknessCm,
           disk_area_m2: diskAreaM2,
           fuel_thickness_cm: fuelThicknessCm,
@@ -405,22 +350,34 @@ const ThermodynamicTab: React.FC<Props> = ({
         <div className="border rounded p-3 bg-white h-100">
           <h2 className="h6 mb-3">TPV and fuel temperature</h2>
           <p className="small text-secondary mb-3">
-            Layer heat comes from the TPV power density and efficiency. Fuel temperature is the temperature that
-            heat requires. The slider is the maximum allowed fuel temperature.
+            Fuel temperature is fixed. Power density, efficiency, and cell reflectance are what the selected cell
+            produces when the shell sits at the temperature that carries that heat.
           </p>
-          {renderSlider("tpv_density", "TPV power density (W/cm²)", fixed(2))}
-          {renderSlider("tpv_eff_pct", "TPV efficiency", fixed(0, "%"))}
-          {renderSlider("fuel_temp_c", "Max fuel temperature (°C)", fixed(0))}
-          {fuelExceedsMax && (
-            <Alert variant="warning" className="py-2 px-3 small">
-              Calculated fuel temperature is {diskEmitter.fuelTempC.toFixed(0)} °C, above the{" "}
-              {setup.fuel_temp_c.toFixed(0)} °C maximum.
-            </Alert>
-          )}
+          {renderSlider("fuel_temp_c", "Fuel temperature (°C)", fixed(0))}
           {renderSlider("fuel_emissivity", "Fuel emissivity", fixed(2))}
           {renderSlider("disk_emissivity", "Disk emissivity", fixed(2))}
           {renderSlider("shell_emissivity", "Vacuum shell emissivity", fixed(2))}
-          {renderSlider("cell_reflectance", "Cell reflectance", (value) => `${Math.round(value * 100)}%`)}
+          <div className="small mb-2">
+            Power density <strong>{operatingPoint.powerWPerCm2.toFixed(2)} W/cm²</strong>
+            <span className="text-secondary"> · efficiency </span>
+            <strong>{operatingPoint.efficiencyPct.toFixed(1)}%</strong>
+          </div>
+          <div className="small mb-2">
+            Cell reflectance{" "}
+            {operatingPoint.cellReflectance != null && operatingPoint.cellEmissivity != null ? (
+              <strong>
+                {(100 * operatingPoint.cellReflectance).toFixed(1)}%
+                <span className="text-secondary"> (ε={operatingPoint.cellEmissivity.toFixed(3)})</span>
+              </strong>
+            ) : (
+              <strong>no solution</strong>
+            )}
+          </div>
+          {operatingPoint.cellReflectance == null && (
+            <Alert variant="warning" className="py-2 px-3 small">
+              The shell cannot emit the heat this cell absorbs. Raise the shell emissivity or lower the view factor.
+            </Alert>
+          )}
 
           <div className="mt-3 pt-3 border-top">
             <h3 className="h6 mb-2">Air-bridge TPV cells (Roy-Layinde et al.)</h3>
@@ -440,33 +397,32 @@ const ThermodynamicTab: React.FC<Props> = ({
             <p className="small text-secondary mb-2">
               Each curve is that cell’s measured reflectance and its two-diode fit. The view factor scales the
               current and the absorbed heat together. The deposited scripts use 0.35, 0.3214, and 0.27. The 0.90 and
-              1.10 files integrate at 0.88 and 1.08 eV. Emitter temperature is the vacuum-shell temperature the cells
-              see. Black = slider; ring = model at shell T.
+              1.10 files integrate at 0.88 and 1.08 eV. The mark is the vacuum-shell temperature the cells see.
             </p>
             <div className="small mb-2">
-              Fuel <strong>{diskEmitter.fuelTempC.toFixed(0)} °C</strong>
+              Fuel <strong>{setup.fuel_temp_c.toFixed(0)} °C</strong>
               <span className="text-secondary">
                 {" "}
-                is required to reject {(diskEmitter.heatW / 1000).toFixed(1)} kW. The same power crosses the disk and
-                reaches the cells. Maximum set in the menu: {setup.fuel_temp_c.toFixed(0)} °C.
+                supplies {(operatingPoint.heatW / 1000).toFixed(1)} kW. The same heat crosses the disk and is what the
+                cell absorbs.
               </span>
             </div>
             <div className="small mb-2">
-              Disk <strong>{diskEmitter.diskTempC.toFixed(0)} °C</strong>
+              Disk <strong>{operatingPoint.diskTempC.toFixed(0)} °C</strong>
               <span className="text-secondary">
                 {" "}
-                ({(diskEmitter.diskTempC - emitterTempC).toFixed(0)} °C above the shell,{" "}
-                {Math.round(100 * diskEmitter.conductionShareDisk)}% of the heat by conduction across{" "}
-                {diskEmitter.tpvGapCm.toFixed(2)} cm of helium).
+                ({(operatingPoint.diskTempC - emitterTempC).toFixed(0)} °C above the shell,{" "}
+                {Math.round(100 * operatingPoint.conductionShareDisk)}% of the heat by conduction across{" "}
+                {tpvGapCm.toFixed(2)} cm of helium).
               </span>
             </div>
             <div className="small mb-2">
               Shell <strong>{emitterTempC.toFixed(0)} °C</strong>
               <span className="text-secondary">
                 {" "}
-                radiates in vacuum onto the cells at {(TPV_CELL_TEMP_K - 273.15).toFixed(0)} °C (R=
-                {Math.round(setup.cell_reflectance * 100)}%, ε={diskEmitter.cellEmissivity.toFixed(2)}). Across the
-                fuel gap, conduction carries {Math.round(100 * diskEmitter.conductionShareFuel)}% of the heat.
+                radiates in vacuum onto the cells at {(TPV_CELL_TEMP_K - 273.15).toFixed(0)} °C. Across the{" "}
+                {fuelGapCm.toFixed(2)} cm fuel gap, conduction carries{" "}
+                {Math.round(100 * operatingPoint.conductionShareFuel)}% of the heat.
               </span>
             </div>
             <TpvModelChart
@@ -475,7 +431,6 @@ const ThermodynamicTab: React.FC<Props> = ({
               points={effPoints}
               color={egColor}
               emitterTempC={emitterTempC}
-              sliderValue={setup.tpv_eff_pct}
               yMin={0}
               yMax={50}
               valueFormat={(v) => v.toFixed(0)}
@@ -486,30 +441,15 @@ const ThermodynamicTab: React.FC<Props> = ({
               points={powerPoints}
               color={egColor}
               emitterTempC={emitterTempC}
-              sliderValue={setup.tpv_density}
               yMin={0.001}
               yMax={10}
               logY
               valueFormat={(v) => v.toFixed(2)}
             />
-            {onNumericChange && (
-              <div className="d-flex flex-wrap gap-2 mt-2">
-                {modelEffAtEmitter != null && (
-                  <Button size="sm" variant="outline-primary" onClick={applyModelEfficiency}>
-                    Set η = {modelEffAtEmitter.toFixed(0)}%
-                  </Button>
-                )}
-                {modelPowerAtEmitter != null && (
-                  <Button size="sm" variant="outline-primary" onClick={applyModelPower}>
-                    Set ρ = {modelPowerAtEmitter.toFixed(2)} W/cm²
-                  </Button>
-                )}
-              </div>
-            )}
           </div>
 
           <div className="small text-secondary mt-2">
-            Max fuel temperature is the OpenMC fuel temperature and the initial <code>FuelPlate.T</code> of Run Sim (
+            Fuel temperature is the OpenMC fuel temperature and the initial <code>FuelPlate.T</code> of Run Sim (
             {Math.round(setup.fuel_temp_c + 273.15)} K). Helium gaps are the Void
             sheets on the disk stack. Across helium,{" "}
             <code>Q = σ Gr (T_hot⁴ − T_cold⁴) + k_He A ΔT / d</code>. From the shell to the cells the gap is vacuum,
