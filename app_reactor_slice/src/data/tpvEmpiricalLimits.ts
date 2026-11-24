@@ -147,8 +147,19 @@ type AirbridgeCurveSet = {
 
 const curveCache = new Map<string, AirbridgeCurveSet>();
 
+function cellAt(cellIndex: number): AirbridgeCell {
+  return CELLS[Math.min(CELLS.length - 1, Math.max(0, Math.round(cellIndex)))] ?? CELLS[0];
+}
+
+/** Absorbed heat flux of one cell face at this shell temperature [W/cm²]. */
+export function absorbedFluxWPerCm2(cellIndex: number, shellEmissivity: number, tempC: number): number {
+  const eps = Math.min(1, Math.max(0, shellEmissivity));
+  const temp = Number.isFinite(tempC) ? tempC : 0;
+  return Math.max(0, opticsAt(cellAt(cellIndex), temp, eps).qabs);
+}
+
 export function airbridgeCurves(cellIndex: number, shellEmissivity = 1): AirbridgeCurveSet {
-  const cell = CELLS[Math.min(CELLS.length - 1, Math.max(0, Math.round(cellIndex)))] ?? CELLS[0];
+  const cell = cellAt(cellIndex);
   const eps = Math.min(1, Math.max(0, shellEmissivity));
   const cacheKey = `${cell.id}|${eps}`;
   const cached = curveCache.get(cacheKey);

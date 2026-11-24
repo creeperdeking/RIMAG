@@ -113,8 +113,25 @@ export function modelicaFuelHeatingPowerW(
   return (1000 * electricalKw) / (tpvEffPct / 100);
 }
 
-/** Matches Modelica coolWaterTemp / TPV cell sink in RIMAEL.Reactor. */
-export const TPV_CELL_TEMP_K = 333.15;
+/**
+ * Modelica per-face factor for one sector window fully on an arc.
+ * Twelve sectors rotate together. The time average of one sector's overlap
+ * fraction is the arc fraction, and each sector has two faces, so
+ * 2 · N · arcFrac · value_face = value over the whole area.
+ */
+export function perFaceFullWindow(
+  wholeArea: number,
+  arcFrac: number,
+  nSections: number = RIMAEL_N_SECTIONS,
+): number {
+  const arc = Math.min(1, Math.max(arcFrac, 1e-6));
+  const n = Math.max(1, Math.round(nSections));
+  if (!(wholeArea > 0)) return 0;
+  return wholeArea / (2 * n * arc);
+}
+
+/** TPV cell coolant temperature in the thermodynamics tab and in RIMAEL.Reactor. */
+export const TPV_CELL_TEMP_K = 298.15;
 
 /** Stefan–Boltzmann constant [W/(m²·K⁴)]. */
 export const SIGMA_W_M2_K4 = 5.670374419e-8;

@@ -23,6 +23,8 @@ type FuelTrace = {
   timeS: number[];
   fuelTempK: number[];
   fuelTempC: number[];
+  diskTempC?: number[];
+  shellTempC?: number[];
   stopTimeS: number;
   fuelTempStartC: number;
   fuelArcFrac?: number;
@@ -182,16 +184,42 @@ const fixed =
   (value: number): string =>
     `${value.toFixed(digits)}${suffix}`;
 
+function seriesPath(
+  xs: number[],
+  ys: number[],
+  xMax: number,
+  yMin: number,
+  yMax: number,
+  plotW: number,
+  plotH: number,
+  originX: number,
+  originY: number,
+): string {
+  const points = xs.map((t, i) => {
+    const yValue = ys[i];
+    if (!Number.isFinite(yValue)) return null;
+    const x = originX + (t / xMax) * plotW;
+    const y = originY + (1 - (yValue - yMin) / (yMax - yMin)) * plotH;
+    return `${x.toFixed(2)},${y.toFixed(2)}`;
+  });
+  const drawn = points.filter((point): point is string => point != null);
+  return drawn.length ? `M ${drawn.join(" L ")}` : "";
+}
+
 function FuelTempChart({ trace }: { trace: FuelTrace }) {
   const width = 640;
-  const height = 280;
-  const pad = { left: 52, right: 16, top: 16, bottom: 36 };
+  const height = 300;
+  const pad = { left: 52, right: 16, top: 28, bottom: 36 };
   const plotW = width - pad.left - pad.right;
   const plotH = height - pad.top - pad.bottom;
-
-  const { path, yMin, yMax, xMax } = useMemo(() => {
+  const { paths, yMin, yMax, xMax } = useMemo(() => {
+    const series = [
+      { name: "Fuel", color: "#c2410c", values: trace.fuelTempC },
+      { name: "Disk", color: "#0f766e", values: trace.diskTempC ?? [] },
+      { name: "Shell", color: "#1d4ed8", values: trace.shellTempC ?? [] },
+    ].filter((item) => item.values.length === trace.timeS.length && item.values.length > 0);
     const xs = trace.timeS;
-    const ys = trace.fuelTempC;
+    const ys = series.flatMap((item) => item.values);
     const xMaxLocal = Math.max(...xs, 1);
     let yMinLocal = Math.min(...ys);
     let yMaxLocal = Math.max(...ys);
@@ -202,13 +230,11 @@ function FuelTempChart({ trace }: { trace: FuelTrace }) {
     const padY = 0.05 * (yMaxLocal - yMinLocal);
     yMinLocal -= padY;
     yMaxLocal += padY;
-    const points = xs.map((t, i) => {
-      const x = pad.left + (t / xMaxLocal) * plotW;
-      const y = pad.top + (1 - (ys[i] - yMinLocal) / (yMaxLocal - yMinLocal)) * plotH;
-      return `${x.toFixed(2)},${y.toFixed(2)}`;
-    });
     return {
-      path: `M ${points.join(" L ")}`,
+      paths: series.map((item) => ({
+        ...item,
+        path: seriesPath(xs, item.values, xMaxLocal, yMinLocal, yMaxLocal, plotW, plotH, pad.left, pad.top),
+      })),
       yMin: yMinLocal,
       yMax: yMaxLocal,
       xMax: xMaxLocal,
@@ -219,8 +245,23 @@ function FuelTempChart({ trace }: { trace: FuelTrace }) {
   const xTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * xMax);
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="rimael-fuel-chart" role="img" aria-label="Fuel temperature vs time">
+    <svg viewBox={`0 0 ${width} ${height}`} className="rimael-fuel-chart" role="img" aria-label="Fuel, disk, and shell temperature vs time">
       <rect x={pad.left} y={pad.top} width={plotW} height={plotH} fill="#fafbfc" stroke="#dee2e6" />
+      {paths.map((item, index) => (
+        <g key={item.name}>
+          <line
+            x1={pad.left + index * 72}
+            x2={pad.left + index * 72 + 16}
+            y1={14}
+            y2={14}
+            stroke={item.color}
+            strokeWidth={2}
+          />
+          <text x={pad.left + index * 72 + 20} y={18} className="rimael-chart-label">
+            {item.name}
+          </text>
+        </g>
+      ))}
       {yTicks.map((value) => {
         const y = pad.top + (1 - (value - yMin) / (yMax - yMin)) * plotH;
         return (
@@ -243,7 +284,9 @@ function FuelTempChart({ trace }: { trace: FuelTrace }) {
           </g>
         );
       })}
-      <path d={path} fill="none" stroke="#c2410c" strokeWidth={2} />
+      {paths.map((item) => (
+        <path key={item.name} d={item.path} fill="none" stroke={item.color} strokeWidth={2} />
+      ))}
       <text x={width / 2} y={height - 2} textAnchor="middle" className="rimael-chart-axis">
         time (s)
       </text>
@@ -254,7 +297,7 @@ function FuelTempChart({ trace }: { trace: FuelTrace }) {
         className="rimael-chart-axis"
         transform={`rotate(-90 14 ${height / 2})`}
       >
-        FuelPlate.T (°C)
+        temperature (°C)
       </text>
     </svg>
   );
@@ -328,6 +371,11 @@ const ThermodynamicTab: React.FC<Props> = ({
           shield1_arc_frac: circuitArcs.shield1ArcFrac,
           shield2_arc_frac: circuitArcs.shield2ArcFrac,
           fuel_heating_power_w: fuelHeatingPowerW,
+          shell_emissivity: setup.shell_emissivity,
+          fuel_gap_cm: fuelGapCm,
+          tpv_gap_cm: tpvGapCm,
+          tpv_area_m2: tpvAreaM2,
+          tpv_cell_index: cellIndex,
         }),
       });
       const data = (await response.json()) as FuelTrace & { error?: string };
@@ -484,9 +532,9 @@ const ThermodynamicTab: React.FC<Props> = ({
             </Button>
           </div>
           <p className="small text-secondary mb-3">
-            Runs <code>RIMAEL.Reactor</code> via local OpenModelica, starting from the fuel temperature slider. First
-            compile can take a couple of minutes; later runs reuse the binary (~10–20 s). Plots <code>FuelPlate.T</code>{" "}
-            over 0–700 s.
+            Runs <code>RIMAEL.Reactor</code> from this operating point. Helium conduction stays on, the vacuum shell is
+            its own node, and the cells at {(TPV_CELL_TEMP_K - 273.15).toFixed(0)} °C take the air-bridge absorption.
+            Shutdown is at 240 s. The first compile can take a couple of minutes; later runs reuse the binary.
           </p>
           {error && (
             <Alert variant="danger" className="py-2 px-3 small">

@@ -508,7 +508,11 @@ function rimaelApi(): Plugin {
             shield1ArcFrac: num("shield1_arc_frac"),
             shield2ArcFrac: num("shield2_arc_frac"),
             fuelHeatingPowerW: num("fuel_heating_power_w"),
-            cellReflectance: num("cell_reflectance"),
+            shellEmissivity: num("shell_emissivity"),
+            fuelGapCm: num("fuel_gap_cm"),
+            tpvGapCm: num("tpv_gap_cm"),
+            tpvAreaM2: num("tpv_area_m2"),
+            tpvCellIndex: num("tpv_cell_index"),
           });
           res.setHeader("Content-Type", "application/json");
           res.end(JSON.stringify(trace));
