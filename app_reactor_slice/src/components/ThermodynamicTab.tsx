@@ -361,6 +361,12 @@ const ThermodynamicTab: React.FC<Props> = ({
             Power density <strong>{operatingPoint.powerWPerCm2.toFixed(2)} W/cm²</strong>
             <span className="text-secondary"> · efficiency </span>
             <strong>{operatingPoint.efficiencyPct.toFixed(1)}%</strong>
+            <span className="text-secondary"> · conduction </span>
+            <strong
+              title="Share of the fuel-to-cell path carried by helium conduction. The same heat crosses the fuel gap, the disk gap, and the vacuum gap, and the vacuum gap adds none."
+            >
+              {((100 * (operatingPoint.conductionShareFuel + operatingPoint.conductionShareDisk)) / 3).toFixed(1)}%
+            </strong>
           </div>
 
           <div className="mt-3 pt-3 border-top">
