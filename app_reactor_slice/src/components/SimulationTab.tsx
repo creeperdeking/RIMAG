@@ -80,6 +80,7 @@ type QueueModalState = {
   result?: QueueItemResult | null;
   exitCode?: number | null;
   statusLabel?: string | null;
+  startedAt?: string | null;
 };
 
 type KeffLive = {
@@ -423,6 +424,7 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup, defaultTherma
       result: full.result ?? null,
       exitCode: full.exitCode,
       statusLabel: full.status,
+      startedAt: full.startedAt,
     });
   };
 
@@ -856,6 +858,7 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup, defaultTherma
           result={queueModal.result}
           exitCode={queueModal.exitCode}
           statusLabel={queueModal.statusLabel}
+          startedAt={queueModal.startedAt}
           saving={queueModalSaving}
           error={queueModalError}
           onHide={() => {

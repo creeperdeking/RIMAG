@@ -47,6 +47,7 @@ type Props = {
   result?: QueueResult | null;
   exitCode?: number | null;
   statusLabel?: string | null;
+  startedAt?: string | null;
   saving?: boolean;
   error?: string | null;
   onHide: () => void;
@@ -122,6 +123,149 @@ const RUN_MODE_LABEL: Record<string, string> = {
   keff_emitter_gamma_source: "emitter gamma (fixed source)",
 };
 
+type WwLive = {
+  passes: number | null;
+  lastPass: string | null;
+  updatedAt: string | null;
+  spatialCoverage: number | null;
+  outerCoverage: number | null;
+  reachYCm: number | null;
+  meshRMaxCm: number | null;
+  ingaasVoxels: number | null;
+  ingaasReached: number | null;
+  ingaasReachFraction: number | null;
+  ingaasEnergyFraction: number | null;
+};
+
+function coverageBelongs(updatedAt: string | null, startedAt: string | null): boolean {
+  if (!updatedAt || !startedAt) return false;
+  const updated = Date.parse(updatedAt);
+  const started = Date.parse(startedAt);
+  if (!Number.isFinite(updated) || !Number.isFinite(started)) return false;
+  return updated >= started - 15_000;
+}
+
+function CoverageBar({
+  label,
+  fraction,
+  detail,
+  marker,
+}: {
+  label: string;
+  fraction: number;
+  detail: string;
+  marker?: number;
+}) {
+  const clamped = Math.min(1, Math.max(0, fraction));
+  const width = 280;
+  const fill = clamped * width;
+  const mark = marker != null ? Math.min(1, Math.max(0, marker)) * width : null;
+  return (
+    <div className="mb-2">
+      <div className="d-flex justify-content-between small">
+        <span>{label}</span>
+        <span className="font-monospace">{detail}</span>
+      </div>
+      <svg viewBox={`0 0 ${width} 12`} width="100%" role="img" aria-label={`${label} ${detail}`}>
+        <rect x="0" y="1" width={width} height="10" rx="2" fill="#e2e8f0" />
+        <rect x="0" y="1" width={fill} height="10" rx="2" fill={clamped >= 0.8 ? "#15803d" : "#0f766e"} />
+        {mark != null && <line x1={mark} x2={mark} y1="0" y2="12" stroke="#b45309" strokeWidth="1.5" />}
+      </svg>
+    </div>
+  );
+}
+
+function LiveWwCoverage({ startedAt }: { startedAt: string | null }) {
+  const [status, setStatus] = useState<WwLive | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let stop = false;
+    const load = async () => {
+      try {
+        const response = await fetch("/api/simulation/weight-windows");
+        if (!response.ok || stop) return;
+        const data = (await response.json()) as WwLive;
+        if (!stop) setStatus(data);
+      } catch {
+        // keep the last picture
+      } finally {
+        if (!stop) setLoaded(true);
+      }
+    };
+    void load();
+    const timer = window.setInterval(() => void load(), 10_000);
+    return () => {
+      stop = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  const ready = status != null && coverageBelongs(status.updatedAt, startedAt);
+  if (!loaded) {
+    return <p className="small text-secondary mb-0">Reading the latest weight-window coverage…</p>;
+  }
+  if (!ready || status.ingaasReachFraction == null) {
+    return (
+      <p className="small text-secondary mb-0">
+        The first pass is still running. Coverage shows here when that pass finishes.
+      </p>
+    );
+  }
+  const ingaas = status.ingaasReachFraction;
+  const reach =
+    status.reachYCm != null && status.meshRMaxCm != null && status.meshRMaxCm > 0
+      ? status.reachYCm / status.meshRMaxCm
+      : null;
+  return (
+    <div>
+      <div className="small text-secondary mb-2">
+        After pass {status.passes ?? "—"}
+        {status.updatedAt ? ` · ${status.updatedAt.replace("T", " ").replace("Z", " UTC")}` : ""}
+      </div>
+      <CoverageBar
+        label="InGaAs mesh"
+        fraction={ingaas}
+        marker={0.8}
+        detail={
+          status.ingaasReached != null && status.ingaasVoxels != null
+            ? `${status.ingaasReached}/${status.ingaasVoxels} · ${(100 * ingaas).toFixed(0)}%`
+            : `${(100 * ingaas).toFixed(0)}%`
+        }
+      />
+      <div className="small text-secondary mb-2">The mark is the 80% target.</div>
+      {status.ingaasEnergyFraction != null && (
+        <CoverageBar
+          label="Energy groups in reached cells"
+          fraction={status.ingaasEnergyFraction}
+          detail={`${(100 * status.ingaasEnergyFraction).toFixed(0)}%`}
+        />
+      )}
+      {status.spatialCoverage != null && (
+        <CoverageBar
+          label="Mesh cells with a window"
+          fraction={status.spatialCoverage}
+          detail={`${(100 * status.spatialCoverage).toFixed(0)}%`}
+        />
+      )}
+      {status.outerCoverage != null && (
+        <CoverageBar
+          label="Outer mesh"
+          fraction={status.outerCoverage}
+          detail={`${(100 * status.outerCoverage).toFixed(0)}%`}
+        />
+      )}
+      {reach != null && status.reachYCm != null && status.meshRMaxCm != null && (
+        <CoverageBar
+          label="Reach toward the rim"
+          fraction={reach}
+          detail={`${status.reachYCm.toFixed(0)} / ${status.meshRMaxCm.toFixed(0)} cm`}
+        />
+      )}
+    </div>
+  );
+}
+
 const RunQueueModal: React.FC<Props> = ({
   show,
   mode,
@@ -133,6 +277,7 @@ const RunQueueModal: React.FC<Props> = ({
   result,
   exitCode,
   statusLabel,
+  startedAt = null,
   saving = false,
   error = null,
   onHide,
@@ -175,6 +320,11 @@ const RunQueueModal: React.FC<Props> = ({
   })();
 
   const fieldDisabled = readOnly || saving;
+  const hasSavedResult =
+    result?.keff != null ||
+    result?.gammaKGy != null ||
+    result?.ingaasReachFraction != null ||
+    Boolean(result?.summary);
 
   return (
     <Modal show={show} onHide={onHide} size="lg" centered scrollable>
@@ -198,7 +348,17 @@ const RunQueueModal: React.FC<Props> = ({
             {exitCode != null ? ` · exit ${exitCode}` : ""}
           </p>
         )}
-        {mode === "view" && (
+        {mode === "view" &&
+          (draft.weight_windows === "autorefine" || draft.weight_windows === "refine") &&
+          statusLabel === "running" && (
+            <div className="border rounded p-2 mb-3 bg-light-subtle">
+              <div className="small text-uppercase text-secondary fw-semibold mb-2">Coverage</div>
+              <LiveWwCoverage startedAt={startedAt} />
+            </div>
+          )}
+        {mode === "view" &&
+          (hasSavedResult ||
+            (draft.weight_windows !== "autorefine" && draft.weight_windows !== "refine")) && (
           <div className="border rounded p-2 mb-3 bg-light-subtle">
             <div className="small text-uppercase text-secondary fw-semibold mb-1">Result</div>
             {result?.keff != null ? (
@@ -206,7 +366,7 @@ const RunQueueModal: React.FC<Props> = ({
                 keff {result.keff.toFixed(5)}
                 {result.keffUncertainty != null ? ` ± ${result.keffUncertainty.toFixed(5)}` : ""}
               </div>
-            ) : (
+            ) : draft.weight_windows === "autorefine" || draft.weight_windows === "refine" ? null : (
               <div className="small text-secondary">No keff captured for this run.</div>
             )}
             {result?.gammaKGy != null && (
