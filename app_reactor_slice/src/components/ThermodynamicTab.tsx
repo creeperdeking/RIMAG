@@ -14,8 +14,8 @@ import {
   modelicaFuelHeatingPowerW,
 } from "../../shared/diskThermal";
 import {
-  bandGapColor,
-  empiricalCurves,
+  AIRBRIDGE_CELLS,
+  airbridgeCurves,
   interpolateTpvValue,
   type TpvPoint,
 } from "../data/tpvEmpiricalLimits";
@@ -106,7 +106,7 @@ function TpvModelChart({
   const modelAtEmitter = interpolateTpvValue(points, emitterTempC);
   const opInRange = emitterTempC >= tMin && emitterTempC <= tMax;
   const yTicks = logY
-    ? [0.1, 0.2, 0.5, 1, 2, 5, 10].filter((v) => v >= yMin && v <= yMax)
+    ? [0.001, 0.01, 0.1, 1, 10].filter((v) => v >= yMin && v <= yMax)
     : Array.from({ length: 6 }, (_, i) => yMin + (i / 5) * (yMax - yMin));
 
   return (
@@ -286,28 +286,13 @@ const ThermodynamicTab: React.FC<Props> = ({
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [trace, setTrace] = useState<FuelTrace | null>(null);
-  const bandGapEv = setup.tpv_bandgap_ev;
-  const reflectancePct = setup.tpv_below_gap_r_pct;
-  const wocMv = setup.tpv_woc_mv;
-  const seriesResistance = setup.tpv_rseries_ohm_cm2;
+  const cellIndex = setup.tpv_airbridge_cell;
   const viewFactor = setup.tpv_view_factor;
-  const j02MicroAPerCm2 = setup.tpv_j02_ua_cm2;
 
-  const curves = useMemo(
-    () =>
-      empiricalCurves(
-        bandGapEv,
-        reflectancePct,
-        wocMv,
-        seriesResistance,
-        viewFactor,
-        j02MicroAPerCm2 * 1e-6,
-      ),
-    [bandGapEv, reflectancePct, wocMv, seriesResistance, viewFactor, j02MicroAPerCm2],
-  );
+  const curves = useMemo(() => airbridgeCurves(cellIndex, viewFactor), [cellIndex, viewFactor]);
   const effPoints = curves.efficiency;
   const powerPoints = curves.power;
-  const egColor = bandGapColor(bandGapEv);
+  const egColor = curves.color;
 
   const fuelHeatingPowerW = useMemo(
     () => modelicaFuelHeatingPowerW(setup.tpv_density, setup.tpv_eff_pct, tpvAreaM2),
@@ -438,20 +423,25 @@ const ThermodynamicTab: React.FC<Props> = ({
           {renderSlider("cell_reflectance", "Cell reflectance", (value) => `${Math.round(value * 100)}%`)}
 
           <div className="mt-3 pt-3 border-top">
-            <h3 className="h6 mb-2">Empirical TPV limits (Dada et al.)</h3>
-            {renderSlider("tpv_bandgap_ev", "Band gap (eV)", fixed(2))}
-            {renderSlider("tpv_below_gap_r_pct", "Below-gap reflectance", (value) => `${value.toFixed(1)}%`)}
-            {renderSlider("tpv_woc_mv", "Woc penalty (mV)", (value) => `${value.toFixed(0)} mV`)}
-            {renderSlider("tpv_rseries_ohm_cm2", "Series resistance (Ω·cm²)", fixed(3))}
+            <h3 className="h6 mb-2">Air-bridge TPV cells (Roy-Layinde et al.)</h3>
+            <div className="btn-group btn-group-sm mb-3" role="group" aria-label="Air-bridge band gap">
+              {AIRBRIDGE_CELLS.map((cell) => (
+                <Button
+                  key={cell.id}
+                  size="sm"
+                  variant={cellIndex === cell.index ? "primary" : "outline-primary"}
+                  onClick={() => onNumericChange?.("tpv_airbridge_cell", cell.index)}
+                >
+                  {cell.label}
+                </Button>
+              ))}
+            </div>
             {renderSlider("tpv_view_factor", "View factor", fixed(2))}
-            {renderSlider("tpv_j02_ua_cm2", "Second diode J02 (μA/cm²)", fixed(2))}
             <p className="small text-secondary mb-2">
-              Two-diode model. The Woc penalty sets the n = 1 diffusion diode, and J02 is the n = 2 depletion diode.
-              J02 = 0 with 0.010 Ω·cm² and a view factor of 1 is Dada et al. Fig.&nbsp;8. The 0.74 eV air-bridge cell
-              in Roy-Layinde et al. Table S4.1 is J02 = 1.97 μA/cm² and Rs = 0.030 Ω·cm², with the n = 1 diode near
-              Woc +76 mV. Below-gap reflectance changes the absorbed heat, so efficiency moves and, at a fixed view
-              factor, power density stays put. Emitter temperature is the vacuum-shell temperature the cells see.
-              Black = slider; ring = model at shell T.
+              Each curve is that cell’s measured reflectance and its two-diode fit. The view factor scales the
+              current and the absorbed heat together. The deposited scripts use 0.35, 0.3214, and 0.27. The 0.90 and
+              1.10 files integrate at 0.88 and 1.08 eV. Emitter temperature is the vacuum-shell temperature the cells
+              see. Black = slider; ring = model at shell T.
             </p>
             <div className="small mb-2">
               Fuel <strong>{diskEmitter.fuelTempC.toFixed(0)} °C</strong>
@@ -480,7 +470,7 @@ const ThermodynamicTab: React.FC<Props> = ({
               </span>
             </div>
             <TpvModelChart
-              title={`Efficiency — ${reflectancePct.toFixed(1)}% R · Woc +${wocMv.toFixed(0)} mV · Rs ${seriesResistance.toFixed(3)} · F ${viewFactor.toFixed(2)} · J02 ${j02MicroAPerCm2.toFixed(2)} · ${bandGapEv.toFixed(2)} eV`}
+              title={`Efficiency — ${curves.label} · F ${viewFactor.toFixed(2)}`}
               yLabel="η (%)"
               points={effPoints}
               color={egColor}
@@ -491,13 +481,13 @@ const ThermodynamicTab: React.FC<Props> = ({
               valueFormat={(v) => v.toFixed(0)}
             />
             <TpvModelChart
-              title={`Power density — Woc +${wocMv.toFixed(0)} mV · Rs ${seriesResistance.toFixed(3)} · F ${viewFactor.toFixed(2)} · J02 ${j02MicroAPerCm2.toFixed(2)} · ${bandGapEv.toFixed(2)} eV`}
+              title={`Power density — ${curves.label} · F ${viewFactor.toFixed(2)}`}
               yLabel="P (W/cm²)"
               points={powerPoints}
               color={egColor}
               emitterTempC={emitterTempC}
               sliderValue={setup.tpv_density}
-              yMin={0.1}
+              yMin={0.001}
               yMax={10}
               logY
               valueFormat={(v) => v.toFixed(2)}
