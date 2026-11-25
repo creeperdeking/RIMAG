@@ -39,6 +39,8 @@ export type QueueItem = {
   result?: QueueItemResult | null;
   /** Docker container created for this item, when the run was launched. */
   containerName?: string | null;
+  /** Autorefine passes that already finished. Survives a server reload. */
+  refinePassesDone?: number;
 };
 
 export type SimQueueState = {
@@ -278,6 +280,14 @@ export function getQueueItem(id: string): QueueItem | null {
 export function peekNextQueued(): QueueItem | null {
   const state = loadQueue();
   return state.items.find((entry) => entry.status === "queued") ?? null;
+}
+
+export function setRefinePassesDone(id: string, count: number): void {
+  const state = loadQueue();
+  const item = state.items.find((entry) => entry.id === id);
+  if (!item) return;
+  item.refinePassesDone = count;
+  saveQueue(state);
 }
 
 export function rememberContainer(id: string, containerName: string): void {

@@ -21,6 +21,7 @@ import {
   reconcileAfterRestart,
   rememberContainer,
   removeQueued,
+  setRefinePassesDone,
   showLiveContainer,
   reorderQueued,
   saveQueue,
@@ -38,7 +39,17 @@ const RUN_DIR = path.resolve(REPO_ROOT, "runs", "default");
 const PARAMS_FILE = "app_slice_run.json";
 /** Identifies this loaded module. A Vite reload starts a new one; stale sweeps must stop. */
 const RUNNER_EPOCH_FILE = path.join(RUN_DIR, "runner.epoch");
+const PASS_EXIT_FILE = path.join(RUN_DIR, "pass_exit.json");
 const RUNNER_EPOCH = randomUUID();
+
+type PassExitRecord = {
+  itemId: string;
+  code: number;
+  containerName: string;
+  passStartedAt: number;
+  autoRefinePass: number;
+  at: string;
+};
 const RESULTSIM_FILE = "resultsim.json";
 /** Prefix for one-off sim containers (Stop / adopt match this). */
 const CONTAINER_PREFIX = "rimag-app-sim";
@@ -111,6 +122,43 @@ function runnerEpochIsCurrent(): boolean {
 }
 
 claimRunnerEpoch();
+
+function writePassExit(code: number) {
+  if (!job.currentId) return;
+  const record: PassExitRecord = {
+    itemId: job.currentId,
+    code,
+    containerName: job.containerName,
+    passStartedAt: job.passStartedAt,
+    autoRefinePass: job.autoRefinePass,
+    at: new Date().toISOString(),
+  };
+  try {
+    fs.mkdirSync(RUN_DIR, { recursive: true });
+    fs.writeFileSync(PASS_EXIT_FILE, `${JSON.stringify(record)}\n`, "utf8");
+  } catch {
+    // The queue row is still the record of the run. Missing this file only
+    // loses the exact exit code across a reload.
+  }
+}
+
+function readPassExit(): PassExitRecord | null {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(PASS_EXIT_FILE, "utf8")) as PassExitRecord;
+    if (!parsed || typeof parsed.itemId !== "string" || typeof parsed.code !== "number") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function clearPassExit() {
+  try {
+    fs.unlinkSync(PASS_EXIT_FILE);
+  } catch {
+    // already gone
+  }
+}
 
 function runDocker(args: string[]): Promise<number> {
   return new Promise((resolve) => {
@@ -492,6 +540,7 @@ function reconcileContainers(): Promise<void> {
     job.running = true;
     job.suppressQueueAdvance = false;
     job.currentId = item.id;
+    job.autoRefinePass = item.refinePassesDone ?? 0;
     job.containerName = show;
     job.pendingContainerName = "";
     emit(
@@ -514,6 +563,51 @@ const containerSweep = setInterval(() => {
 containerSweep.unref?.();
 
 /**
+ * The running autorefine's container is gone after a server reload.
+ * Continue that same queue item. Do not send it back to "queued", which
+ * would clear its start time and launch it as a new run.
+ */
+function resumeAutoRefine(item: QueueItem) {
+  job.currentId = item.id;
+  job.autoRefinePass = item.refinePassesDone ?? 0;
+  job.running = true;
+  job.suppressQueueAdvance = false;
+  void (async () => {
+    if (!runnerEpochIsCurrent()) return;
+    const names = await listSimContainerNames();
+    if (!runnerEpochIsCurrent()) return;
+    if (names.length > 0) {
+      const show =
+        item.containerName && names.includes(item.containerName) ? item.containerName : names[0];
+      job.containerName = show;
+      job.pendingContainerName = "";
+      rememberContainer(item.id, show);
+      emit(`[runner] Reattached to ${show}. The run was still going.`);
+      followContainerLogs(show);
+      return;
+    }
+    const exitRec = readPassExit();
+    const same = exitRec != null && exitRec.itemId === item.id;
+    if (same) {
+      job.autoRefinePass = exitRec.autoRefinePass;
+      job.passStartedAt = exitRec.passStartedAt;
+      job.containerName = exitRec.containerName;
+    }
+    if (!same && !weightWindowsWrittenAfter(item.startedAt)) {
+      emit(
+        "[runner] Autorefine was interrupted by a server reload. Starting that refine again from the weight windows on disk.",
+      );
+      launchDockerJob(item.payload, item, { continueAutoRefine: true });
+      return;
+    }
+    emit(
+      "[runner] Autorefine's container ended while the server was restarting. Continuing the same run.",
+    );
+    onJobEnded(same ? exitRec.code : 0);
+  })();
+}
+
+/**
  * The Vite server keeps the run only in memory. A server restart drops that
  * state while `rimag-app-sim` keeps transporting. Follow its logs again.
  * Also resumes the disk queue when the container is gone but jobs remain.
@@ -527,6 +621,13 @@ export function adoptRunningSimulation(): Promise<void> {
     })
     .then((alive) => {
       if (alive == null || job.running) return;
+      if (!alive) {
+        const running = queueSnapshot().items.find((entry) => entry.status === "running");
+        if (running && isAutoRefinePayload(running.payload)) {
+          resumeAutoRefine(running);
+          return;
+        }
+      }
       reconcileAfterRestart(alive);
       if (alive) {
         const paramsPath = path.join(RUN_DIR, PARAMS_FILE);
@@ -541,6 +642,7 @@ export function adoptRunningSimulation(): Promise<void> {
         ensureRunningPlaceholder(payload, true);
         const runningItem = queueSnapshot().items.find((item) => item.status === "running");
         job.currentId = runningItem?.id ?? null;
+        job.autoRefinePass = runningItem?.refinePassesDone ?? 0;
         emitQueue();
         if (job.running) return;
         job.running = true;
@@ -757,6 +859,7 @@ function finishQueueItem(
 ) {
   const finishedContainer = job.containerName;
   markFinished(itemId, code, status, result);
+  clearPassExit();
   job.currentId = null;
   job.containerName = "";
   job.autoRefinePass = 0;
@@ -772,6 +875,19 @@ function finishQueueItem(
   if (advance) maybeStartNextFromQueue();
 }
 
+function weightWindowsWrittenAfter(sinceIso: string | null): boolean {
+  if (!sinceIso) return false;
+  const since = Date.parse(sinceIso);
+  if (!Number.isFinite(since)) return false;
+  try {
+    const metaPath = path.join(RUN_DIR, WW_META_FILE);
+    if (!fs.existsSync(metaPath)) return false;
+    return fs.statSync(metaPath).mtimeMs >= since;
+  } catch {
+    return false;
+  }
+}
+
 function weightWindowsWrittenDuringPass(): boolean {
   if (!job.passStartedAt) return false;
   try {
@@ -784,6 +900,9 @@ function weightWindowsWrittenDuringPass(): boolean {
 }
 
 function onJobEnded(code: number, endedGen?: number) {
+  // A Vite reload drops this module. Record the exit first so the new module
+  // can continue the same autorefine instead of starting another one.
+  writePassExit(code);
   if (!runnerEpochIsCurrent()) return;
   if (endedGen != null && endedGen !== job.launchGen) {
     emit(`[runner] Ignoring stale job end (gen ${endedGen}, current ${job.launchGen}).`);
@@ -822,6 +941,7 @@ function onJobEnded(code: number, endedGen?: number) {
 
   if (!stopped && effectiveCode === 0 && item && isAutoRefinePayload(item.payload)) {
     job.autoRefinePass += 1;
+    if (itemId) setRefinePassesDone(itemId, job.autoRefinePass);
     const ww = weightWindowsStatus();
     const frac = ww.ingaasReachFraction;
     const pctLabel = frac != null ? `${(100 * frac).toFixed(0)}%` : "unknown";
@@ -1355,3 +1475,8 @@ export function readQueueItem(id: string): QueueItem | null {
   const item = getQueueItem(id);
   return item ? backfillGamma(backfillWwCoverage(item)) : null;
 }
+
+// A reload has an empty memory. Attach to a container that is still
+// transporting, or continue an autorefine whose pass ended during the reload,
+// without waiting for the Neutronics tab to be opened.
+void adoptRunningSimulation();
