@@ -54,6 +54,10 @@ type QueueItemResult = {
   gammaKGy?: number | null;
   gammaCi95Pct?: number | null;
   gammaYears?: number | null;
+  depletionYears?: number | null;
+  depletionDays?: number | null;
+  depletionBurnup?: number | null;
+  depletionBelowOne?: boolean | null;
 };
 
 type QueueItem = {

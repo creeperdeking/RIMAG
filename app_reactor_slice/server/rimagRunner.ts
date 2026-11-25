@@ -8,6 +8,7 @@ import {
   protectedContainerNames,
   weightWindowWriteBelongsToPass,
 } from "./containerPolicy";
+import { parseDepletionLine } from "./depletionResult";
 import {
   appendQueued,
   beginRunning,
@@ -783,6 +784,18 @@ function attachStoredGamma(result: QueueItemResult, item: QueueItem | null | und
 }
 
 function resultFromLogs(): QueueItemResult {
+  const depletion = parseDepletionLine(job.lastLines.join("\n"));
+  if (depletion) {
+    return {
+      summary: depletion.summary,
+      keff: depletion.keff,
+      keffUncertainty: depletion.keffUncertainty,
+      depletionYears: depletion.years,
+      depletionDays: depletion.days,
+      depletionBurnup: depletion.burnup,
+      depletionBelowOne: depletion.belowOne,
+    };
+  }
   // Prefer OpenMC's final combined keff line; fall back to the last progress k=.
   let keff: number | null = null;
   let keffUncertainty: number | null = null;

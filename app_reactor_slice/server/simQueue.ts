@@ -25,6 +25,11 @@ export type QueueItemResult = {
   gammaKGy?: number | null;
   gammaCi95Pct?: number | null;
   gammaYears?: number | null;
+  /** Fuel lifetime at this item's slice power, until mean keff stays below 1. */
+  depletionYears?: number | null;
+  depletionDays?: number | null;
+  depletionBurnup?: number | null;
+  depletionBelowOne?: boolean | null;
 };
 
 export type QueueItem = {
@@ -86,7 +91,13 @@ export function labelFromPayload(payload: unknown): string {
       : root;
   const mode = String(simulation.run_mode ?? "keff");
   const modeLabel =
-    mode === "keff_gamma_dose" ? "InGaAs gamma dose" : mode === "slab" ? "fast slab" : mode;
+    mode === "keff_gamma_dose"
+      ? "InGaAs gamma dose"
+      : mode === "slab"
+        ? "fast slab"
+        : mode === "depletion"
+          ? "fuel depletion"
+          : mode;
   const ww = String(simulation.weight_windows ?? "no");
   const batches = simulation.n_batches;
   const pitch = simulation.conical_pitch;

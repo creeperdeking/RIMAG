@@ -9,6 +9,15 @@ from typing import List, Dict, Literal
 from tabulate import tabulate
 import json
 import scipy.constants as cst
+from common_lib.depletion_lifetime import (
+    MAX_DAYS,
+    MAX_STEPS,
+    XENON_STEPS_DAYS,
+    find_crossing,
+    format_depletion_line,
+    max_step_days,
+    next_step_days,
+)
 from common_lib.materials import MonitoredNuclide
 import numpy as np
 import h5py
@@ -1151,6 +1160,143 @@ def print_depletion_result(materials_dict, material_choice, thermal_power, fuel_
     print(tabulate(fission_products_results_table))
 
 
+# Recoverable energy per fission, eV. U233 and Pu239 matter once bred.
+FISSION_Q_EV = {"U235": 202.5e6, "U233": 200.1e6, "Pu239": 211.5e6}
+
+
+def depletion_chain_path() -> str:
+    """Chain file shipped with RIMAG, or a full ENDF/B-VII.1 chain placed beside the run."""
+    candidates = [
+        Path("chain_endfb71_pwr.xml"),
+        Path("chain_casl_thermal.xml"),
+        Path(__file__).resolve().parent / "data" / "chain_endfb71_pwr.xml",
+        Path(__file__).resolve().parent / "data" / "chain_casl_thermal.xml",
+        Path("/data/chain_endfb71_pwr.xml"),
+        Path("/data/chain_casl_thermal.xml"),
+    ]
+    for path in candidates:
+        if path.is_file():
+            return str(path)
+    raise FileNotFoundError(
+        "Fuel depletion needs a chain file. Expected common_lib/data/chain_casl_thermal.xml "
+        "or chain_endfb71_pwr.xml in the run directory."
+    )
+
+
+def _is_fuel_material(name: str, fuel_name: str) -> bool:
+    if not fuel_name or not name:
+        return False
+    if name == fuel_name:
+        return True
+    prefix = fuel_name + " "
+    suffix = name[len(prefix) :] if name.startswith(prefix) else ""
+    return suffix.isdigit()
+
+
+def mark_fuel_depletable(materials, fuel_name: str) -> int:
+    marked = 0
+    for mat in materials:
+        name = getattr(mat, "name", "") or ""
+        if _is_fuel_material(name, fuel_name):
+            mat.depletable = True
+            marked += 1
+    if marked == 0:
+        raise RuntimeError(f"No fuel material named '{fuel_name}' to deplete.")
+    return marked
+
+
+def run_depletion_until_keff_below_one(
+    thermal_power: float,
+    geometry,
+    settings,
+    materials,
+    fuel_name: str,
+    fuel_mass: float,
+) -> str:
+    """Deplete at constant power until the mean keff stays below 1.
+
+    Returns the one-line summary (time and MWd/kgHM). The caller prints it
+    again after the inventory tables so it stays at the end of the log.
+    """
+    if thermal_power <= 0.0:
+        raise SystemExit("Fuel depletion needs a positive slice thermal power.")
+    if fuel_mass <= 0.0:
+        raise SystemExit("Fuel depletion needs a positive heavy-metal mass.")
+
+    chain = depletion_chain_path()
+    mats = list(materials)
+    marked = mark_fuel_depletable(mats, fuel_name)
+    results_path = "depletion_results.h5"
+    if os.path.exists(results_path):
+        os.remove(results_path)
+
+    model = openmc.Model(geometry, mats, settings)
+    steps: List[float] = []
+
+    def make_operator(prev=None):
+        return openmc.deplete.CoupledOperator(
+            model, chain, prev_results=prev, fission_q=FISSION_Q_EV
+        )
+
+    operator = make_operator()
+    print(
+        f"Fuel depletion of {marked} material(s) named '{fuel_name}' at {thermal_power:.6g} W. "
+        f"OpenMC heavy metal {float(operator.heavy_metal):.6g} g, slice inventory {fuel_mass:.6g} kg. "
+        f"Chain {chain}."
+    )
+
+    def advance(extra: List[float]) -> None:
+        nonlocal operator
+        continuing = len(steps) > 0
+        steps.extend(extra)
+        prev = openmc.deplete.Results(results_path) if continuing else None
+        operator = make_operator(prev)
+        print(
+            f"Fuel depletion advancing {' '.join(f'{step:.6g}' for step in extra)} d "
+            f"(schedule {sum(steps):.6g} d, {len(steps)} steps)."
+        )
+        openmc.deplete.CECMIntegrator(
+            operator,
+            list(steps),
+            thermal_power,
+            timestep_units="d",
+            continue_timesteps=continuing,
+        ).integrate()
+
+    advance(list(XENON_STEPS_DAYS))
+    while len(steps) < MAX_STEPS:
+        time, keff = openmc.deplete.Results(results_path).get_keff(time_units="d")
+        latest = float(keff[-1][0])
+        elapsed = float(time[-1])
+        print(
+            f"Depletion keff {latest:.5f} +/- {float(keff[-1][1]):.5f} "
+            f"at {elapsed:.6g} d."
+        )
+        if float(keff[0][0]) < 1.0 or latest < 1.0 or elapsed >= MAX_DAYS - 1.0e-6:
+            break
+        nxt = next_step_days(latest, elapsed)
+        if nxt is None:
+            break
+        cap = max_step_days(float(operator.heavy_metal), thermal_power)
+        if cap > 0.0 and nxt > cap:
+            print(
+                f"Fuel depletion step {nxt:.4g} d exceeds the 2 MWd/kgHM guide ({cap:.4g} d)."
+            )
+        advance([nxt])
+    else:
+        print(f"Fuel depletion stopped after {len(steps)} steps.")
+
+    time, keff = openmc.deplete.Results(results_path).get_keff(time_units="d")
+    crossing = find_crossing(
+        [float(t) for t in time],
+        [float(row[0]) for row in keff],
+        [float(row[1]) for row in keff],
+        thermal_power,
+        fuel_mass,
+    )
+    return format_depletion_line(crossing)
+
+
 def run_depletion_sim(
     thermal_power: float,
     geometry,
@@ -1159,10 +1305,10 @@ def run_depletion_sim(
     sim_steps: List[float] = [],
     steps_units: str = "d",
 ):
-    fission_q = {"U235": 202.5e6}  # energy in eV # "U233": 200.1e6, "Pu239": 211.5e6
+    fission_q = FISSION_Q_EV
     model = openmc.Model(geometry, materials, settings)
     op = openmc.deplete.CoupledOperator(
-        model, "chain_endfb71_pwr.xml", fission_q=fission_q
+        model, depletion_chain_path(), fission_q=fission_q
     )
     max_step = 2 * op.heavy_metal / thermal_power * 1e3
     # Check if any timestep exceeds the maximum allowed step size

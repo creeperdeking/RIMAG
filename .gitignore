@@ -1,6 +1,7 @@
 **/*__pycache__/*
 *.h5
 *.xml
+!common_lib/data/chain_casl_thermal.xml
 *.png
 *.out
 .pytest_cache/*

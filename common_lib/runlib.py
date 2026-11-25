@@ -12,7 +12,7 @@ from common_lib.simlib import (
     print_core_characteristics,
     print_depletion_result,
     render_geometry,
-    run_depletion_sim,
+    run_depletion_until_keff_below_one,
     run_keff_sim,
     run_sim_with_tallies,
     stochastic_volume_calculation,
@@ -270,32 +270,25 @@ def start_program(
         )
 
     if run_mode == "depletion":
-        run_depletion_sim(
+        if core_characteristics is None:
+            raise SystemExit("Fuel depletion needs the slice thermal power and heavy-metal mass.")
+        # Step until the mean keff stays below 1, then print inventories.
+        # The summary is repeated last so the queue can read the crossing.
+        depletion_line = run_depletion_until_keff_below_one(
             thermal_power=core_characteristics.core_power,
             geometry=geometry,
             settings=settings,
             materials=materials_dict.values(),
-            sim_steps=[
-                0.01,
-                0.1,
-                0.89,
-                1,
-                5,
-                23,
-                60,
-                30 * 3,
-                30 * 6,
-                30 * 6,
-                30 * 6,
-                30 * 6,
-                30 * 6,
-                30 * 6,
-            ],  # [1, 3, 6, 10, 10, 10, 10, 10],
-            steps_units="d",
+            fuel_name=material_choice.fuel,
+            fuel_mass=core_characteristics.heavy_metal_mass,
         )
-        print_depletion_result(
-            materials_dict,
-            material_choice,
-            core_characteristics.core_power,
-            core_characteristics.heavy_metal_mass,
-        )
+        print(depletion_line)
+        try:
+            print_depletion_result(
+                materials_dict,
+                material_choice,
+                core_characteristics.core_power,
+                core_characteristics.heavy_metal_mass,
+            )
+        finally:
+            print(depletion_line)
