@@ -1,0 +1,69 @@
+diff --git a/src/cell.cpp b/src/cell.cpp
+--- a/src/cell.cpp
++++ b/src/cell.cpp
+@@ -1002,7 +1002,19 @@
+   const bool in_region = contains_complex(r, u, on_surface);
+   double total_distance {0.0};
+ 
+-  while (true) {
++  // A ray crosses each half-space at most four times (a torus). One extra
++  // step is the failure case: a z-cone graze, or two copies of the same
++  // surface, keeps reporting a new tiny distance and this loop never returns.
++  // That sits inside a single particle event, so the history event limit
++  // never fires and one thread spins until the generation is killed.
++  int n_halfspaces = 0;
++  for (int32_t token : expression_) {
++    if (token < OP_UNION)
++      ++n_halfspaces;
++  }
++  const int max_steps = 4 * n_halfspaces + 1;
++
++  for (int step = 0; step < max_steps; ++step) {
+     auto [distance, i_surf] =
+       distance_to_nearest_surface(r, u, on_surface, on_surface != 0);
+     if (distance == INFTY) {
+@@ -1028,6 +1040,10 @@
+     }
+     on_surface = i_surf;
+   }
++
++  // Negative distance tells distance_to_boundary to mark the particle lost
++  // instead of letting it fly on with no boundary.
++  return {-1.0, std::numeric_limits<int32_t>::max()};
+ }
+ 
+ //==============================================================================
+diff --git a/src/geometry.cpp b/src/geometry.cpp
+--- a/src/geometry.cpp
++++ b/src/geometry.cpp
+@@ -436,6 +436,16 @@
+     d_surf = surface_distance.first;
+     level_surf_cross = surface_distance.second;
+ 
++    // Region::distance_complex returns a negative distance when its walk
++    // stops without finding a boundary. End the history here. Falling
++    // through would move the particle by infinity inside a void.
++    if (d_surf < 0.0) {
++      p.mark_as_lost(fmt::format(
++        "Particle {} is lost. The boundary search in a complex cell did not finish.",
++        p.id()));
++      return info;
++    }
++
+     // Find the distance to the next lattice tile crossing.
+     if (coord.lattice() != C_NONE) {
+       auto& lat {*model::lattices[coord.lattice()]};
+diff --git a/src/particle.cpp b/src/particle.cpp
+--- a/src/particle.cpp
++++ b/src/particle.cpp
+@@ -273,6 +273,10 @@
+ {
+   // Find the distance to the nearest boundary
+   boundary() = distance_to_boundary(*this);
++  // A failed complex-cell search marks the particle lost before any move,
++  // so a void history cannot score an infinite track.
++  if (!alive())
++    return;
+ 
+   // Sample a distance to collision
+   if (type() == ParticleType::electron() ||
