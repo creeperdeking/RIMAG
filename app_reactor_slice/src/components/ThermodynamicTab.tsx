@@ -527,10 +527,10 @@ const ThermodynamicTab: React.FC<Props> = ({
 
           <div className="small text-secondary mt-2">
             Fuel temperature is the OpenMC fuel temperature and the initial <code>FuelPlate.T</code> of Run Sim (
-            {Math.round(setup.fuel_temp_c + 273.15)} K). Helium gaps are the Void
-            sheets on the disk stack. Across helium,{" "}
-            <code>Q = σ Gr (T_hot⁴ − T_cold⁴) + k_He A ΔT / d</code>. From the shell to the cells the gap is vacuum
-            and reflected light returns, so the absorbed fraction of the blackbody is{" "}
+            {Math.round(setup.fuel_temp_c + 273.15)} K). Each of the twelve disk sections meets the fuel, the shield,
+            and the shell only while its window overlaps that arc. Across the helium gap,{" "}
+            <code>Q = σ Gr (T_hot⁴ − T_cold⁴) + k_He A ΔT / d</code>. From the shell to the cells the gap is vacuum,
+            so that step is radiation only, and the absorbed fraction of the blackbody is{" "}
             <code>A ε / (ε + A (1 − ε))</code>.
           </div>
           <div className="small text-secondary mt-2">
@@ -554,9 +554,11 @@ const ThermodynamicTab: React.FC<Props> = ({
             <strong>{reflectorThicknessCm.toFixed(2)} cm</strong>, moderator{" "}
             <strong>{moderatorAreaM2.toFixed(3)} m²</strong> × <strong>{moderatorThicknessCm.toFixed(2)} cm</strong>,
             absorber <strong>{absorberAreaM2.toFixed(3)} m²</strong> ×{" "}
-            <strong>{absorberThicknessCm.toFixed(2)} cm</strong>, all graphite →{" "}
+            <strong>{absorberThicknessCm.toFixed(2)} cm</strong>, all at graphite ρ·cₚ →{" "}
             <code>Shield.C = ρ·Σ(A·t)·cₚ = {shieldThermal.heatCapacity.toFixed(0)} J/K</code> (m=
-            {shieldThermal.massKg.toFixed(1)} kg). Helium conductance uses the same gaps as the fuel and the shell.
+            {shieldThermal.massKg.toFixed(1)} kg). The disk radiates to that area with the disk emissivity, and
+            conducts across the same helium gaps as the fuel and the shell, only while a section window overlaps a
+            shield arc.
             <br />
             Circuit arcs from Geometry: fuel{" "}
             <strong>{(100 * circuitArcs.fuelArcFrac).toFixed(1)}%</strong>, TPV{" "}

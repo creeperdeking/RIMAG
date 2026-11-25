@@ -16,6 +16,7 @@ import {
   shieldHeliumPerFace,
   heatFromFuelToShell,
   perFaceFullWindow,
+  radiationFactorM2,
   type DiskCircuitArcs,
 } from "../shared/diskThermal";
 
@@ -224,6 +225,7 @@ function overrideFlags(
   gFuelGap: number;
   gDiskShell: number;
   gShield: number;
+  grShield: number;
   shieldHeatCapacity: number;
   shieldMassKg: number;
   heatCapacitySection: number;
@@ -270,13 +272,19 @@ function overrideFlags(
   if (!(shield.heatCapacity > 0)) {
     throw new RimaelRunnerError("Shield graphite heat capacity is zero — check the disk-facing reflector, moderator, and absorber.");
   }
+  const shieldArcSum = arcs.shield1ArcFrac + arcs.shield2ArcFrac;
   const gShield = shieldHeliumPerFace(
     flow.gFuelWPerK,
     flow.gDiskShellWPerK,
     fuelAreaM2,
     tpvAreaM2,
     shield.areaM2,
-    arcs.shield1ArcFrac + arcs.shield2ArcFrac,
+    shieldArcSum,
+  );
+  // Shield face is the graphite module. Both faces, same emissivity as the disk.
+  const grShield = perFaceFullWindow(
+    2 * radiationFactorM2(shield.areaM2, diskEmissivity, diskEmissivity),
+    shieldArcSum,
   );
   const diskStartK = Math.max(273.15, flow.diskTempK);
   const shellStartK = Math.max(273.15, flow.shellTempK);
@@ -298,6 +306,7 @@ function overrideFlags(
       `T_cell=${TPV_CELL_TEMP_K}`,
       `cellHeat.area_cm2=${bothFacesCm2}`,
       `Gr_fuel=${grFuel}`,
+      `Gr_shield=${grShield}`,
       `Gr_tpv=${grTpv}`,
       `G_fuel_gap=${gFuelGap}`,
       `G_disk_shell=${gDiskShell}`,
@@ -316,6 +325,7 @@ function overrideFlags(
     gFuelGap,
     gDiskShell,
     gShield,
+    grShield,
     shieldHeatCapacity: shield.heatCapacity,
     shieldMassKg: shield.massKg,
     heatCapacitySection,
@@ -698,6 +708,7 @@ export async function runRimaelFuelTemperature(
     gFuelGap,
     gDiskShell,
     gShield,
+    grShield,
     shieldHeatCapacity,
     heatCapacitySection,
     throughThicknessG,
@@ -769,7 +780,7 @@ export async function runRimaelFuelTemperature(
     grFuel,
     grTpv,
     reusedBinary,
-    message: `${reusedBinary ? "Reused binary" : "Compiled"} · P0=${p0Kw} kW · shell ${shellC} °C · fuel arc ${fuelPct}% · G_fuel=${gFuelGap.toFixed(2)} W/K · G_shell=${gDiskShell.toFixed(2)} W/K · G_shield=${gShield.toFixed(2)} W/K · Shield.C=${shieldHeatCapacity.toFixed(0)} J/K`,
+    message: `${reusedBinary ? "Reused binary" : "Compiled"} · P0=${p0Kw} kW · shell ${shellC} °C · fuel arc ${fuelPct}% · G_fuel=${gFuelGap.toFixed(2)} W/K · G_shell=${gDiskShell.toFixed(2)} W/K · G_shield=${gShield.toFixed(2)} W/K · Gr_shield=${grShield.toExponential(3)} · Shield.C=${shieldHeatCapacity.toFixed(0)} J/K`,
   };
 }
 
