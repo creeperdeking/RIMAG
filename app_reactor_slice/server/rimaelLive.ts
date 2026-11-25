@@ -18,9 +18,8 @@ export type LiveSample = {
   fuelC: number;
   shellC: number;
   shieldC: number;
-  sectionC: number[];
-  /** Section-window rotation from the model [deg]. */
-  angleDeg: number;
+  /** Temperature of the section whose window starts at 0° [°C]. */
+  section0C: number;
 };
 
 export type LiveEvent =
@@ -85,7 +84,9 @@ function writeControl(powerW: number, rps: number, scale: number, run: boolean):
 
 function parseLine(line: string): LiveSample | null {
   const parts = line.trim().split(/\s+/).map(Number);
-  if (parts.length < 19 || parts.some((value) => !Number.isFinite(value))) return null;
+  // time power rps fuel shell shield section0. Older binaries also wrote
+  // the other eleven sections and the disk angle; those are not used.
+  if (parts.length < 7 || parts.slice(0, 7).some((value) => !Number.isFinite(value))) return null;
   const toC = (kelvin: number) => kelvin - 273.15;
   return {
     timeS: parts[0],
@@ -94,8 +95,7 @@ function parseLine(line: string): LiveSample | null {
     fuelC: toC(parts[3]),
     shellC: toC(parts[4]),
     shieldC: toC(parts[5]),
-    sectionC: parts.slice(6, 18).map(toC),
-    angleDeg: parts[18],
+    section0C: toC(parts[6]),
   };
 }
 
