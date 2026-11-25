@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Form } from "react-bootstrap";
 
 const POWER_KEY = "rimael-live-power-kw";
@@ -16,11 +16,16 @@ export type LiveSample = {
   section0C: number;
 };
 
-const SLOT_COUNT = 12;
-const SLOT_DEG = 30;
+/** One degree of lab angle. Section 0 writes its temperature here as it sweeps past. */
+const HEAT_BINS = 360;
+const SECTION_COUNT = 12;
+const SECTION_DEG = 30;
+const SLICES_PER_SECTION = 6;
+const SECTION_GAP = 2.4;
+const SLICE_SPAN = (SECTION_DEG - SECTION_GAP) / SLICES_PER_SECTION;
 
 function emptySlots(): (number | null)[] {
-  return Array.from({ length: SLOT_COUNT }, () => null);
+  return Array.from({ length: HEAT_BINS }, () => null);
 }
 
 function mod360(deg: number): number {
@@ -29,17 +34,64 @@ function mod360(deg: number): number {
 }
 
 function slotIndex(deg: number): number {
-  return Math.floor(mod360(deg) / SLOT_DEG) % SLOT_COUNT;
+  return Math.floor(mod360(deg)) % HEAT_BINS;
 }
 
-/** Paint every 30° place between the two angles, going counter-clockwise. */
+/**
+ * Paint each degree section 0's leading edge crosses, going counter-clockwise.
+ * One frame never wraps the memory more than once.
+ */
 function paintTravel(slots: (number | null)[], fromDeg: number, toDeg: number, tempC: number): void {
-  const span = mod360(toDeg - fromDeg);
-  const steps = Math.max(1, Math.ceil(span / SLOT_DEG));
-  for (let i = 0; i <= steps; i += 1) {
-    const at = i === steps ? toDeg : fromDeg + (span * i) / steps;
-    slots[slotIndex(at)] = tempC;
+  let span = toDeg - fromDeg;
+  if (span < 0) span = mod360(span);
+  span = Math.min(359, span);
+  if (span < 1e-4) {
+    slots[slotIndex(fromDeg)] = tempC;
+    return;
   }
+  const steps = Math.ceil(span);
+  for (let i = 0; i <= steps; i += 1) {
+    slots[slotIndex(fromDeg + (span * i) / steps)] = tempC;
+  }
+}
+
+function slicePlacement(index: number): { local: number; span: number } {
+  const section = Math.floor(index / SLICES_PER_SECTION);
+  const within = index % SLICES_PER_SECTION;
+  return { local: section * SECTION_DEG + within * SLICE_SPAN, span: SLICE_SPAN };
+}
+
+/** Color the turning slices from the lab temperature under each one, and spin the disk. */
+function applyDiskPaint(svg: SVGSVGElement | null, angleDeg: number, slots: (number | null)[]): void {
+  if (!svg) return;
+  let lo = Infinity;
+  let hi = -Infinity;
+  let known = 0;
+  for (let i = 0; i < slots.length; i += 1) {
+    const value = slots[i];
+    if (value == null) continue;
+    known += 1;
+    if (value < lo) lo = value;
+    if (value > hi) hi = value;
+  }
+  const transform = `rotate(${(-angleDeg).toFixed(2)})`;
+  svg.querySelectorAll("[data-rotor]").forEach((node) => {
+    node.setAttribute("transform", transform);
+  });
+  svg.querySelectorAll("[data-slice]").forEach((node) => {
+    const local = Number(node.getAttribute("data-local"));
+    const span = Number(node.getAttribute("data-span")) || SLICE_SPAN;
+    const steps = Math.max(1, Math.round(span));
+    let sum = 0;
+    let count = 0;
+    for (let d = 0; d < steps; d += 1) {
+      const value = slots[slotIndex(angleDeg + local + (span * d) / steps)];
+      if (value == null) continue;
+      sum += value;
+      count += 1;
+    }
+    node.setAttribute("fill", count === 0 || known === 0 ? "#cbd5e1" : sectionColor(sum / count, lo, hi));
+  });
 }
 
 /**
@@ -145,12 +197,12 @@ function arcPath(a0: number, a1: number, r0: number, r1: number): string {
     .join(" ")} Z`;
 }
 
-function DiskView({
+const DiskView = React.memo(function DiskView({
   columns,
   innerFrac,
   angleRef,
   svgRef,
-  slotC,
+  slotsRef,
   fuelArcFrac,
   shield1ArcFrac,
   tpvArcFrac,
@@ -160,18 +212,15 @@ function DiskView({
   innerFrac: number;
   /** Live rotation, degrees. The animation writes this; render must not snap it back to 0. */
   angleRef: React.MutableRefObject<number>;
-  svgRef: React.RefObject<SVGSVGElement | null>;
-  /** Temperature last left by section 0 in each fixed 30° place. */
-  slotC: (number | null)[];
+  svgRef: React.MutableRefObject<SVGSVGElement | null>;
+  /** Temperature section 0 left at each lab degree. The animation paints the slices from this. */
+  slotsRef: React.MutableRefObject<(number | null)[]>;
   fuelArcFrac: number;
   shield1ArcFrac: number;
   tpvArcFrac: number;
   shield2ArcFrac: number;
 }) {
   const n = Math.min(3, Math.max(1, Math.round(columns) || 1));
-  const known = slotC.filter((value): value is number => value != null);
-  const lo = known.length ? Math.min(...known) : 0;
-  const hi = known.length ? Math.max(...known) : 1;
   const pitch = 2.7;
   const width = n * pitch + 0.4;
   const fuelEnd = fuelArcFrac * 360;
@@ -186,15 +235,13 @@ function DiskView({
     { a0: fuelOnTop + shield1End, a1: fuelOnTop + tpvEnd, fill: "rgba(37, 99, 235, 0.4)", name: "TPV" },
     { a0: fuelOnTop + tpvEnd, a1: fuelOnTop + shield2End, fill: "rgba(71, 85, 105, 0.4)", name: "Shield" },
   ];
-  // SVG rotate() is clockwise on screen. Our angles grow counter-clockwise (y up).
-  // Re-apply after every render so a temperature update does not snap the disk back.
-  const bindRotor = (node: SVGGElement | null) => {
-    if (!node) return;
-    node.setAttribute("transform", `rotate(${(-angleRef.current).toFixed(2)})`);
-  };
+  const sliceCount = SECTION_COUNT * SLICES_PER_SECTION;
+  useLayoutEffect(() => {
+    applyDiskPaint(svgRef.current, angleRef.current, slotsRef.current);
+  });
 
   return (
-    <svg ref={svgRef} viewBox={`${-width / 2} -1.55 ${width} 3.15`} role="img" aria-label="Disk colored by where section 0 last was, turning with the set speed">
+    <svg ref={svgRef} viewBox={`${-width / 2} -1.55 ${width} 3.15`} role="img" aria-label="Turning disk colored by the temperature section 0 last left at each place">
       {Array.from({ length: n }, (_, disk) => {
         const cx = (disk - (n - 1) / 2) * pitch;
         return (
@@ -204,22 +251,25 @@ function DiskView({
                 <path key={arc.name + arc.a0} d={arcPath(arc.a0, arc.a1, 1.08, 1.34)} fill={arc.fill} />
               ) : null,
             )}
-            {Array.from({ length: SLOT_COUNT }, (_, index) => {
-              const a0 = index * SLOT_DEG + fuelOnTop;
-              const temp = slotC[index];
-              return (
-                <path
-                  key={index}
-                  d={arcPath(a0, a0 + SLOT_DEG, innerFrac, 1)}
-                  fill={temp == null ? "#cbd5e1" : sectionColor(temp, lo, hi)}
-                  stroke="white"
-                  strokeWidth={0.012}
-                />
-              );
-            })}
-            <g data-rotor="" ref={bindRotor}>
-              {Array.from({ length: SLOT_COUNT }, (_, index) => {
-                const rad = ((fuelOnTop + index * SLOT_DEG) * Math.PI) / 180;
+            <g data-rotor="">
+              {Array.from({ length: sliceCount }, (_, index) => {
+                const { local, span } = slicePlacement(index);
+                const a0 = fuelOnTop + local;
+                return (
+                  <path
+                    key={index}
+                    data-slice=""
+                    data-local={local}
+                    data-span={span}
+                    d={arcPath(a0, a0 + span, innerFrac, 1)}
+                    fill="#cbd5e1"
+                    stroke="rgba(255,255,255,0.85)"
+                    strokeWidth={0.012}
+                  />
+                );
+              })}
+              {Array.from({ length: SECTION_COUNT }, (_, index) => {
+                const rad = ((fuelOnTop + index * SECTION_DEG) * Math.PI) / 180;
                 const cos = Math.cos(rad);
                 const sin = -Math.sin(rad);
                 return (
@@ -227,18 +277,22 @@ function DiskView({
                     key={index}
                     x1={innerFrac * cos}
                     y1={innerFrac * sin}
-                    x2={cos}
-                    y2={sin}
-                    stroke="rgba(15, 23, 42, 0.45)"
-                    strokeWidth={0.012}
+                    x2={1.04 * cos}
+                    y2={1.04 * sin}
+                    stroke="#0f172a"
+                    strokeWidth={0.03}
                   />
                 );
               })}
               <path
-                d={arcPath(fuelOnTop, fuelOnTop + SLOT_DEG, innerFrac, 1)}
+                d={arcPath(fuelOnTop, fuelOnTop + SECTION_DEG - SECTION_GAP, innerFrac, 1)}
                 fill="none"
                 stroke="#0f172a"
-                strokeWidth={0.035}
+                strokeWidth={0.055}
+              />
+              <path
+                d={arcPath(fuelOnTop + 4, fuelOnTop + SECTION_DEG - SECTION_GAP - 4, 1.01, 1.07)}
+                fill="#0f172a"
               />
             </g>
             <circle r={innerFrac * 0.72} fill="#f8fafc" stroke="#94a3b8" strokeWidth={0.02} />
@@ -247,7 +301,7 @@ function DiskView({
       })}
     </svg>
   );
-}
+});
 
 function LiveChart({ samples }: { samples: LiveSample[] }) {
   const width = 640;
@@ -339,16 +393,21 @@ const LiveReactorPanel: React.FC<Props> = ({
   const rpsRef = useRef(0);
   rpsRef.current = Number.isFinite(rpsNow) && rpsNow >= 0 ? rpsNow : 0;
 
-  const publishSlots = (next: (number | null)[]) => {
+  const slotsPosted = useRef(0);
+  const publishSlots = (next: (number | null)[], force = false) => {
     slotsRef.current = next;
-    setSlotC(next);
+    const now = performance.now();
+    if (!force && now - slotsPosted.current < 200) return;
+    slotsPosted.current = now;
+    setSlotC(next.slice());
   };
 
   const resetDisk = () => {
     angleRef.current = 0;
     paintFromRef.current = 0;
     lastTempRef.current = null;
-    publishSlots(emptySlots());
+    publishSlots(emptySlots(), true);
+    applyDiskPaint(svgRef.current, 0, slotsRef.current);
   };
 
   useEffect(() => {
@@ -367,7 +426,8 @@ const LiveReactorPanel: React.FC<Props> = ({
             paintFromRef.current = built.angle;
           }
           lastTempRef.current = data.history[data.history.length - 1].section0C;
-          publishSlots(built.slots);
+          publishSlots(built.slots, true);
+          applyDiskPaint(svgRef.current, angleRef.current, slotsRef.current);
         }
       } else if (data.type === "sample") {
         setSample(data.sample);
@@ -375,9 +435,8 @@ const LiveReactorPanel: React.FC<Props> = ({
           lastTempRef.current = data.sample.section0C;
           const index = slotIndex(angleRef.current);
           if (slotsRef.current[index] !== data.sample.section0C) {
-            const next = slotsRef.current.slice();
-            next[index] = data.sample.section0C;
-            publishSlots(next);
+            slotsRef.current[index] = data.sample.section0C;
+            publishSlots(slotsRef.current);
           }
         }
         setSamples((prev) => {
@@ -413,20 +472,16 @@ const LiveReactorPanel: React.FC<Props> = ({
       last = now;
       if (liveRef.current && rpsRef.current > 0) {
         const from = angleRef.current;
-        const to = mod360(from + 360 * rpsRef.current * scaleRef.current * dt);
-        angleRef.current = to;
+        const delta = 360 * rpsRef.current * scaleRef.current * dt;
+        angleRef.current = mod360(from + delta);
         const temp = lastTempRef.current;
-        if (temp != null && mod360(to - paintFromRef.current) >= 0.4) {
-          const next = slotsRef.current.slice();
-          paintTravel(next, paintFromRef.current, to, temp);
-          paintFromRef.current = to;
-          if (next.some((value, index) => value !== slotsRef.current[index])) publishSlots(next);
+        if (temp != null && delta > 0) {
+          paintTravel(slotsRef.current, paintFromRef.current, paintFromRef.current + delta, temp);
+          paintFromRef.current = angleRef.current;
+          publishSlots(slotsRef.current);
         }
       }
-      const transform = `rotate(${(-angleRef.current).toFixed(2)})`;
-      svgRef.current?.querySelectorAll("[data-rotor]").forEach((node) => {
-        node.setAttribute("transform", transform);
-      });
+      applyDiskPaint(svgRef.current, angleRef.current, slotsRef.current);
       frame = window.requestAnimationFrame(tick);
     };
     frame = window.requestAnimationFrame(tick);
@@ -519,10 +574,9 @@ const LiveReactorPanel: React.FC<Props> = ({
       <p className="small text-secondary mb-2">
         One OpenModelica process keeps integrating <code>RIMAEL.Reactor</code>. Several times a second it reads the
         power and disk speed you set here, and writes back the fuel, shield, shell, and section 0 temperatures.
-        The disk turns steadily in the browser from the speed above. Each fixed 30° place keeps the temperature
-        section 0 had the last time the outline passed it, and that color stays until section 0 comes around again.
-        The ring
-        outside the disk is the fixed fuel, shield, and TPV arcs.
+        The disk itself turns steadily in the browser from the speed above. As section 0 sweeps past, each place
+        keeps the temperature section 0 had at that moment, so the color follows the continuous change of that
+        temperature. The ring outside the disk is the fixed fuel, shield, and TPV arcs.
       </p>
       <div className="d-flex flex-wrap align-items-end gap-3 mb-2">
         <Form.Group controlId="live-power-kw">
@@ -582,7 +636,7 @@ const LiveReactorPanel: React.FC<Props> = ({
           ? ` · t = ${sample.timeS.toFixed(1)} s · fuel ${sample.fuelC.toFixed(1)} °C · shield ${sample.shieldC.toFixed(1)} °C · shell ${sample.shellC.toFixed(1)} °C · ${sample.rps.toFixed(3)} rev/s · ${(sample.powerW / 1000).toFixed(1)} kW`
           : ""}
         {sample ? ` · section 0 ${sample.section0C.toFixed(1)} °C` : ""}
-        {lo != null && hi != null ? ` · places ${lo.toFixed(1)}–${hi.toFixed(1)} °C` : ""}
+        {lo != null && hi != null ? ` · around the disk ${lo.toFixed(1)}–${hi.toFixed(1)} °C` : ""}
       </div>
       {error && (
         <Alert variant="danger" className="py-2 px-3 small">
@@ -594,7 +648,7 @@ const LiveReactorPanel: React.FC<Props> = ({
         innerFrac={innerFrac}
         angleRef={angleRef}
         svgRef={svgRef}
-        slotC={slotC}
+        slotsRef={slotsRef}
         fuelArcFrac={fuelArcFrac}
         shield1ArcFrac={shield1ArcFrac}
         tpvArcFrac={tpvArcFrac}
@@ -602,7 +656,7 @@ const LiveReactorPanel: React.FC<Props> = ({
       />
       <div className="d-flex gap-3 small text-secondary mb-2">
         <span>Cooler places are blue, hotter places are red. Gray has not been visited yet.</span>
-        <span>The dark outline is section 0. Outer ring: fuel, shield, TPV, shield.</span>
+        <span>The dark wedge is section 0 and turns with the disk. Outer ring: fuel, shield, TPV, shield.</span>
       </div>
       <LiveChart samples={samples} />
     </div>
