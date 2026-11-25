@@ -568,7 +568,8 @@ const ThermodynamicTab: React.FC<Props> = ({
             <code>Shield.C = ρ·Σ(A·t)·cₚ = {shieldThermal.heatCapacity.toFixed(0)} J/K</code> (m=
             {shieldThermal.massKg.toFixed(1)} kg). The disk radiates to that area with the disk emissivity, and
             conducts across the same helium gaps as the fuel and the shell, only while a section window overlaps a
-            shield arc.
+            shield arc. Heat can enter the shield from a disk section and cannot flow back, so the shield cannot
+            carry heat from one section to another.
             <br />
             Circuit arcs from Geometry: fuel{" "}
             <strong>{(100 * circuitArcs.fuelArcFrac).toFixed(1)}%</strong>, TPV{" "}
