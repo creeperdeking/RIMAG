@@ -119,11 +119,13 @@ function DiskView({
   const shield1End = fuelEnd + shield1ArcFrac * 360;
   const tpvEnd = shield1End + tpvArcFrac * 360;
   const shield2End = tpvEnd + shield2ArcFrac * 360;
+  // Model 0° is the start of the fuel arc, drawn to the right. Shift so that arc is centered at the top.
+  const fuelOnTop = 90 - fuelEnd / 2;
   const stator = [
-    { a0: 0, a1: fuelEnd, fill: "rgba(217, 119, 6, 0.55)", name: "Fuel" },
-    { a0: fuelEnd, a1: shield1End, fill: "rgba(100, 116, 139, 0.45)", name: "Shield" },
-    { a0: shield1End, a1: tpvEnd, fill: "rgba(37, 99, 235, 0.4)", name: "TPV" },
-    { a0: tpvEnd, a1: shield2End, fill: "rgba(71, 85, 105, 0.4)", name: "Shield" },
+    { a0: fuelOnTop, a1: fuelOnTop + fuelEnd, fill: "rgba(217, 119, 6, 0.55)", name: "Fuel" },
+    { a0: fuelOnTop + fuelEnd, a1: fuelOnTop + shield1End, fill: "rgba(100, 116, 139, 0.45)", name: "Shield" },
+    { a0: fuelOnTop + shield1End, a1: fuelOnTop + tpvEnd, fill: "rgba(37, 99, 235, 0.4)", name: "TPV" },
+    { a0: fuelOnTop + tpvEnd, a1: fuelOnTop + shield2End, fill: "rgba(71, 85, 105, 0.4)", name: "Shield" },
   ];
 
   return (
@@ -138,7 +140,7 @@ function DiskView({
               ) : null,
             )}
             {Array.from({ length: 12 }, (_, index) => {
-              const a0 = index * 30 + angleDeg;
+              const a0 = index * 30 + angleDeg + fuelOnTop;
               const temp = temps ? temps[index] : null;
               return (
                 <path
