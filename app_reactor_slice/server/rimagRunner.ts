@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
   containersToStop,
   protectedContainerNames,
+  trackedContainerAction,
   weightWindowWriteBelongsToPass,
 } from "./containerPolicy";
 import { parseDepletionLine } from "./depletionResult";
@@ -102,6 +103,9 @@ const job: JobState = {
 
 /** Serialize remove+spawn so `docker rm -f` cannot SIGKILL a just-started peer. */
 let launchChain: Promise<void> = Promise.resolve();
+
+/** Launch generation already handed to onJobEnded. A late log-stream close must not start a second next pass. */
+let endedLaunchGen = -1;
 
 const AUTOREFINE_TARGET = 0.8;
 const AUTOREFINE_MAX_PASSES = 25;
@@ -491,8 +495,19 @@ function followContainerLogs(name: string, launchGen = job.launchGen) {
   child.on("close", () => {
     void (async () => {
       if (!runnerEpochIsCurrent() || job.launchGen !== launchGen || !job.running) return;
+      if (job.child === child) job.child = null;
       const names = await listSimContainerNames();
-      if (names.includes(name)) return;
+      if (!runnerEpochIsCurrent() || job.launchGen !== launchGen || !job.running) return;
+      // `docker logs -f` can drop while the container is still in `docker ps`
+      // (it is exiting, or the stream blipped). Stopping here leaves the queue
+      // item running forever, so the next autorefine pass never starts.
+      if (names.includes(name)) {
+        emit(`[runner] Log stream for ${name} ended while it was still running. Following again.`);
+        await sleep(1000);
+        if (!runnerEpochIsCurrent() || job.launchGen !== launchGen || !job.running) return;
+        followContainerLogs(name, launchGen);
+        return;
+      }
       const code = logsShowFinalKeff() ? 0 : await inspectExitCode(name);
       onJobEnded(code, launchGen);
     })();
@@ -527,6 +542,36 @@ function reconcileContainers(): Promise<void> {
       if (job.currentId) rememberContainer(job.currentId, job.containerName);
     }
     if (job.running) {
+      const childAlive = job.child != null && job.child.exitCode == null && !job.child.killed;
+      const action = trackedContainerAction({
+        running: job.running,
+        containerName: job.containerName,
+        pendingContainerName: job.pendingContainerName,
+        listed: names,
+        childAlive,
+      });
+      if (action === "finish") {
+        const exitRec = readPassExit();
+        const same =
+          exitRec != null &&
+          exitRec.itemId === job.currentId &&
+          exitRec.containerName === job.containerName;
+        const code = same
+          ? exitRec.code
+          : logsShowFinalKeff()
+            ? 0
+            : await inspectExitCode(job.containerName);
+        if (!runnerEpochIsCurrent() || !job.running) return;
+        emit(`[runner] ${job.containerName} has exited. Continuing from that result.`);
+        onJobEnded(code);
+        return;
+      }
+      if (action === "refollow") {
+        emit(
+          `[runner] ${job.containerName} is still running but its log stream stopped. Following again.`,
+        );
+        followContainerLogs(job.containerName);
+      }
       const protect = keepNames();
       if (protect.length === 0 && names.length > 0) {
         job.containerName = names[0];
@@ -943,10 +988,14 @@ function onJobEnded(code: number, endedGen?: number) {
   // can continue the same autorefine instead of starting another one.
   writePassExit(code);
   if (!runnerEpochIsCurrent()) return;
+  const gen = endedGen ?? job.launchGen;
+  if (gen === endedLaunchGen) return;
   if (endedGen != null && endedGen !== job.launchGen) {
     emit(`[runner] Ignoring stale job end (gen ${endedGen}, current ${job.launchGen}).`);
     return;
   }
+  if (!job.running) return;
+  endedLaunchGen = gen;
   if (job.child && !job.child.killed) {
     try {
       job.child.kill();
