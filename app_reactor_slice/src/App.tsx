@@ -854,6 +854,8 @@ const Explorer: React.FC = () => {
       fuelGapCm={heliumGaps.fuelGapCm}
       tpvGapCm={heliumGaps.tpvGapCm}
       diskAreaM2={layout.totalArea}
+      diskInnerRadiusM={layout.rInner}
+      diskOuterRadiusM={layout.rOuter}
       fuelThicknessCm={fuelThicknessCm}
       fuelAreaM2={layout.fuelArea}
       fuelAngleRad={layout.fuelAngle}

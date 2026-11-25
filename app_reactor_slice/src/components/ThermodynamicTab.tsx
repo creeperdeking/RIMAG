@@ -8,6 +8,7 @@ import {
   RIMAEL_N_SECTIONS,
   TPV_CELL_TEMP_K,
   diskCircuitArcsFromAngles,
+  diskRotationalKineticEnergy,
   diskSectionThermal,
   graphiteLumpedThermal,
   shieldGraphiteThermal,
@@ -48,6 +49,9 @@ type Props = {
   tpvGapCm: number;
   /** One-disk annulus face area from Geometry (m²). */
   diskAreaM2: number;
+  /** Annulus radii of that disk (m). */
+  diskInnerRadiusM: number;
+  diskOuterRadiusM: number;
   /** Solid fuel-stack thickness from Layer designer (cm, excludes Void). */
   fuelThicknessCm: number;
   /** Fuel-sector face area from Geometry (m²). */
@@ -220,6 +224,13 @@ function seriesPath(
   return drawn.length ? `M ${drawn.join(" L ")}` : "";
 }
 
+function formatKineticEnergy(joules: number): string {
+  if (!(joules >= 0) || !Number.isFinite(joules)) return "—";
+  if (joules >= 1e6) return `${(joules / 1e6).toFixed(2)} MJ`;
+  if (joules >= 1000) return `${(joules / 1000).toFixed(2)} kJ`;
+  return `${joules.toFixed(0)} J`;
+}
+
 function sectionSeries(trace: FuelTrace, sectionIndex: number): number[] {
   const fromAll = trace.sectionTempsC?.[sectionIndex];
   if (fromAll && fromAll.length > 0) return fromAll;
@@ -330,6 +341,8 @@ const ThermodynamicTab: React.FC<Props> = ({
   fuelGapCm,
   tpvGapCm,
   diskAreaM2,
+  diskInnerRadiusM,
+  diskOuterRadiusM,
   fuelThicknessCm,
   fuelAreaM2,
   fuelAngleRad,
@@ -351,6 +364,16 @@ const ThermodynamicTab: React.FC<Props> = ({
   const [sectionIndex, setSectionIndex] = useState(0);
   const [runTimeMin, setRunTimeMin] = useState("11.67");
   const [diskRps, setDiskRps] = useState("0.2");
+  const diskSpin = useMemo(() => {
+    const revPerS = Number(diskRps);
+    if (!Number.isFinite(revPerS) || revPerS < 0) return null;
+    return diskRotationalKineticEnergy({
+      innerRadiusM: diskInnerRadiusM,
+      outerRadiusM: diskOuterRadiusM,
+      thicknessCm: diskThicknessCm,
+      revPerS,
+    });
+  }, [diskRps, diskInnerRadiusM, diskOuterRadiusM, diskThicknessCm]);
   const cellIndex = setup.tpv_airbridge_cell;
 
   const curves = useMemo(
@@ -652,6 +675,12 @@ const ThermodynamicTab: React.FC<Props> = ({
                 style={{ width: "6.5rem" }}
               />
             </Form.Group>
+            <div className="small text-secondary pb-1">
+              One disk,{" "}
+              <strong>{diskSpin ? diskSpin.massKg.toFixed(0) : "—"} kg</strong>
+              {" · kinetic energy "}
+              <strong>{diskSpin ? formatKineticEnergy(diskSpin.energyJ) : "—"}</strong>
+            </div>
           </div>
           <p className="small text-secondary mb-3">
             Runs <code>RIMAEL.Reactor</code> from this operating point. Helium conduction stays on, including on the

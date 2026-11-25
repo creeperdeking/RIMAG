@@ -93,6 +93,25 @@ export function graphiteLumpedThermal(areaM2: number, thicknessCm: number): Grap
  * and through-thickness conductance of that sector:
  * G = k · (A/N) / t
  */
+/**
+ * Rotational kinetic energy of one solid graphite annulus about its axis.
+ * I = ½ M (r_i² + r_o²), E = ½ I ω², ω = 2π × rev/s. Voids are not in the mass.
+ */
+export function diskRotationalKineticEnergy(options: {
+  innerRadiusM: number;
+  outerRadiusM: number;
+  thicknessCm: number;
+  revPerS: number;
+}): { massKg: number; inertiaKgM2: number; energyJ: number } {
+  const inner = Math.max(0, options.innerRadiusM);
+  const outer = Math.max(inner, options.outerRadiusM);
+  const thicknessM = Math.max(0, options.thicknessCm) / 100;
+  const massKg = GRAPHITE_DENSITY_KG_M3 * Math.PI * (outer * outer - inner * inner) * thicknessM;
+  const inertiaKgM2 = 0.5 * massKg * (inner * inner + outer * outer);
+  const omega = 2 * Math.PI * Math.max(0, options.revPerS);
+  return { massKg, inertiaKgM2, energyJ: 0.5 * inertiaKgM2 * omega * omega };
+}
+
 export function diskSectionThermal(
   areaM2: number,
   thicknessCm: number,
