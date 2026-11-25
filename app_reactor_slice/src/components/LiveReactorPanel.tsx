@@ -33,31 +33,48 @@ function slotIndex(deg: number): number {
   return Math.floor(mod360(deg)) % HEAT_BINS;
 }
 
-/**
- * Blend section 0's temperature across the arc it just traveled, one degree at a time.
- * One call never wraps the memory more than once.
- */
-function paintTravelLerp(
-  slots: (number | null)[],
-  fromDeg: number,
-  toDeg: number,
-  fromC: number,
-  toC: number,
-): void {
-  let span = toDeg - fromDeg;
-  if (span < -1e-6) span = mod360(span);
+/** Blend a temperature across an unwrapped arc. Does not refresh the picture. */
+function paintQuiet(slots: (number | null)[], fromDeg: number, toDeg: number, fromC: number, toC: number): void {
+  const span = toDeg - fromDeg;
   if (span < 1e-4) {
     slots[slotIndex(toDeg)] = toC;
-    touchHeat();
     return;
   }
-  span = Math.min(359, span);
-  const steps = Math.ceil(span);
+  const steps = Math.max(1, Math.ceil(span));
   for (let i = 0; i <= steps; i += 1) {
     const u = i / steps;
-    slots[slotIndex(fromDeg + (span * i) / steps)] = fromC + (toC - fromC) * u;
+    slots[slotIndex(fromDeg + span * u)] = fromC + (toC - fromC) * u;
   }
-  touchHeat();
+}
+
+/**
+ * Record section 0's temperature into the open lap.
+ * A snapshot is returned only when that lap reaches a multiple of 360°.
+ */
+function absorb(
+  draft: (number | null)[],
+  fromAbs: number,
+  toAbs: number,
+  fromC: number,
+  toC: number,
+): { slots: (number | null)[]; at: number } | null {
+  if (!(toAbs > fromAbs)) {
+    draft[slotIndex(fromAbs)] = toC;
+    return null;
+  }
+  let cursor = fromAbs;
+  let snap: { slots: (number | null)[]; at: number } | null = null;
+  const span = toAbs - fromAbs;
+  for (let guard = 0; cursor < toAbs - 1e-6 && guard < 64; guard += 1) {
+    const lapEnd = (Math.floor(cursor / 360) + 1) * 360;
+    const dest = Math.min(toAbs, lapEnd);
+    const u0 = (cursor - fromAbs) / span;
+    const u1 = (dest - fromAbs) / span;
+    paintQuiet(draft, cursor, dest, fromC + (toC - fromC) * u0, fromC + (toC - fromC) * u1);
+    if (dest >= lapEnd - 1e-6) snap = { slots: draft.slice(), at: lapEnd };
+    cursor = dest;
+  }
+  return snap;
 }
 
 let heatGen = 0;
@@ -160,35 +177,47 @@ function applyDiskPaint(svg: SVGSVGElement | null, angleDeg: number, slots: (num
 }
 
 /**
- * Rebuild the color memory by walking the recorded speed.
- * A repeated timestamp only refreshes the place section 0 is already on.
- * A large step backwards is a new run and starts the memory over once.
+ * Walk the recording. The shown colors are the last lap section 0 finished.
+ * The draft keeps the lap that is still in progress. A step backwards starts over.
  */
-function slotsFromHistory(history: LiveSample[]): { slots: (number | null)[]; angle: number } {
-  const slots = emptySlots();
-  let angle = 0;
+function slotsFromHistory(history: LiveSample[]): {
+  slots: (number | null)[];
+  draft: (number | null)[];
+  travel: number;
+  committed: number;
+} {
+  const draft = emptySlots();
+  let display = emptySlots();
+  let travel = 0;
+  let committed = 0;
   let prevT: number | null = null;
   let prevTemp: number | null = null;
   for (const sample of history) {
     if (!Number.isFinite(sample.section0C)) continue;
     if (prevT != null && sample.timeS + 0.5 < prevT) {
-      slots.fill(null);
-      angle = 0;
+      draft.fill(null);
+      display = emptySlots();
+      travel = 0;
+      committed = 0;
       prevT = null;
       prevTemp = null;
     }
     const dt = prevT == null ? 0 : sample.timeS - prevT;
     if (dt > 1e-6) {
-      const next = angle + 360 * Math.max(0, sample.rps) * dt;
-      paintTravelLerp(slots, angle, next, prevTemp ?? sample.section0C, sample.section0C);
-      angle = mod360(next);
+      const next = travel + 360 * Math.max(0, sample.rps) * dt;
+      const snap = absorb(draft, travel, next, prevTemp ?? sample.section0C, sample.section0C);
+      if (snap) {
+        display = snap.slots;
+        committed = snap.at;
+      }
+      travel = next;
     } else {
-      slots[slotIndex(angle)] = sample.section0C;
+      draft[slotIndex(travel)] = sample.section0C;
     }
     prevT = sample.timeS;
     prevTemp = sample.section0C;
   }
-  return { slots, angle };
+  return { slots: display, draft, travel, committed };
 }
 
 type ReadyEvent = {
@@ -428,9 +457,14 @@ const LiveReactorPanel: React.FC<Props> = ({
   bodyRef.current = geometryBody;
   const svgRef = useRef<SVGSVGElement | null>(null);
   const angleRef = useRef(0);
-  const anchorRef = useRef<{ angle: number; temp: number } | null>(null);
+  /** Unwrapped disk angle, degrees from the start of the run. */
+  const travelRef = useRef(0);
+  /** Unwrapped angle at which the colors now on screen were frozen. */
+  const committedRef = useRef(0);
+  const anchorRef = useRef<{ travel: number; temp: number } | null>(null);
   const lastTempRef = useRef<number | null>(null);
   const slotsRef = useRef<(number | null)[]>(emptySlots());
+  const draftRef = useRef<(number | null)[]>(emptySlots());
   const scaleRef = useRef(scale);
   scaleRef.current = scale;
   const liveRef = useRef(live);
@@ -448,10 +482,20 @@ const LiveReactorPanel: React.FC<Props> = ({
     setSlotC(next.slice());
   };
 
+  const commitLap = (slots: (number | null)[], at: number) => {
+    committedRef.current = at;
+    publishSlots(slots, true);
+    touchHeat(true);
+    applyDiskPaint(svgRef.current, angleRef.current, slotsRef.current);
+  };
+
   const resetDisk = () => {
     angleRef.current = 0;
+    travelRef.current = 0;
+    committedRef.current = 0;
     anchorRef.current = null;
     lastTempRef.current = null;
+    draftRef.current = emptySlots();
     publishSlots(emptySlots(), true);
     touchHeat(true);
     applyDiskPaint(svgRef.current, 0, slotsRef.current);
@@ -468,28 +512,35 @@ const LiveReactorPanel: React.FC<Props> = ({
           setSamples(data.history);
           setSample(data.history[data.history.length - 1]);
           const built = slotsFromHistory(data.history);
-          if (!liveRef.current) angleRef.current = built.angle;
-          lastTempRef.current = data.history[data.history.length - 1].section0C;
-          anchorRef.current = { angle: angleRef.current, temp: lastTempRef.current };
-          publishSlots(built.slots, true);
-          touchHeat(true);
-          applyDiskPaint(svgRef.current, angleRef.current, slotsRef.current);
+          if (!liveRef.current) {
+            travelRef.current = built.travel;
+            angleRef.current = mod360(built.travel);
+            committedRef.current = built.committed;
+            draftRef.current = built.draft;
+            lastTempRef.current = data.history[data.history.length - 1].section0C;
+            anchorRef.current = { travel: built.travel, temp: lastTempRef.current };
+            publishSlots(built.slots, true);
+            touchHeat(true);
+            applyDiskPaint(svgRef.current, angleRef.current, slotsRef.current);
+          }
         }
       } else if (data.type === "sample") {
         setSample(data.sample);
         if (Number.isFinite(data.sample.section0C)) {
           const temp = data.sample.section0C;
-          lastTempRef.current = temp;
+          const travel = travelRef.current;
           const anchor = anchorRef.current;
-          if (anchor) {
-            const span = Math.min(90, mod360(angleRef.current - anchor.angle));
-            paintTravelLerp(slotsRef.current, angleRef.current - span, angleRef.current, anchor.temp, temp);
+          if (anchor && travel > anchor.travel + 1e-6) {
+            const from = Math.max(anchor.travel, committedRef.current);
+            const span = travel - anchor.travel;
+            const u = span > 1e-6 ? (from - anchor.travel) / span : 1;
+            const snap = absorb(draftRef.current, from, travel, anchor.temp + (temp - anchor.temp) * u, temp);
+            if (snap && snap.at > committedRef.current) commitLap(snap.slots, snap.at);
           } else {
-            slotsRef.current[slotIndex(angleRef.current)] = temp;
-            touchHeat();
+            draftRef.current[slotIndex(travel)] = temp;
           }
-          anchorRef.current = { angle: angleRef.current, temp };
-          publishSlots(slotsRef.current);
+          lastTempRef.current = temp;
+          anchorRef.current = { travel, temp };
         }
         setSamples((prev) => {
           const last = prev[prev.length - 1];
@@ -524,7 +575,8 @@ const LiveReactorPanel: React.FC<Props> = ({
       last = now;
       if (liveRef.current && rpsRef.current > 0) {
         const delta = 360 * rpsRef.current * scaleRef.current * dt;
-        angleRef.current = mod360(angleRef.current + delta);
+        travelRef.current += delta;
+        angleRef.current = mod360(travelRef.current);
       }
       applyDiskPaint(svgRef.current, angleRef.current, slotsRef.current);
       frame = window.requestAnimationFrame(tick);
@@ -619,9 +671,9 @@ const LiveReactorPanel: React.FC<Props> = ({
       <p className="small text-secondary mb-2">
         One OpenModelica process keeps integrating <code>RIMAEL.Reactor</code>. Several times a second it reads the
         power and disk speed you set here, and writes back the fuel, shield, shell, and section 0 temperatures.
-        The disk turns steadily in the browser from the speed above. Section 0 leaves a smooth trail of the
-        temperature it had as it passed, and that color stays until it comes around again. The ring outside the
-        disk is the fixed fuel, shield, and TPV arcs.
+        The disk turns steadily in the browser from the speed above. The colors stay as they are until section 0
+        finishes a full turn, and the ring then shows the temperature it recorded on that turn. The ring outside
+        the disk is the fixed fuel, shield, and TPV arcs.
       </p>
       <div className="d-flex flex-wrap align-items-end gap-3 mb-2">
         <Form.Group controlId="live-power-kw">
