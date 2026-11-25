@@ -7,7 +7,7 @@ import {
   type SimulationParams,
 } from "../configurations";
 import FastSlabModal from "./FastSlabModal";
-import RunQueueModal, { type QueueModalMode } from "./RunQueueModal";
+import RunQueueModal, { formatEndedAt, type QueueModalMode } from "./RunQueueModal";
 
 export type { SimulationParams };
 export { DEFAULT_SIMULATION_PARAMS };
@@ -81,6 +81,7 @@ type QueueModalState = {
   exitCode?: number | null;
   statusLabel?: string | null;
   startedAt?: string | null;
+  finishedAt?: string | null;
 };
 
 type KeffLive = {
@@ -425,6 +426,7 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup, defaultTherma
       exitCode: full.exitCode,
       statusLabel: full.status,
       startedAt: full.startedAt,
+      finishedAt: full.finishedAt,
     });
   };
 
@@ -692,21 +694,29 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup, defaultTherma
             <div className="simulation-run-list-past mb-2">
               <div className="small text-secondary mb-1">Past simulations</div>
               <ol className="simulation-run-list-items list-unstyled mb-0">
-                {pastItems.map((item) => (
-                  <li key={item.id}>
-                    <button
-                      type="button"
-                      className="simulation-run-list-item is-past"
-                      onClick={() => void openQueueItem(item)}
-                    >
-                      <span className="simulation-run-list-index font-monospace">·</span>
-                      <span className="simulation-run-list-label">{item.label}</span>
-                      <span className={`simulation-run-list-status status-${item.status}`}>
-                        {queueStatusLabel(item.status)}
-                      </span>
-                    </button>
-                  </li>
-                ))}
+                {pastItems.map((item) => {
+                  const ended = formatEndedAt(item.finishedAt);
+                  return (
+                    <li key={item.id}>
+                      <button
+                        type="button"
+                        className="simulation-run-list-item is-past"
+                        onClick={() => void openQueueItem(item)}
+                      >
+                        <span className="simulation-run-list-index font-monospace">·</span>
+                        <span className="simulation-run-list-label">
+                          <span className="simulation-run-list-title">{item.label}</span>
+                          {ended && (
+                            <span className="simulation-run-list-ended">ended {ended}</span>
+                          )}
+                        </span>
+                        <span className={`simulation-run-list-status status-${item.status}`}>
+                          {queueStatusLabel(item.status)}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
               </ol>
             </div>
           )}
@@ -859,6 +869,7 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup, defaultTherma
           exitCode={queueModal.exitCode}
           statusLabel={queueModal.statusLabel}
           startedAt={queueModal.startedAt}
+          finishedAt={queueModal.finishedAt}
           saving={queueModalSaving}
           error={queueModalError}
           onHide={() => {

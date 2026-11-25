@@ -20,6 +20,16 @@ import { FieldLabel, InfoTip } from "./SimulationFieldLabel";
 
 export type QueueModalMode = "append" | "edit" | "view";
 
+/** Local clock time a past run finished, from the stored ISO timestamp. */
+export function formatEndedAt(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${date.getDate()} ${months[date.getMonth()]} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
 type QueueResult = {
   summary?: string | null;
   keff?: number | null;
@@ -48,6 +58,7 @@ type Props = {
   exitCode?: number | null;
   statusLabel?: string | null;
   startedAt?: string | null;
+  finishedAt?: string | null;
   saving?: boolean;
   error?: string | null;
   onHide: () => void;
@@ -278,6 +289,7 @@ const RunQueueModal: React.FC<Props> = ({
   exitCode,
   statusLabel,
   startedAt = null,
+  finishedAt = null,
   saving = false,
   error = null,
   onHide,
@@ -346,6 +358,9 @@ const RunQueueModal: React.FC<Props> = ({
           <p className="small mb-3">
             Status: <strong>{statusLabel}</strong>
             {exitCode != null ? ` · exit ${exitCode}` : ""}
+            {mode === "view" && formatEndedAt(finishedAt)
+              ? ` · ended ${formatEndedAt(finishedAt)}`
+              : ""}
           </p>
         )}
         {mode === "view" &&

@@ -428,7 +428,31 @@ button.simulation-run-list-item {
 }
 
 .simulation-run-list-item.is-past {
+  align-items: start;
   background: #fafbfc;
+}
+
+.simulation-run-list-item.is-past .simulation-run-list-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  overflow: visible;
+  text-overflow: unset;
+  white-space: normal;
+}
+
+.simulation-run-list-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.simulation-run-list-ended {
+  color: #6c757d;
+  font-family: var(--bs-font-monospace);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .simulation-run-list-remove {
