@@ -18,11 +18,7 @@ export type LiveSample = {
 
 /** One degree of lab angle. Section 0 writes its temperature here as it sweeps past. */
 const HEAT_BINS = 360;
-const SECTION_COUNT = 12;
 const SECTION_DEG = 30;
-const SLICES_PER_SECTION = 6;
-const SECTION_GAP = 2.4;
-const SLICE_SPAN = (SECTION_DEG - SECTION_GAP) / SLICES_PER_SECTION;
 
 function emptySlots(): (number | null)[] {
   return Array.from({ length: HEAT_BINS }, () => null);
@@ -38,32 +34,59 @@ function slotIndex(deg: number): number {
 }
 
 /**
- * Paint each degree section 0's leading edge crosses, going counter-clockwise.
- * One frame never wraps the memory more than once.
+ * Blend section 0's temperature across the arc it just traveled, one degree at a time.
+ * One call never wraps the memory more than once.
  */
-function paintTravel(slots: (number | null)[], fromDeg: number, toDeg: number, tempC: number): void {
+function paintTravelLerp(
+  slots: (number | null)[],
+  fromDeg: number,
+  toDeg: number,
+  fromC: number,
+  toC: number,
+): void {
   let span = toDeg - fromDeg;
-  if (span < 0) span = mod360(span);
-  span = Math.min(359, span);
+  if (span < -1e-6) span = mod360(span);
   if (span < 1e-4) {
-    slots[slotIndex(fromDeg)] = tempC;
+    slots[slotIndex(toDeg)] = toC;
+    touchHeat();
     return;
   }
+  span = Math.min(359, span);
   const steps = Math.ceil(span);
   for (let i = 0; i <= steps; i += 1) {
-    slots[slotIndex(fromDeg + (span * i) / steps)] = tempC;
+    const u = i / steps;
+    slots[slotIndex(fromDeg + (span * i) / steps)] = fromC + (toC - fromC) * u;
   }
+  touchHeat();
 }
 
-function slicePlacement(index: number): { local: number; span: number } {
-  const section = Math.floor(index / SLICES_PER_SECTION);
-  const within = index % SLICES_PER_SECTION;
-  return { local: section * SECTION_DEG + within * SLICE_SPAN, span: SLICE_SPAN };
+let heatGen = 0;
+let paintedGen = -1;
+let paintedGeom = "";
+let heatUrl = "";
+let heatCanvas: HTMLCanvasElement | null = null;
+let lastRenderAt = 0;
+
+function touchHeat(force = false): void {
+  heatGen += 1;
+  if (force) lastRenderAt = 0;
 }
 
-/** Color the turning slices from the lab temperature under each one, and spin the disk. */
-function applyDiskPaint(svg: SVGSVGElement | null, angleDeg: number, slots: (number | null)[]): void {
-  if (!svg) return;
+/** Smooth ring. Canvas conic stops blend from one degree to the next, so no wedge edges show. */
+function renderHeat(slots: (number | null)[], fuelOnTop: number, innerFrac: number): string {
+  if (typeof document === "undefined") return "";
+  if (!heatCanvas) {
+    heatCanvas = document.createElement("canvas");
+    heatCanvas.width = 768;
+    heatCanvas.height = 768;
+  }
+  const size = heatCanvas.width;
+  const ctx = heatCanvas.getContext("2d");
+  if (!ctx) return "";
+  const cx = size / 2;
+  const cy = size / 2;
+  const outer = size / 2 - 1;
+  const inner = Math.max(0, innerFrac) * (size / 2);
   let lo = Infinity;
   let hi = -Infinity;
   let known = 0;
@@ -74,23 +97,65 @@ function applyDiskPaint(svg: SVGSVGElement | null, angleDeg: number, slots: (num
     if (value < lo) lo = value;
     if (value > hi) hi = value;
   }
+  const colorAt = (lab: number) => {
+    const value = slots[slotIndex(lab)];
+    return value == null || known === 0 ? "#cbd5e1" : sectionColor(value, lo, hi);
+  };
+  ctx.clearRect(0, 0, size, size);
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, outer, 0, Math.PI * 2);
+  ctx.clip();
+  if (typeof ctx.createConicGradient === "function") {
+    // Canvas angles start at +x and run clockwise. Lab angle grows counter-clockwise from fuelOnTop.
+    const gradient = ctx.createConicGradient((-fuelOnTop * Math.PI) / 180, cx, cy);
+    for (let i = 0; i <= HEAT_BINS; i += 1) {
+      gradient.addColorStop(i / HEAT_BINS, colorAt(-i));
+    }
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+  } else {
+    const radius = (outer + inner) / 2;
+    ctx.lineWidth = Math.max(1, outer - inner);
+    for (let i = 0; i < HEAT_BINS; i += 1) {
+      ctx.strokeStyle = colorAt(i);
+      ctx.beginPath();
+      const a0 = -((fuelOnTop + i - 0.35) * Math.PI) / 180;
+      const a1 = -((fuelOnTop + i + 1.35) * Math.PI) / 180;
+      ctx.arc(cx, cy, radius, a0, a1, true);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+  ctx.globalCompositeOperation = "destination-out";
+  ctx.beginPath();
+  ctx.arc(cx, cy, Math.max(0, inner - 0.5), 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalCompositeOperation = "source-over";
+  return heatCanvas.toDataURL();
+}
+
+/** Spin the section-0 mark, and rebuild the ring only after the temperature memory changes. */
+function applyDiskPaint(svg: SVGSVGElement | null, angleDeg: number, slots: (number | null)[]): void {
+  if (!svg) return;
   const transform = `rotate(${(-angleDeg).toFixed(2)})`;
   svg.querySelectorAll("[data-rotor]").forEach((node) => {
     node.setAttribute("transform", transform);
   });
-  svg.querySelectorAll("[data-slice]").forEach((node) => {
-    const local = Number(node.getAttribute("data-local"));
-    const span = Number(node.getAttribute("data-span")) || SLICE_SPAN;
-    const steps = Math.max(1, Math.round(span));
-    let sum = 0;
-    let count = 0;
-    for (let d = 0; d < steps; d += 1) {
-      const value = slots[slotIndex(angleDeg + local + (span * d) / steps)];
-      if (value == null) continue;
-      sum += value;
-      count += 1;
-    }
-    node.setAttribute("fill", count === 0 || known === 0 ? "#cbd5e1" : sectionColor(sum / count, lo, hi));
+  const geom = `${svg.getAttribute("data-fuel-on-top")}|${svg.getAttribute("data-inner")}`;
+  const images = svg.querySelectorAll("[data-heat]");
+  const dirty = paintedGen !== heatGen || paintedGeom !== geom || !heatUrl;
+  if (dirty && (heatUrl === "" || performance.now() - lastRenderAt >= 200)) {
+    heatUrl = renderHeat(slots, Number(svg.getAttribute("data-fuel-on-top")), Number(svg.getAttribute("data-inner")));
+    lastRenderAt = performance.now();
+    paintedGen = heatGen;
+    paintedGeom = geom;
+    images.forEach((node) => node.setAttribute("data-painted", ""));
+  }
+  images.forEach((node) => {
+    if (node.getAttribute("data-painted") === "1") return;
+    node.setAttribute("href", heatUrl);
+    node.setAttribute("data-painted", "1");
   });
 }
 
@@ -103,22 +168,25 @@ function slotsFromHistory(history: LiveSample[]): { slots: (number | null)[]; an
   const slots = emptySlots();
   let angle = 0;
   let prevT: number | null = null;
+  let prevTemp: number | null = null;
   for (const sample of history) {
     if (!Number.isFinite(sample.section0C)) continue;
     if (prevT != null && sample.timeS + 0.5 < prevT) {
       slots.fill(null);
       angle = 0;
       prevT = null;
+      prevTemp = null;
     }
     const dt = prevT == null ? 0 : sample.timeS - prevT;
     if (dt > 1e-6) {
       const next = angle + 360 * Math.max(0, sample.rps) * dt;
-      paintTravel(slots, angle, next, sample.section0C);
+      paintTravelLerp(slots, angle, next, prevTemp ?? sample.section0C, sample.section0C);
       angle = mod360(next);
     } else {
       slots[slotIndex(angle)] = sample.section0C;
     }
     prevT = sample.timeS;
+    prevTemp = sample.section0C;
   }
   return { slots, angle };
 }
@@ -235,13 +303,22 @@ const DiskView = React.memo(function DiskView({
     { a0: fuelOnTop + shield1End, a1: fuelOnTop + tpvEnd, fill: "rgba(37, 99, 235, 0.4)", name: "TPV" },
     { a0: fuelOnTop + tpvEnd, a1: fuelOnTop + shield2End, fill: "rgba(71, 85, 105, 0.4)", name: "Shield" },
   ];
-  const sliceCount = SECTION_COUNT * SLICES_PER_SECTION;
+  const rim = (fuelOnTop * Math.PI) / 180;
+  const rimCos = Math.cos(rim);
+  const rimSin = -Math.sin(rim);
   useLayoutEffect(() => {
     applyDiskPaint(svgRef.current, angleRef.current, slotsRef.current);
   });
 
   return (
-    <svg ref={svgRef} viewBox={`${-width / 2} -1.55 ${width} 3.15`} role="img" aria-label="Turning disk colored by the temperature section 0 last left at each place">
+    <svg
+      ref={svgRef}
+      viewBox={`${-width / 2} -1.55 ${width} 3.15`}
+      data-fuel-on-top={fuelOnTop}
+      data-inner={innerFrac}
+      role="img"
+      aria-label="Turning disk colored by the continuous temperature section 0 left behind"
+    >
       {Array.from({ length: n }, (_, disk) => {
         const cx = (disk - (n - 1) / 2) * pitch;
         return (
@@ -251,48 +328,17 @@ const DiskView = React.memo(function DiskView({
                 <path key={arc.name + arc.a0} d={arcPath(arc.a0, arc.a1, 1.08, 1.34)} fill={arc.fill} />
               ) : null,
             )}
+            <image data-heat="" x={-1} y={-1} width={2} height={2} href="" />
             <g data-rotor="">
-              {Array.from({ length: sliceCount }, (_, index) => {
-                const { local, span } = slicePlacement(index);
-                const a0 = fuelOnTop + local;
-                return (
-                  <path
-                    key={index}
-                    data-slice=""
-                    data-local={local}
-                    data-span={span}
-                    d={arcPath(a0, a0 + span, innerFrac, 1)}
-                    fill="#cbd5e1"
-                    stroke="rgba(255,255,255,0.85)"
-                    strokeWidth={0.012}
-                  />
-                );
-              })}
-              {Array.from({ length: SECTION_COUNT }, (_, index) => {
-                const rad = ((fuelOnTop + index * SECTION_DEG) * Math.PI) / 180;
-                const cos = Math.cos(rad);
-                const sin = -Math.sin(rad);
-                return (
-                  <line
-                    key={index}
-                    x1={innerFrac * cos}
-                    y1={innerFrac * sin}
-                    x2={1.04 * cos}
-                    y2={1.04 * sin}
-                    stroke="#0f172a"
-                    strokeWidth={0.03}
-                  />
-                );
-              })}
-              <path
-                d={arcPath(fuelOnTop, fuelOnTop + SECTION_DEG - SECTION_GAP, innerFrac, 1)}
-                fill="none"
+              <path d={arcPath(fuelOnTop, fuelOnTop + SECTION_DEG, 1.015, 1.055)} fill="#0f172a" />
+              <line
+                x1={rimCos}
+                y1={rimSin}
+                x2={1.07 * rimCos}
+                y2={1.07 * rimSin}
                 stroke="#0f172a"
-                strokeWidth={0.055}
-              />
-              <path
-                d={arcPath(fuelOnTop + 4, fuelOnTop + SECTION_DEG - SECTION_GAP - 4, 1.01, 1.07)}
-                fill="#0f172a"
+                strokeWidth={0.03}
+                strokeLinecap="round"
               />
             </g>
             <circle r={innerFrac * 0.72} fill="#f8fafc" stroke="#94a3b8" strokeWidth={0.02} />
@@ -382,7 +428,7 @@ const LiveReactorPanel: React.FC<Props> = ({
   bodyRef.current = geometryBody;
   const svgRef = useRef<SVGSVGElement | null>(null);
   const angleRef = useRef(0);
-  const paintFromRef = useRef(0);
+  const anchorRef = useRef<{ angle: number; temp: number } | null>(null);
   const lastTempRef = useRef<number | null>(null);
   const slotsRef = useRef<(number | null)[]>(emptySlots());
   const scaleRef = useRef(scale);
@@ -404,9 +450,10 @@ const LiveReactorPanel: React.FC<Props> = ({
 
   const resetDisk = () => {
     angleRef.current = 0;
-    paintFromRef.current = 0;
+    anchorRef.current = null;
     lastTempRef.current = null;
     publishSlots(emptySlots(), true);
+    touchHeat(true);
     applyDiskPaint(svgRef.current, 0, slotsRef.current);
   };
 
@@ -421,23 +468,28 @@ const LiveReactorPanel: React.FC<Props> = ({
           setSamples(data.history);
           setSample(data.history[data.history.length - 1]);
           const built = slotsFromHistory(data.history);
-          if (!liveRef.current) {
-            angleRef.current = built.angle;
-            paintFromRef.current = built.angle;
-          }
+          if (!liveRef.current) angleRef.current = built.angle;
           lastTempRef.current = data.history[data.history.length - 1].section0C;
+          anchorRef.current = { angle: angleRef.current, temp: lastTempRef.current };
           publishSlots(built.slots, true);
+          touchHeat(true);
           applyDiskPaint(svgRef.current, angleRef.current, slotsRef.current);
         }
       } else if (data.type === "sample") {
         setSample(data.sample);
         if (Number.isFinite(data.sample.section0C)) {
-          lastTempRef.current = data.sample.section0C;
-          const index = slotIndex(angleRef.current);
-          if (slotsRef.current[index] !== data.sample.section0C) {
-            slotsRef.current[index] = data.sample.section0C;
-            publishSlots(slotsRef.current);
+          const temp = data.sample.section0C;
+          lastTempRef.current = temp;
+          const anchor = anchorRef.current;
+          if (anchor) {
+            const span = Math.min(90, mod360(angleRef.current - anchor.angle));
+            paintTravelLerp(slotsRef.current, angleRef.current - span, angleRef.current, anchor.temp, temp);
+          } else {
+            slotsRef.current[slotIndex(angleRef.current)] = temp;
+            touchHeat();
           }
+          anchorRef.current = { angle: angleRef.current, temp };
+          publishSlots(slotsRef.current);
         }
         setSamples((prev) => {
           const last = prev[prev.length - 1];
@@ -471,15 +523,8 @@ const LiveReactorPanel: React.FC<Props> = ({
       const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
       last = now;
       if (liveRef.current && rpsRef.current > 0) {
-        const from = angleRef.current;
         const delta = 360 * rpsRef.current * scaleRef.current * dt;
-        angleRef.current = mod360(from + delta);
-        const temp = lastTempRef.current;
-        if (temp != null && delta > 0) {
-          paintTravel(slotsRef.current, paintFromRef.current, paintFromRef.current + delta, temp);
-          paintFromRef.current = angleRef.current;
-          publishSlots(slotsRef.current);
-        }
+        angleRef.current = mod360(angleRef.current + delta);
       }
       applyDiskPaint(svgRef.current, angleRef.current, slotsRef.current);
       frame = window.requestAnimationFrame(tick);
@@ -574,9 +619,9 @@ const LiveReactorPanel: React.FC<Props> = ({
       <p className="small text-secondary mb-2">
         One OpenModelica process keeps integrating <code>RIMAEL.Reactor</code>. Several times a second it reads the
         power and disk speed you set here, and writes back the fuel, shield, shell, and section 0 temperatures.
-        The disk itself turns steadily in the browser from the speed above. As section 0 sweeps past, each place
-        keeps the temperature section 0 had at that moment, so the color follows the continuous change of that
-        temperature. The ring outside the disk is the fixed fuel, shield, and TPV arcs.
+        The disk turns steadily in the browser from the speed above. Section 0 leaves a smooth trail of the
+        temperature it had as it passed, and that color stays until it comes around again. The ring outside the
+        disk is the fixed fuel, shield, and TPV arcs.
       </p>
       <div className="d-flex flex-wrap align-items-end gap-3 mb-2">
         <Form.Group controlId="live-power-kw">
@@ -656,7 +701,7 @@ const LiveReactorPanel: React.FC<Props> = ({
       />
       <div className="d-flex gap-3 small text-secondary mb-2">
         <span>Cooler places are blue, hotter places are red. Gray has not been visited yet.</span>
-        <span>The dark wedge is section 0 and turns with the disk. Outer ring: fuel, shield, TPV, shield.</span>
+        <span>The dark arc just outside the disk is section 0 and turns with it. Outer ring: fuel, shield, TPV, shield.</span>
       </div>
       <LiveChart samples={samples} />
     </div>
