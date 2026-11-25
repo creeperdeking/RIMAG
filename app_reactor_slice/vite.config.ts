@@ -519,6 +519,8 @@ function rimaelApi(): Plugin {
             reflectorThicknessCm: num("reflector_thickness_cm"),
             moderatorThicknessCm: num("moderator_thickness_cm"),
             absorberThicknessCm: num("absorber_thickness_cm"),
+            runTimeMin: num("run_time_min"),
+            diskRps: num("disk_rps"),
           });
           res.setHeader("Content-Type", "application/json");
           res.end(JSON.stringify(trace));

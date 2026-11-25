@@ -349,6 +349,8 @@ const ThermodynamicTab: React.FC<Props> = ({
   const [error, setError] = useState<string | null>(null);
   const [trace, setTrace] = useState<FuelTrace | null>(null);
   const [sectionIndex, setSectionIndex] = useState(0);
+  const [runTimeMin, setRunTimeMin] = useState("11.67");
+  const [diskRps, setDiskRps] = useState("0.2");
   const cellIndex = setup.tpv_airbridge_cell;
 
   const curves = useMemo(
@@ -399,6 +401,16 @@ const ThermodynamicTab: React.FC<Props> = ({
         setError("TPV area is zero — cannot set Modelica fuel heating power P0.");
         return;
       }
+      const runMinutes = Number(runTimeMin);
+      const rps = Number(diskRps);
+      if (!(runMinutes > 0)) {
+        setError("Run time must be a positive number of minutes.");
+        return;
+      }
+      if (!Number.isFinite(rps) || rps < 0) {
+        setError("Disk speed must be zero or a positive number of revolutions per second.");
+        return;
+      }
       const response = await fetch("/api/rimael/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -426,6 +438,8 @@ const ThermodynamicTab: React.FC<Props> = ({
           reflector_thickness_cm: reflectorThicknessCm,
           moderator_thickness_cm: moderatorThicknessCm,
           absorber_thickness_cm: absorberThicknessCm,
+          run_time_min: runMinutes,
+          disk_rps: rps,
         }),
       });
       const data = (await response.json()) as FuelTrace & { error?: string };
@@ -611,11 +625,40 @@ const ThermodynamicTab: React.FC<Props> = ({
               </Button>
             </div>
           </div>
+          <div className="d-flex flex-wrap align-items-end gap-3 mb-2">
+            <Form.Group controlId="run-time-min">
+              <Form.Label className="small mb-1">Run time (min)</Form.Label>
+              <Form.Control
+                size="sm"
+                type="number"
+                min={0.1}
+                max={180}
+                step={0.5}
+                value={runTimeMin}
+                onChange={(event) => setRunTimeMin(event.target.value)}
+                style={{ width: "6.5rem" }}
+              />
+            </Form.Group>
+            <Form.Group controlId="disk-rps">
+              <Form.Label className="small mb-1">Disk speed (rev/s)</Form.Label>
+              <Form.Control
+                size="sm"
+                type="number"
+                min={0}
+                max={20}
+                step={0.05}
+                value={diskRps}
+                onChange={(event) => setDiskRps(event.target.value)}
+                style={{ width: "6.5rem" }}
+              />
+            </Form.Group>
+          </div>
           <p className="small text-secondary mb-3">
             Runs <code>RIMAEL.Reactor</code> from this operating point. Helium conduction stays on, including on the
             shield arcs. The shield is one graphite mass that starts at the disk temperature. The vacuum shell is its
             own node, and the cells at {(TPV_CELL_TEMP_K - 273.15).toFixed(0)} °C take the air-bridge absorption.
-            Shutdown is at 240 s. The menu picks which of the twelve sections is drawn. Section 0 is the window
+            The disk turns at the speed above until 4 min, then stops. A shorter run ends while it is still turning.
+            The menu picks which of the twelve sections is drawn. Section 0 is the window
             that starts at 0°, on the fuel. While the disk turns, every section spends the same share of the turn
             on each arc, so it stays near the disk mean. After shutdown the disk stops and that section stays on
             the arc at its start angle. The first compile can take a couple of minutes; later runs reuse the binary.
