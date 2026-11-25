@@ -513,6 +513,12 @@ function rimaelApi(): Plugin {
             tpvGapCm: num("tpv_gap_cm"),
             tpvAreaM2: num("tpv_area_m2"),
             tpvCellIndex: num("tpv_cell_index"),
+            reflectorAreaM2: num("reflector_area_m2"),
+            moderatorAreaM2: num("moderator_area_m2"),
+            absorberAreaM2: num("absorber_area_m2"),
+            reflectorThicknessCm: num("reflector_thickness_cm"),
+            moderatorThicknessCm: num("moderator_thickness_cm"),
+            absorberThicknessCm: num("absorber_thickness_cm"),
           });
           res.setHeader("Content-Type", "application/json");
           res.end(JSON.stringify(trace));

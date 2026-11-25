@@ -31,6 +31,52 @@ export type DiskSectionThermal = {
   nSections: number;
 };
 
+/**
+ * One graphite shield lump.
+ * Each zone is a disk-facing ring area times that group's own layer-designer thickness.
+ */
+export function shieldGraphiteThermal(
+  zones: readonly { areaM2: number; thicknessCm: number }[],
+): GraphiteLumpedThermal {
+  let massKg = 0;
+  let areaM2 = 0;
+  for (const zone of zones) {
+    const area = Number.isFinite(zone.areaM2) && zone.areaM2 > 0 ? zone.areaM2 : 0;
+    const thicknessM = Number.isFinite(zone.thicknessCm) && zone.thicknessCm > 0 ? zone.thicknessCm / 100 : 0;
+    massKg += GRAPHITE_DENSITY_KG_M3 * area * thicknessM;
+    areaM2 += area;
+  }
+  return {
+    heatCapacity: massKg * GRAPHITE_CP_J_KG_K,
+    massKg,
+    thicknessM: areaM2 > 0 ? massKg / (GRAPHITE_DENSITY_KG_M3 * areaM2) : 0,
+    areaM2,
+  };
+}
+
+/**
+ * Helium conductance of one shield conductor when its arc is fully covered.
+ * The shield uses the same helium as the other gaps: both faces,
+ * G = k A / d, with k taken from the fuel gap and the shell gap.
+ * `shieldAreaM2` is the one-face disk-facing area of every shield zone.
+ */
+export function shieldHeliumPerFace(
+  gFuelBothFaces: number,
+  gShellBothFaces: number,
+  fuelAreaM2: number,
+  tpvAreaM2: number,
+  shieldAreaM2: number,
+  shieldArcSum: number,
+  nSections: number = RIMAEL_N_SECTIONS,
+): number {
+  const shield = Number.isFinite(shieldAreaM2) && shieldAreaM2 > 0 ? shieldAreaM2 : 0;
+  const fuelSide = fuelAreaM2 > 0 ? Math.max(gFuelBothFaces, 0) * (shield / fuelAreaM2) : 0;
+  const shellSide = tpvAreaM2 > 0 ? Math.max(gShellBothFaces, 0) * (shield / tpvAreaM2) : 0;
+  const arcSum = Math.max(shieldArcSum, 1e-6);
+  const n = Math.max(1, Math.round(nSections));
+  return (fuelSide + shellSide) / (2 * n * arcSum);
+}
+
 /** C = ρ · A · t · c_p for a single lumped graphite body (e.g. FuelPlate). */
 export function graphiteLumpedThermal(areaM2: number, thicknessCm: number): GraphiteLumpedThermal {
   const area = Math.max(areaM2, 0);

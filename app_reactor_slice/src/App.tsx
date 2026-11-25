@@ -31,6 +31,7 @@ import {
   diskHeliumGapsCm,
   solidDiskThicknessCm,
   solidFuelThicknessCm,
+  solidLayerThicknessCm,
   thicknessWarning,
   type Groups,
 } from "./layers";
@@ -824,6 +825,27 @@ const Explorer: React.FC = () => {
 
   const diskThicknessCm = useMemo(() => solidDiskThicknessCm(groups.disk), [groups.disk]);
   const fuelThicknessCm = useMemo(() => solidFuelThicknessCm(groups.fuel), [groups.fuel]);
+  const shieldZones = useMemo(
+    () =>
+      computeLayoutForRatio(
+        setup.a,
+        (setup.a * setup.b_pct) / 100,
+        setup.w,
+        setup.ratio_pct / 100,
+        setup.refl,
+        setup.abs,
+      ),
+    [setup.a, setup.b_pct, setup.w, setup.ratio_pct, setup.refl, setup.abs],
+  );
+  const reflectorThicknessCm = useMemo(() => solidLayerThicknessCm(groups.reflector, 1), [groups.reflector]);
+  const moderatorThicknessCm = useMemo(
+    () => solidLayerThicknessCm(groups.shield_moderator, 1),
+    [groups.shield_moderator],
+  );
+  const absorberThicknessCm = useMemo(
+    () => solidLayerThicknessCm(groups.shield_absorber, 1),
+    [groups.shield_absorber],
+  );
   const heliumGaps = useMemo(() => diskHeliumGapsCm(groups.disk), [groups.disk]);
   const thermodynamicTab = (
     <ThermodynamicTab
@@ -837,6 +859,12 @@ const Explorer: React.FC = () => {
       fuelAngleRad={layout.fuelAngle}
       tpvAngleRad={layout.oppositeAngle}
       tpvAreaM2={oppositeArea}
+      reflectorAreaM2={shieldZones.reflectorArea}
+      moderatorAreaM2={shieldZones.gapArea}
+      absorberAreaM2={shieldZones.absorberArea}
+      reflectorThicknessCm={reflectorThicknessCm}
+      moderatorThicknessCm={moderatorThicknessCm}
+      absorberThicknessCm={absorberThicknessCm}
       operatingPoint={operatingPoint}
       renderSlider={renderSlider}
       onNumericChange={setNumber}

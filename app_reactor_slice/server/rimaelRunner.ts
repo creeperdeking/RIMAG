@@ -12,6 +12,8 @@ import {
   diskCircuitArcsFromAngles,
   diskSectionThermal,
   graphiteLumpedThermal,
+  shieldGraphiteThermal,
+  shieldHeliumPerFace,
   heatFromFuelToShell,
   perFaceFullWindow,
   type DiskCircuitArcs,
@@ -108,6 +110,14 @@ export type RimaelRunOptions = {
   tpvAreaM2?: number;
   /** Air-bridge cell index: 0 = 0.74 eV, 1 = 0.90 eV, 2 = 1.10 eV. */
   tpvCellIndex?: number;
+  /** Disk-facing reflector / moderator / absorber areas, one face [m²]. */
+  reflectorAreaM2?: number;
+  moderatorAreaM2?: number;
+  absorberAreaM2?: number;
+  /** Layer-designer thickness of each of those groups [cm]. */
+  reflectorThicknessCm?: number;
+  moderatorThicknessCm?: number;
+  absorberThicknessCm?: number;
 };
 
 /** Model default FuelPlate start is 1523.15 K. */
@@ -206,12 +216,16 @@ function overrideFlags(
   tpvGapCm: number,
   cellIndex: number,
   arcs: DiskCircuitArcs,
+  shieldZones: { areaM2: number; thicknessCm: number }[],
 ): {
   flags: string;
   grFuel: number;
   grTpv: number;
   gFuelGap: number;
   gDiskShell: number;
+  gShield: number;
+  shieldHeatCapacity: number;
+  shieldMassKg: number;
   heatCapacitySection: number;
   throughThicknessG: number;
   massTotalKg: number;
@@ -252,6 +266,18 @@ function overrideFlags(
   const grTpv = perFaceFullWindow(flow.grDiskShell, arcs.tpvArcFrac);
   const gFuelGap = perFaceFullWindow(flow.gFuelWPerK, arcs.fuelArcFrac);
   const gDiskShell = perFaceFullWindow(flow.gDiskShellWPerK, arcs.tpvArcFrac);
+  const shield = shieldGraphiteThermal(shieldZones);
+  if (!(shield.heatCapacity > 0)) {
+    throw new RimaelRunnerError("Shield graphite heat capacity is zero — check the disk-facing reflector, moderator, and absorber.");
+  }
+  const gShield = shieldHeliumPerFace(
+    flow.gFuelWPerK,
+    flow.gDiskShellWPerK,
+    fuelAreaM2,
+    tpvAreaM2,
+    shield.areaM2,
+    arcs.shield1ArcFrac + arcs.shield2ArcFrac,
+  );
   const diskStartK = Math.max(273.15, flow.diskTempK);
   const shellStartK = Math.max(273.15, flow.shellTempK);
   const bothFacesCm2 = 2 * tpvAreaM2 * 1e4;
@@ -275,6 +301,9 @@ function overrideFlags(
       `Gr_tpv=${grTpv}`,
       `G_fuel_gap=${gFuelGap}`,
       `G_disk_shell=${gDiskShell}`,
+      `G_shield=${gShield}`,
+      `Shield.C=${shield.heatCapacity}`,
+      `Shield.T=${diskStartK}`,
       `fuel_arc_frac=${arcs.fuelArcFrac}`,
       `tpv_arc_frac=${arcs.tpvArcFrac}`,
       `shield1_arc_frac=${arcs.shield1ArcFrac}`,
@@ -286,6 +315,9 @@ function overrideFlags(
     grTpv,
     gFuelGap,
     gDiskShell,
+    gShield,
+    shieldHeatCapacity: shield.heatCapacity,
+    shieldMassKg: shield.massKg,
     heatCapacitySection,
     throughThicknessG,
     massTotalKg,
@@ -665,6 +697,8 @@ export async function runRimaelFuelTemperature(
     grTpv,
     gFuelGap,
     gDiskShell,
+    gShield,
+    shieldHeatCapacity,
     heatCapacitySection,
     throughThicknessG,
     massTotalKg,
@@ -686,6 +720,11 @@ export async function runRimaelFuelTemperature(
     tpvGapCm,
     cellIndex,
     arcs,
+    [
+      { areaM2: resolveAreaM2(options.reflectorAreaM2), thicknessCm: resolveThicknessCm(options.reflectorThicknessCm, 1) },
+      { areaM2: resolveAreaM2(options.moderatorAreaM2), thicknessCm: resolveThicknessCm(options.moderatorThicknessCm, 1) },
+      { areaM2: resolveAreaM2(options.absorberAreaM2), thicknessCm: resolveThicknessCm(options.absorberThicknessCm, 1) },
+    ],
   );
   await regenerateAppMoIfNeeded();
   fs.mkdirSync(WORK_DIR, { recursive: true });
@@ -730,7 +769,7 @@ export async function runRimaelFuelTemperature(
     grFuel,
     grTpv,
     reusedBinary,
-    message: `${reusedBinary ? "Reused binary" : "Compiled"} · P0=${p0Kw} kW · shell ${shellC} °C · fuel arc ${fuelPct}% · G_fuel=${gFuelGap.toFixed(2)} W/K · G_shell=${gDiskShell.toFixed(2)} W/K`,
+    message: `${reusedBinary ? "Reused binary" : "Compiled"} · P0=${p0Kw} kW · shell ${shellC} °C · fuel arc ${fuelPct}% · G_fuel=${gFuelGap.toFixed(2)} W/K · G_shell=${gDiskShell.toFixed(2)} W/K · G_shield=${gShield.toFixed(2)} W/K · Shield.C=${shieldHeatCapacity.toFixed(0)} J/K`,
   };
 }
 

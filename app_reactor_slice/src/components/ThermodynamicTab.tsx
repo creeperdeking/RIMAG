@@ -10,6 +10,7 @@ import {
   diskCircuitArcsFromAngles,
   diskSectionThermal,
   graphiteLumpedThermal,
+  shieldGraphiteThermal,
 } from "../../shared/diskThermal";
 import {
   AIRBRIDGE_CELLS,
@@ -54,6 +55,16 @@ type Props = {
   tpvAngleRad: number;
   /** TPV (opposite) face area of one disk from Geometry (m²). */
   tpvAreaM2: number;
+  /** Disk-facing reflector ring, both sectors, one face (m²). */
+  reflectorAreaM2: number;
+  /** Disk-facing shield-moderator ring, both sectors, one face (m²). */
+  moderatorAreaM2: number;
+  /** Disk-facing shield-absorber ring, both sectors, one face (m²). */
+  absorberAreaM2: number;
+  /** Layer-designer thickness of each shield group (cm). */
+  reflectorThicknessCm: number;
+  moderatorThicknessCm: number;
+  absorberThicknessCm: number;
   /** Shell temperature, power, efficiency, and reflectance at the fixed fuel temperature. */
   operatingPoint: AirbridgeOperatingPoint;
   renderSlider: (key: NumericKey, label: string, format: (value: number) => string) => React.ReactNode;
@@ -316,6 +327,12 @@ const ThermodynamicTab: React.FC<Props> = ({
   fuelAngleRad,
   tpvAngleRad,
   tpvAreaM2,
+  reflectorAreaM2,
+  moderatorAreaM2,
+  absorberAreaM2,
+  reflectorThicknessCm,
+  moderatorThicknessCm,
+  absorberThicknessCm,
   operatingPoint,
   renderSlider,
   onNumericChange,
@@ -344,6 +361,22 @@ const ThermodynamicTab: React.FC<Props> = ({
   const fuelThermal = useMemo(
     () => graphiteLumpedThermal(fuelAreaM2, fuelThicknessCm),
     [fuelAreaM2, fuelThicknessCm],
+  );
+  const shieldThermal = useMemo(
+    () =>
+      shieldGraphiteThermal([
+        { areaM2: reflectorAreaM2, thicknessCm: reflectorThicknessCm },
+        { areaM2: moderatorAreaM2, thicknessCm: moderatorThicknessCm },
+        { areaM2: absorberAreaM2, thicknessCm: absorberThicknessCm },
+      ]),
+    [
+      reflectorAreaM2,
+      moderatorAreaM2,
+      absorberAreaM2,
+      reflectorThicknessCm,
+      moderatorThicknessCm,
+      absorberThicknessCm,
+    ],
   );
   const circuitArcs = useMemo(
     () => diskCircuitArcsFromAngles(fuelAngleRad, tpvAngleRad),
@@ -378,6 +411,12 @@ const ThermodynamicTab: React.FC<Props> = ({
           tpv_gap_cm: tpvGapCm,
           tpv_area_m2: tpvAreaM2,
           tpv_cell_index: cellIndex,
+          reflector_area_m2: reflectorAreaM2,
+          moderator_area_m2: moderatorAreaM2,
+          absorber_area_m2: absorberAreaM2,
+          reflector_thickness_cm: reflectorThicknessCm,
+          moderator_thickness_cm: moderatorThicknessCm,
+          absorber_thickness_cm: absorberThicknessCm,
         }),
       });
       const data = (await response.json()) as FuelTrace & { error?: string };
@@ -511,6 +550,14 @@ const ThermodynamicTab: React.FC<Props> = ({
             {" · "}
             <code>G = {diskThermal.throughThicknessG.toFixed(0)} W/K</code>.
             <br />
+            Shield: disk-facing reflector <strong>{reflectorAreaM2.toFixed(3)} m²</strong> ×{" "}
+            <strong>{reflectorThicknessCm.toFixed(2)} cm</strong>, moderator{" "}
+            <strong>{moderatorAreaM2.toFixed(3)} m²</strong> × <strong>{moderatorThicknessCm.toFixed(2)} cm</strong>,
+            absorber <strong>{absorberAreaM2.toFixed(3)} m²</strong> ×{" "}
+            <strong>{absorberThicknessCm.toFixed(2)} cm</strong>, all graphite →{" "}
+            <code>Shield.C = ρ·Σ(A·t)·cₚ = {shieldThermal.heatCapacity.toFixed(0)} J/K</code> (m=
+            {shieldThermal.massKg.toFixed(1)} kg). Helium conductance uses the same gaps as the fuel and the shell.
+            <br />
             Circuit arcs from Geometry: fuel{" "}
             <strong>{(100 * circuitArcs.fuelArcFrac).toFixed(1)}%</strong>, TPV{" "}
             <strong>{(100 * circuitArcs.tpvArcFrac).toFixed(1)}%</strong>, each shield{" "}
@@ -534,8 +581,9 @@ const ThermodynamicTab: React.FC<Props> = ({
             </Button>
           </div>
           <p className="small text-secondary mb-3">
-            Runs <code>RIMAEL.Reactor</code> from this operating point. Helium conduction stays on, the vacuum shell is
-            its own node, and the cells at {(TPV_CELL_TEMP_K - 273.15).toFixed(0)} °C take the air-bridge absorption.
+            Runs <code>RIMAEL.Reactor</code> from this operating point. Helium conduction stays on, including on the
+            shield arcs. The shield is one graphite mass that starts at the disk temperature. The vacuum shell is its
+            own node, and the cells at {(TPV_CELL_TEMP_K - 273.15).toFixed(0)} °C take the air-bridge absorption.
             Shutdown is at 240 s. The first compile can take a couple of minutes; later runs reuse the binary.
           </p>
           {error && (
