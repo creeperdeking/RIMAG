@@ -639,8 +639,8 @@ export const ThermophotovoltaicsTab: React.FC<Props> = ({
 
   return (
     <Row className="g-4">
-      <Col lg={8} xl={7}>
-        <div className="border rounded p-3 bg-white">
+      <Col lg={5}>
+        <div className="border rounded p-3 bg-white h-100">
           <h2 className="h6 mb-3">TPV and fuel temperature</h2>
           <p className="small text-secondary mb-3">
             Fuel temperature is fixed. Power density and efficiency are what the selected cell produces when the
@@ -698,7 +698,7 @@ export const ThermophotovoltaicsTab: React.FC<Props> = ({
                 {tpvGapCm.toFixed(2)} cm of helium).
               </span>
             </div>
-            <div className="small mb-2">
+            <div className="small mb-0">
               Shell <strong>{emitterTempC.toFixed(0)} °C</strong>
               <span className="text-secondary">
                 {" "}
@@ -707,28 +707,32 @@ export const ThermophotovoltaicsTab: React.FC<Props> = ({
                 {Math.round(100 * operatingPoint.conductionShareFuel)}% of the heat.
               </span>
             </div>
-            <TpvModelChart
-              title={`Efficiency — ${curves.label} · ε ${setup.shell_emissivity.toFixed(2)}`}
-              yLabel="η (%)"
-              points={curves.efficiency}
-              color={curves.color}
-              emitterTempC={emitterTempC}
-              yMin={0}
-              yMax={50}
-              valueFormat={(v) => v.toFixed(0)}
-            />
-            <TpvModelChart
-              title={`Power density — ${curves.label} · ε ${setup.shell_emissivity.toFixed(2)}`}
-              yLabel="P (W/cm²)"
-              points={curves.power}
-              color={curves.color}
-              emitterTempC={emitterTempC}
-              yMin={0.001}
-              yMax={10}
-              logY
-              valueFormat={(v) => v.toFixed(2)}
-            />
           </div>
+        </div>
+      </Col>
+      <Col lg={7}>
+        <div className="border rounded p-3 bg-white h-100">
+          <TpvModelChart
+            title={`Efficiency — ${curves.label} · ε ${setup.shell_emissivity.toFixed(2)}`}
+            yLabel="η (%)"
+            points={curves.efficiency}
+            color={curves.color}
+            emitterTempC={emitterTempC}
+            yMin={0}
+            yMax={50}
+            valueFormat={(v) => v.toFixed(0)}
+          />
+          <TpvModelChart
+            title={`Power density — ${curves.label} · ε ${setup.shell_emissivity.toFixed(2)}`}
+            yLabel="P (W/cm²)"
+            points={curves.power}
+            color={curves.color}
+            emitterTempC={emitterTempC}
+            yMin={0.001}
+            yMax={10}
+            logY
+            valueFormat={(v) => v.toFixed(2)}
+          />
         </div>
       </Col>
     </Row>
