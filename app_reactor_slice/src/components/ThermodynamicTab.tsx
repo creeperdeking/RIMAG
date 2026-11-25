@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Alert, Button, Col, Row } from "react-bootstrap";
+import { Alert, Button, Col, Form, Row } from "react-bootstrap";
 import type { NumericKey, Setup } from "../configurations";
 import {
   GRAPHITE_CP_J_KG_K,
@@ -27,6 +27,8 @@ type FuelTrace = {
   diskTempC?: number[];
   shellTempC?: number[];
   section0TempC?: number[];
+  /** Twelve section temperatures. Index 0 is the window that starts at 0°. */
+  sectionTempsC?: number[][];
   stopTimeS: number;
   fuelTempStartC: number;
   fuelArcFrac?: number;
@@ -218,7 +220,14 @@ function seriesPath(
   return drawn.length ? `M ${drawn.join(" L ")}` : "";
 }
 
-function FuelTempChart({ trace }: { trace: FuelTrace }) {
+function sectionSeries(trace: FuelTrace, sectionIndex: number): number[] {
+  const fromAll = trace.sectionTempsC?.[sectionIndex];
+  if (fromAll && fromAll.length > 0) return fromAll;
+  if (sectionIndex === 0) return trace.section0TempC ?? [];
+  return [];
+}
+
+function FuelTempChart({ trace, sectionIndex }: { trace: FuelTrace; sectionIndex: number }) {
   const width = 640;
   const height = 300;
   const pad = { left: 52, right: 16, top: 28, bottom: 36 };
@@ -227,7 +236,7 @@ function FuelTempChart({ trace }: { trace: FuelTrace }) {
   const { paths, yMin, yMax, xMax } = useMemo(() => {
     const series = [
       { name: "Fuel", color: "#c2410c", values: trace.fuelTempC },
-      { name: "Section 0", color: "#7c3aed", values: trace.section0TempC ?? [] },
+      { name: `Section ${sectionIndex}`, color: "#7c3aed", values: sectionSeries(trace, sectionIndex) },
       { name: "Disk", color: "#0f766e", values: trace.diskTempC ?? [] },
       { name: "Shell", color: "#1d4ed8", values: trace.shellTempC ?? [] },
     ].filter((item) => item.values.length === trace.timeS.length && item.values.length > 0);
@@ -252,7 +261,7 @@ function FuelTempChart({ trace }: { trace: FuelTrace }) {
       yMax: yMaxLocal,
       xMax: xMaxLocal,
     };
-  }, [trace, plotW, plotH, pad.left, pad.top]);
+  }, [trace, sectionIndex, plotW, plotH, pad.left, pad.top]);
 
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => yMin + f * (yMax - yMin));
   const xTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * xMax);
@@ -263,14 +272,14 @@ function FuelTempChart({ trace }: { trace: FuelTrace }) {
       {paths.map((item, index) => (
         <g key={item.name}>
           <line
-            x1={pad.left + index * 92}
-            x2={pad.left + index * 92 + 16}
+            x1={pad.left + index * 120}
+            x2={pad.left + index * 120 + 16}
             y1={14}
             y2={14}
             stroke={item.color}
             strokeWidth={2}
           />
-          <text x={pad.left + index * 92 + 20} y={18} className="rimael-chart-label">
+          <text x={pad.left + index * 120 + 20} y={18} className="rimael-chart-label">
             {item.name}
           </text>
         </g>
@@ -340,6 +349,7 @@ const ThermodynamicTab: React.FC<Props> = ({
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [trace, setTrace] = useState<FuelTrace | null>(null);
+  const [sectionIndex, setSectionIndex] = useState(0);
   const cellIndex = setup.tpv_airbridge_cell;
 
   const curves = useMemo(
@@ -576,17 +586,39 @@ const ThermodynamicTab: React.FC<Props> = ({
       </Col>
       <Col lg={7}>
         <div className="border rounded p-3 bg-white h-100">
-          <div className="d-flex justify-content-between align-items-center gap-2 mb-2">
+          <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
             <h2 className="h6 mb-0">RIMAEL Modelica — fuel temperature</h2>
-            <Button size="sm" variant="primary" disabled={running} onClick={() => void onRunRim()}>
-              {running ? "Running…" : "Run Sim"}
-            </Button>
+            <div className="d-flex align-items-center gap-2">
+              <Form.Label htmlFor="disk-section-select" className="small mb-0 text-nowrap">
+                Disk section
+              </Form.Label>
+              <Form.Select
+                id="disk-section-select"
+                size="sm"
+                aria-label="Disk section to display"
+                style={{ width: "11rem" }}
+                value={sectionIndex}
+                onChange={(event) => setSectionIndex(Number(event.target.value))}
+              >
+                {Array.from({ length: RIMAEL_N_SECTIONS }, (_, index) => (
+                  <option key={index} value={index}>
+                    Section {index} · {index * 30}°
+                  </option>
+                ))}
+              </Form.Select>
+              <Button size="sm" variant="primary" disabled={running} onClick={() => void onRunRim()}>
+                {running ? "Running…" : "Run Sim"}
+              </Button>
+            </div>
           </div>
           <p className="small text-secondary mb-3">
             Runs <code>RIMAEL.Reactor</code> from this operating point. Helium conduction stays on, including on the
             shield arcs. The shield is one graphite mass that starts at the disk temperature. The vacuum shell is its
             own node, and the cells at {(TPV_CELL_TEMP_K - 273.15).toFixed(0)} °C take the air-bridge absorption.
-            Shutdown is at 240 s. The first compile can take a couple of minutes; later runs reuse the binary.
+            Shutdown is at 240 s. The menu picks which of the twelve sections is drawn. Section 0 is the window
+            that starts at 0°, on the fuel. While the disk turns, every section spends the same share of the turn
+            on each arc, so it stays near the disk mean. After shutdown the disk stops and that section stays on
+            the arc at its start angle. The first compile can take a couple of minutes; later runs reuse the binary.
           </p>
           {error && (
             <Alert variant="danger" className="py-2 px-3 small">
@@ -601,7 +633,12 @@ const ThermodynamicTab: React.FC<Props> = ({
                 {trace.timeS.length} samples · final{" "}
                 {trace.fuelTempC[trace.fuelTempC.length - 1]?.toFixed(1)} °C at {trace.stopTimeS.toFixed(0)} s
               </div>
-              <FuelTempChart trace={trace} />
+              <FuelTempChart trace={trace} sectionIndex={sectionIndex} />
+              {sectionSeries(trace, sectionIndex).length === 0 && (
+                <div className="small text-secondary mt-2">
+                  This run did not record section {sectionIndex}. Run Sim again to load all twelve.
+                </div>
+              )}
             </>
           )}
           {!trace && !running && !error && (

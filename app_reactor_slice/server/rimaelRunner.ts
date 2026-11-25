@@ -55,8 +55,10 @@ export type RimaelFuelTrace = {
   fuelTempC: number[];
   diskTempC: number[];
   shellTempC: number[];
-  /** Disk sector whose window starts at 0°. */
+  /** Disk sector whose window starts at 0°. Same series as sectionTempsC[0]. */
   section0TempC: number[];
+  /** Twelve section temperatures, °C. Index 0 is the window that starts at 0°. */
+  sectionTempsC: number[][];
   stopTimeS: number;
   fuelTempStartC: number;
   fuelEmissivity: number;
@@ -467,8 +469,29 @@ async function regenerateAppMoIfNeeded() {
   }
 }
 
+/** Result-file regex. Matches disk.T_section0 and disk.T_section[1] … [12]. */
+const RESULT_VARIABLE_FILTER = String.raw`time|FuelPlate\.T|VacuumShell\.T|disk\.T_mean|disk\.T_section`;
+
 function columnIndex(header: string[], suffix: string): number {
   return header.findIndex((name) => name === suffix || name.endsWith(suffix));
+}
+
+/** Column of each UI section 0…11. Modelica T_section[1] is section 0. */
+function sectionColumnIndices(header: string[]): number[] {
+  const idx = Array.from({ length: 12 }, () => -1);
+  header.forEach((name, col) => {
+    const arrayForm = /(?:^|\.)T_section\[(\d+)\]$/.exec(name);
+    if (arrayForm) {
+      const n = Number(arrayForm[1]) - 1;
+      if (n >= 0 && n < 12) idx[n] = col;
+      return;
+    }
+    const named = /(?:^|\.)T_section(\d+)$/.exec(name);
+    if (!named) return;
+    const n = Number(named[1]);
+    if (n >= 0 && n < 12 && idx[n] < 0) idx[n] = col;
+  });
+  return idx;
 }
 
 function parseFuelCsv(csvPath: string): {
@@ -477,6 +500,7 @@ function parseFuelCsv(csvPath: string): {
   diskTempK: number[];
   shellTempK: number[];
   section0TempK: number[];
+  sectionTempsK: number[][];
 } {
   const raw = fs.readFileSync(csvPath, "utf8");
   const lines = raw.split(/\r?\n/).filter((line) => line.trim().length > 0);
@@ -486,7 +510,7 @@ function parseFuelCsv(csvPath: string): {
   const tempIdx = columnIndex(header, "FuelPlate.T");
   const diskIdx = columnIndex(header, "disk.T_mean");
   const shellIdx = columnIndex(header, "VacuumShell.T");
-  const section0Idx = columnIndex(header, "disk.T_section0");
+  const sectionIdx = sectionColumnIndices(header);
   if (timeIdx < 0 || tempIdx < 0) {
     throw new RimaelRunnerError(`CSV missing time/FuelPlate.T columns: ${header.join(", ")}`);
   }
@@ -494,7 +518,7 @@ function parseFuelCsv(csvPath: string): {
   const fuelTempK: number[] = [];
   const diskTempK: number[] = [];
   const shellTempK: number[] = [];
-  const section0TempK: number[] = [];
+  const sectionTempsK: number[][] = Array.from({ length: 12 }, () => []);
   for (const line of lines.slice(1)) {
     const cells = line.split(",");
     const t = Number(cells[timeIdx]);
@@ -504,13 +528,17 @@ function parseFuelCsv(csvPath: string): {
     fuelTempK.push(temp);
     const disk = diskIdx >= 0 ? Number(cells[diskIdx]) : Number.NaN;
     const shell = shellIdx >= 0 ? Number(cells[shellIdx]) : Number.NaN;
-    const section0 = section0Idx >= 0 ? Number(cells[section0Idx]) : Number.NaN;
     if (Number.isFinite(disk)) diskTempK.push(disk);
     if (Number.isFinite(shell)) shellTempK.push(shell);
-    if (Number.isFinite(section0)) section0TempK.push(section0);
+    sectionIdx.forEach((col, section) => {
+      if (col < 0) return;
+      const value = Number(cells[col]);
+      if (Number.isFinite(value)) sectionTempsK[section].push(value);
+    });
   }
   if (!timeS.length) throw new RimaelRunnerError("No samples parsed from CSV.");
-  return { timeS, fuelTempK, diskTempK, shellTempK, section0TempK };
+  const section0TempK = sectionTempsK[0];
+  return { timeS, fuelTempK, diskTempK, shellTempK, section0TempK, sectionTempsK };
 }
 
 function canReuseBinary(): boolean {
@@ -582,11 +610,15 @@ async function runCompiledBinary(override: string, launcher: OmcLauncher): Promi
     // Runtime libs live in the image; run the host-built Linux binary inside it.
     result = await runCommand(
       "docker",
-      dockerRunArgs(launcher.image, "/model/work", [`./${path.basename(REACTOR_BIN)}`, overrideArg]),
+      dockerRunArgs(launcher.image, "/model/work", [
+        `./${path.basename(REACTOR_BIN)}`,
+        overrideArg,
+        `-variableFilter=${RESULT_VARIABLE_FILTER}`,
+      ]),
       { cwd: WORK_DIR, timeoutMs: 180_000 },
     );
   } else {
-    result = await runCommand(REACTOR_BIN, [overrideArg], {
+    result = await runCommand(REACTOR_BIN, [overrideArg, `-variableFilter=${RESULT_VARIABLE_FILTER}`], {
       cwd: WORK_DIR,
       env: {
         ...process.env,
@@ -622,7 +654,7 @@ simulate(
   method = "dassl",
   tolerance = 1e-6,
   outputFormat = "csv",
-  variableFilter = "time|FuelPlate\\\\.T|VacuumShell\\\\.T|disk\\\\.T_mean|disk\\\\.T_section0",
+  variableFilter = "${RESULT_VARIABLE_FILTER.replace(/\\/g, "\\\\")}",
   simflags = "-override=${escaped}"
 );
 getErrorString();
@@ -750,7 +782,7 @@ export async function runRimaelFuelTemperature(
     await compileAndSimulateWithOmc(flags, launcher);
   }
 
-  const { timeS, fuelTempK, diskTempK, shellTempK, section0TempK } = parseFuelCsv(CSV);
+  const { timeS, fuelTempK, diskTempK, shellTempK, section0TempK, sectionTempsK } = parseFuelCsv(CSV);
   const fuelPct = (100 * arcs.fuelArcFrac).toFixed(1);
   const p0Kw = (fuelHeatingPowerW / 1000).toFixed(1);
   const shellC = (shellStartK - 273.15).toFixed(0);
@@ -761,6 +793,7 @@ export async function runRimaelFuelTemperature(
     diskTempC: diskTempK.map((k) => k - 273.15),
     shellTempC: shellTempK.map((k) => k - 273.15),
     section0TempC: section0TempK.map((k) => k - 273.15),
+    sectionTempsC: sectionTempsK.map((series) => series.map((k) => k - 273.15)),
     stopTimeS: timeS[timeS.length - 1] ?? 700,
     fuelTempStartC,
     fuelEmissivity,
