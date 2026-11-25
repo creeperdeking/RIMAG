@@ -454,6 +454,9 @@ const Explorer: React.FC = () => {
     params.set("disk_emissivity", setup.disk_emissivity.toFixed(2));
     params.set("shell_emissivity", setup.shell_emissivity.toFixed(2));
     params.set("tpv_airbridge_cell", String(setup.tpv_airbridge_cell));
+    params.set("rimael_run_min", (Number.isFinite(setup.rimael_run_min) ? setup.rimael_run_min : 11.67).toFixed(2));
+    params.set("rimael_disk_rps", (Number.isFinite(setup.rimael_disk_rps) ? setup.rimael_disk_rps : 0.2).toFixed(2));
+    params.set("rimael_section", String(Math.round(Number.isFinite(setup.rimael_section) ? setup.rimael_section : 0)));
     params.set("enrichment_pct", setup.enrichment_pct.toFixed(1));
     params.set("packing_pct", setup.packing_pct.toFixed(0));
     params.set("hm_particle_pct", setup.hm_particle_pct.toFixed(0));

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Alert, Button, Col, Form, Row } from "react-bootstrap";
 import type { NumericKey, Setup } from "../configurations";
 import {
@@ -355,13 +355,18 @@ const ThermodynamicTab: React.FC<Props> = ({
   moderatorThicknessCm,
   absorberThicknessCm,
   operatingPoint,
+  onNumericChange,
 }) => {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [trace, setTrace] = useState<FuelTrace | null>(null);
-  const [sectionIndex, setSectionIndex] = useState(0);
-  const [runTimeMin, setRunTimeMin] = useState("11.67");
-  const [diskRps, setDiskRps] = useState("0.2");
+  const [runTimeMin, setRunTimeMin] = useState(() =>
+    String(Number.isFinite(setup.rimael_run_min) ? setup.rimael_run_min : 11.67),
+  );
+  const [diskRps, setDiskRps] = useState(() =>
+    String(Number.isFinite(setup.rimael_disk_rps) ? setup.rimael_disk_rps : 0.2),
+  );
+  const sectionIndex = Math.round(Number.isFinite(setup.rimael_section) ? setup.rimael_section : 0);
   const diskSpin = useMemo(() => {
     const revPerS = Number(diskRps);
     if (!Number.isFinite(revPerS) || revPerS < 0) return null;
@@ -372,6 +377,14 @@ const ThermodynamicTab: React.FC<Props> = ({
       revPerS,
     });
   }, [diskRps, diskInnerRadiusM, diskOuterRadiusM, diskThicknessCm]);
+  useEffect(() => {
+    if (!Number.isFinite(setup.rimael_run_min)) return;
+    setRunTimeMin((prev) => (Number(prev) === setup.rimael_run_min ? prev : String(setup.rimael_run_min)));
+  }, [setup.rimael_run_min]);
+  useEffect(() => {
+    if (!Number.isFinite(setup.rimael_disk_rps)) return;
+    setDiskRps((prev) => (Number(prev) === setup.rimael_disk_rps ? prev : String(setup.rimael_disk_rps)));
+  }, [setup.rimael_disk_rps]);
   const cellIndex = setup.tpv_airbridge_cell;
   const fuelHeatingPowerW = operatingPoint.heatW;
 
@@ -534,7 +547,7 @@ const ThermodynamicTab: React.FC<Props> = ({
                 aria-label="Disk section to display"
                 style={{ width: "11rem" }}
                 value={sectionIndex}
-                onChange={(event) => setSectionIndex(Number(event.target.value))}
+                onChange={(event) => onNumericChange?.("rimael_section", Number(event.target.value))}
               >
                 {Array.from({ length: RIMAEL_N_SECTIONS }, (_, index) => (
                   <option key={index} value={index}>
@@ -557,7 +570,12 @@ const ThermodynamicTab: React.FC<Props> = ({
                 max={180}
                 step={0.5}
                 value={runTimeMin}
-                onChange={(event) => setRunTimeMin(event.target.value)}
+                onChange={(event) => {
+                  const text = event.target.value;
+                  setRunTimeMin(text);
+                  const minutes = Number(text);
+                  if (Number.isFinite(minutes)) onNumericChange?.("rimael_run_min", minutes);
+                }}
                 style={{ width: "6.5rem" }}
               />
             </Form.Group>
@@ -570,7 +588,12 @@ const ThermodynamicTab: React.FC<Props> = ({
                 max={20}
                 step={0.05}
                 value={diskRps}
-                onChange={(event) => setDiskRps(event.target.value)}
+                onChange={(event) => {
+                  const text = event.target.value;
+                  setDiskRps(text);
+                  const rps = Number(text);
+                  if (Number.isFinite(rps)) onNumericChange?.("rimael_disk_rps", rps);
+                }}
                 style={{ width: "6.5rem" }}
               />
             </Form.Group>

@@ -37,6 +37,12 @@ export const NUMERIC_FIELDS = {
   shell_emissivity: [0.05, 1.0, 0.01, 0.3],
   /** Air-bridge chart: 0 = 0.74 eV, 1 = 0.90 eV, 2 = 1.10 eV. */
   tpv_airbridge_cell: [0, 2, 1, 0],
+  /** Modelica run length [min]. 11.67 min is the previous 700 s stop. */
+  rimael_run_min: [0.1, 180, 0.01, 11.67],
+  /** Disk speed until the 4 min stop [rev/s]. */
+  rimael_disk_rps: [0, 20, 0.01, 0.2],
+  /** Chart series: disk section 0…11. */
+  rimael_section: [0, 11, 1, 0],
   stack_m: [0.1, 20.0, 0.1, 1.0],
   columns: [1.0, 3.0, 1.0, 1.0],
 } as const;
