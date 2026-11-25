@@ -469,8 +469,11 @@ async function regenerateAppMoIfNeeded() {
   }
 }
 
-/** Result-file regex. Matches disk.T_section0 and disk.T_section[1] … [12]. */
-const RESULT_VARIABLE_FILTER = String.raw`time|FuelPlate\.T|VacuumShell\.T|disk\.T_mean|disk\.T_section`;
+/**
+ * Result-file regex. OpenModelica matches the whole variable name, so the
+ * section pattern needs a suffix: disk.T_section0 and disk.T_section[1] … [12].
+ */
+const RESULT_VARIABLE_FILTER = String.raw`time|FuelPlate\.T|VacuumShell\.T|disk\.T_mean|disk\.T_section.*`;
 
 function columnIndex(header: string[], suffix: string): number {
   return header.findIndex((name) => name === suffix || name.endsWith(suffix));
