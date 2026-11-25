@@ -12,7 +12,9 @@ import {
   peekNextQueued,
   queueSnapshot,
   reconcileAfterRestart,
+  rememberContainer,
   removeQueued,
+  showLiveContainer,
   reorderQueued,
   saveQueue,
   updateQueuedPayload,
@@ -110,7 +112,9 @@ async function listSimContainerNames(): Promise<string[]> {
   return new Promise((resolve) => {
     const child = spawn(
       "docker",
-      ["ps", "-aq", "--filter", `name=${CONTAINER_PREFIX}`, "--format", "{{.Names}}"],
+      // Running containers only. `-q` hides --format and returns ids, which then
+      // fail the name check, so leftover runs were never stopped.
+      ["ps", "--filter", `name=${CONTAINER_PREFIX}`, "--format", "{{.Names}}"],
       { windowsHide: true, stdio: ["ignore", "pipe", "ignore"] },
     );
     let out = "";
@@ -319,6 +323,92 @@ function forwardProcessOutput(child: ChildProcessWithoutNullStreams) {
 }
 
 let adopting: Promise<void> | null = null;
+let reconcileChain: Promise<void> = Promise.resolve();
+
+function followContainerLogs(name: string) {
+  if (!job.running) return;
+  job.containerName = name;
+  const current = job.child;
+  if (
+    current &&
+    current.exitCode == null &&
+    !current.killed &&
+    current.spawnargs.includes(name)
+  ) {
+    return;
+  }
+  const child = spawn("docker", ["logs", "-f", "--tail", "400", name], {
+    windowsHide: true,
+  });
+  job.child = child;
+  forwardProcessOutput(child);
+  child.on("error", (error) => {
+    emit(`[runner] log follow failed: ${error.message}`);
+  });
+  child.on("close", () => {
+    void listSimContainerNames().then((names) => {
+      if (names.includes(name) || !job.running) return;
+      onJobEnded(0);
+    });
+  });
+}
+
+/**
+ * The queue is one run at a time. A container the queue does not call running is
+ * stopped. A container that is still transporting is shown as the running item
+ * instead of being ignored while another run starts.
+ */
+function reconcileContainers(): Promise<void> {
+  const run = async () => {
+    const names = await listSimContainerNames();
+    const keep = job.running && job.containerName ? job.containerName : null;
+    if (keep) {
+      for (const name of names) {
+        if (name !== keep) await runDocker(["rm", "-f", name]);
+      }
+      return;
+    }
+    if (names.length === 0) return;
+    const state = queueSnapshot();
+    const cancelled = new Set(
+      state.items
+        .filter((item) => item.status === "cancelled" && item.containerName)
+        .map((item) => item.containerName as string),
+    );
+    for (const name of names) {
+      if (cancelled.has(name)) await runDocker(["rm", "-f", name]);
+    }
+    const live = (await listSimContainerNames()).filter((name) => !cancelled.has(name));
+    if (live.length === 0) return;
+    const show = live[0];
+    for (const name of live) {
+      if (name !== show) await runDocker(["rm", "-f", name]);
+    }
+    let item = showLiveContainer(show);
+    if (!item) {
+      ensureRunningPlaceholder(null, true);
+      item = queueSnapshot().items.find((entry) => entry.status === "running") ?? null;
+      if (item) rememberContainer(item.id, show);
+    }
+    if (!item || job.running) return;
+    job.running = true;
+    job.suppressQueueAdvance = false;
+    job.currentId = item.id;
+    job.containerName = show;
+    emit(
+      `[runner] ${show} is still running. Showing ${item.label} instead of starting another run.`,
+    );
+    emitQueue();
+    followContainerLogs(show);
+  };
+  reconcileChain = reconcileChain.catch(() => undefined).then(run);
+  return reconcileChain;
+}
+
+const containerSweep = setInterval(() => {
+  void reconcileContainers();
+}, 15_000);
+containerSweep.unref?.();
 
 /**
  * The Vite server keeps the run only in memory. A server restart drops that
@@ -326,10 +416,14 @@ let adopting: Promise<void> | null = null;
  * Also resumes the disk queue when the container is gone but jobs remain.
  */
 export function adoptRunningSimulation(): Promise<void> {
-  if (job.running) return Promise.resolve();
   if (adopting) return adopting;
-  adopting = containerIsRunning()
+  adopting = reconcileContainers()
+    .then(() => {
+      if (job.running) return;
+      return containerIsRunning();
+    })
     .then((alive) => {
+      if (alive == null || job.running) return;
       reconcileAfterRestart(alive);
       if (alive) {
         const paramsPath = path.join(RUN_DIR, PARAMS_FILE);
@@ -350,24 +444,11 @@ export function adoptRunningSimulation(): Promise<void> {
         job.lastLines = [];
         void resolveRunningSimContainer().then((name) => {
           if (!name || !job.running) return;
-          job.containerName = name;
+          if (job.currentId) rememberContainer(job.currentId, name);
           emit(
             `[runner] Reattached to ${name}. The app server restarted and lost the log; the run is still going.`,
           );
-          const child = spawn("docker", ["logs", "-f", "--tail", "400", name], {
-            windowsHide: true,
-          });
-          job.child = child;
-          forwardProcessOutput(child);
-          child.on("error", (error) => {
-            emit(`[runner] log follow failed: ${error.message}`);
-          });
-          child.on("close", () => {
-            void containerIsRunning().then((still) => {
-              if (still || !job.running) return;
-              onJobEnded(0);
-            });
-          });
+          followContainerLogs(name);
         });
         return;
       }
@@ -571,11 +652,14 @@ function finishQueueItem(
   result: QueueItemResult | null,
   advance: boolean,
 ) {
+  const finishedContainer = job.containerName;
   markFinished(itemId, code, status, result);
   job.currentId = null;
+  job.containerName = "";
   job.autoRefinePass = 0;
   emitQueue();
   emit(`[runner] done exit=${code}`);
+  if (finishedContainer) void runDocker(["rm", "-f", finishedContainer]);
   if (advance) maybeStartNextFromQueue();
 }
 
@@ -925,6 +1009,7 @@ function launchDockerJob(
   const launchGen = ++job.launchGen;
   const containerName = `${CONTAINER_PREFIX}-${Date.now().toString(36)}-${launchGen}`;
   job.containerName = containerName;
+  rememberContainer(item.id, containerName);
   emitQueue();
 
   const { command, prefix } = dockerComposeCommand();
@@ -979,27 +1064,56 @@ function launchDockerJob(
         onJobEnded(1, launchGen);
       });
       child.on("close", (code, signal) => {
-        emit(`[runner] process closed code=${code ?? "null"} signal=${signal ?? "null"}`);
-        onJobEnded(code ?? 1, launchGen);
+        void listSimContainerNames().then((names) => {
+          if (
+            names.includes(containerName) &&
+            job.launchGen === launchGen &&
+            job.currentId === item.id
+          ) {
+            emit(
+              `[runner] ${containerName} is still running after the client exited. Showing that run.`,
+            );
+            followContainerLogs(containerName);
+            return;
+          }
+          emit(`[runner] process closed code=${code ?? "null"} signal=${signal ?? "null"}`);
+          onJobEnded(code ?? 1, launchGen);
+        });
       });
     });
 }
 
+let startingNext = false;
+
 function maybeStartNextFromQueue() {
-  if (job.running) return;
+  if (job.running || startingNext) return;
   if (job.queuePaused) {
     emitQueue();
     return;
   }
-  const next = peekNextQueued();
-  if (!next) {
-    emitQueue();
-    return;
-  }
-  const marked = markRunning(next.id);
-  if (!marked) return;
-  emit(`[runner] Starting next queued run: ${marked.label}`);
-  launchDockerJob(marked.payload, marked);
+  startingNext = true;
+  void (async () => {
+    try {
+      if (job.running || job.queuePaused) return;
+      const names = await listSimContainerNames();
+      if (job.running || job.queuePaused) return;
+      if (names.length > 0) {
+        await reconcileContainers();
+        return;
+      }
+      const next = peekNextQueued();
+      if (!next) {
+        emitQueue();
+        return;
+      }
+      const marked = markRunning(next.id);
+      if (!marked) return;
+      emit(`[runner] Starting next queued run: ${marked.label}`);
+      launchDockerJob(marked.payload, marked);
+    } finally {
+      startingNext = false;
+    }
+  })();
 }
 
 /** Start immediately with this payload (becomes the running queue item). */

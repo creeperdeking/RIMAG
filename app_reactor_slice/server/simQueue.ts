@@ -37,6 +37,8 @@ export type QueueItem = {
   exitCode: number | null;
   payload: unknown;
   result?: QueueItemResult | null;
+  /** Docker container created for this item, when the run was launched. */
+  containerName?: string | null;
 };
 
 export type SimQueueState = {
@@ -252,6 +254,35 @@ export function getQueueItem(id: string): QueueItem | null {
 export function peekNextQueued(): QueueItem | null {
   const state = loadQueue();
   return state.items.find((entry) => entry.status === "queued") ?? null;
+}
+
+export function rememberContainer(id: string, containerName: string): void {
+  const state = loadQueue();
+  const item = state.items.find((entry) => entry.id === id);
+  if (!item) return;
+  item.containerName = containerName;
+  saveQueue(state);
+}
+
+/**
+ * A container is still transporting. Show that queue item as running instead of
+ * leaving a finished row up while the process continues.
+ */
+export function showLiveContainer(containerName: string): QueueItem | null {
+  const state = loadQueue();
+  const owned = [...state.items].reverse().find((entry) => entry.containerName === containerName);
+  if (owned?.status === "cancelled") return null;
+  const item = owned ?? state.items.find((entry) => entry.status === "running") ?? null;
+  if (!item) return null;
+  const wasRunning = item.status === "running";
+  item.status = "running";
+  item.containerName = containerName;
+  if (!wasRunning) {
+    item.finishedAt = null;
+    item.exitCode = null;
+  }
+  saveQueue(state);
+  return item;
 }
 
 /** After a Vite restart: demote orphan "running" rows if the container is gone. */
