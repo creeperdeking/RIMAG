@@ -281,12 +281,13 @@ function overrideFlags(
   const diskStartK = Math.max(273.15, flow.diskTempK);
   const shellStartK = Math.max(273.15, flow.shellTempK);
   const bothFacesCm2 = 2 * tpvAreaM2 * 1e4;
-  const thermal = diskSectionThermal(diskAreaM2, diskThicknessCm);
+  const thermal = diskSectionThermal(diskAreaM2, diskThicknessCm, RIMAEL_N_SECTIONS);
   const fuelThermal = graphiteLumpedThermal(fuelAreaM2, fuelThicknessCm);
   const { heatCapacitySection, throughThicknessG, massTotalKg } = thermal;
-  const shieldArcSum = Math.max(arcs.shield1ArcFrac + arcs.shield2ArcFrac, 1e-6);
-  const cShield1 = shield.heatCapacity * (arcs.shield1ArcFrac / shieldArcSum);
-  const cShield2 = shield.heatCapacity * (arcs.shield2ArcFrac / shieldArcSum);
+  const gOverrides = Array.from({ length: RIMAEL_N_SECTIONS }, (_, i) => {
+    const n = i + 1;
+    return `disk.twoFaceDiskSection${n}.thermalConductor.G=${throughThicknessG}`;
+  }).join(",");
   return {
     flags: [
       `FuelPlate.T=${fuelStartK}`,
@@ -301,14 +302,14 @@ function overrideFlags(
       `G_fuel_gap=${gFuelGap}`,
       `G_disk_shell=${gDiskShell}`,
       `G_shield=${gShield}`,
-      `C_shield1=${cShield1}`,
-      `C_shield2=${cShield2}`,
+      `Shield.C=${shield.heatCapacity}`,
+      `Shield.T=${diskStartK}`,
       `fuel_arc_frac=${arcs.fuelArcFrac}`,
       `tpv_arc_frac=${arcs.tpvArcFrac}`,
       `shield1_arc_frac=${arcs.shield1ArcFrac}`,
       `shield2_arc_frac=${arcs.shield2ArcFrac}`,
-      `disk.heat_capacity=${heatCapacitySection}`,
-      `disk.through_thickness_G=${throughThicknessG}`,
+      `disk.heat_capacity_section=${heatCapacitySection}`,
+      gOverrides,
     ].join(","),
     grFuel,
     grTpv,
@@ -768,7 +769,7 @@ export async function runRimaelFuelTemperature(
     grFuel,
     grTpv,
     reusedBinary,
-    message: `${reusedBinary ? "Reused binary" : "Compiled"} · P0=${p0Kw} kW · shell ${shellC} °C · fuel arc ${fuelPct}% · G_fuel=${gFuelGap.toFixed(2)} W/K · G_shell=${gDiskShell.toFixed(2)} W/K · G_shield=${gShield.toFixed(2)} W/K · shield face ${shieldHeatCapacity.toFixed(0)} J/K`,
+    message: `${reusedBinary ? "Reused binary" : "Compiled"} · P0=${p0Kw} kW · shell ${shellC} °C · fuel arc ${fuelPct}% · G_fuel=${gFuelGap.toFixed(2)} W/K · G_shell=${gDiskShell.toFixed(2)} W/K · G_shield=${gShield.toFixed(2)} W/K · Shield.C=${shieldHeatCapacity.toFixed(0)} J/K`,
   };
 }
 

@@ -227,7 +227,7 @@ function FuelTempChart({ trace }: { trace: FuelTrace }) {
   const { paths, yMin, yMax, xMax } = useMemo(() => {
     const series = [
       { name: "Fuel", color: "#c2410c", values: trace.fuelTempC },
-      { name: "Fuel sector", color: "#7c3aed", values: trace.section0TempC ?? [] },
+      { name: "Section 0", color: "#7c3aed", values: trace.section0TempC ?? [] },
       { name: "Disk", color: "#0f766e", values: trace.diskTempC ?? [] },
       { name: "Shell", color: "#1d4ed8", values: trace.shellTempC ?? [] },
     ].filter((item) => item.values.length === trace.timeS.length && item.values.length > 0);
@@ -355,7 +355,7 @@ const ThermodynamicTab: React.FC<Props> = ({
   const fuelHeatingPowerW = operatingPoint.heatW;
 
   const diskThermal = useMemo(
-    () => diskSectionThermal(diskAreaM2, diskThicknessCm),
+    () => diskSectionThermal(diskAreaM2, diskThicknessCm, RIMAEL_N_SECTIONS),
     [diskAreaM2, diskThicknessCm],
   );
   const fuelThermal = useMemo(
@@ -543,27 +543,26 @@ const ThermodynamicTab: React.FC<Props> = ({
             {fuelThermal.massKg.toFixed(1)} kg).
             <br />
             Disk: area <strong>{diskAreaM2.toFixed(3)} m²</strong>, solid{" "}
-            <strong>{diskThicknessCm.toFixed(2)} cm</strong>, {RIMAEL_N_SECTIONS} pieces sized by the
-            geometry arcs →{" "}
-            <code>C = ρ·A·t·cₚ = {diskThermal.heatCapacitySection.toFixed(0)} J/K</code>
+            <strong>{diskThicknessCm.toFixed(2)} cm</strong>, {RIMAEL_N_SECTIONS} sectors →{" "}
+            <code>
+              C_sec = ρ·A·t·cₚ / {RIMAEL_N_SECTIONS} = {diskThermal.heatCapacitySection.toFixed(0)} J/K
+            </code>
             {" · "}
-            <code>G = {diskThermal.throughThicknessG.toFixed(0)} W/K</code>
-            . Each piece holds its arc fraction of C and of G.
+            <code>G = {diskThermal.throughThicknessG.toFixed(0)} W/K</code>.
             <br />
             Shield: disk-facing reflector <strong>{reflectorAreaM2.toFixed(3)} m²</strong> ×{" "}
             <strong>{reflectorThicknessCm.toFixed(2)} cm</strong>, moderator{" "}
             <strong>{moderatorAreaM2.toFixed(3)} m²</strong> × <strong>{moderatorThicknessCm.toFixed(2)} cm</strong>,
             absorber <strong>{absorberAreaM2.toFixed(3)} m²</strong> ×{" "}
             <strong>{absorberThicknessCm.toFixed(2)} cm</strong>, all graphite →{" "}
-            <code>C_face = ρ·Σ(A·t)·cₚ = {shieldThermal.heatCapacity.toFixed(0)} J/K</code> (m=
-            {shieldThermal.massKg.toFixed(1)} kg) on each disk face, split between the two shield arcs. Helium
-            conductance uses the same gaps as the fuel and the shell.
+            <code>Shield.C = ρ·Σ(A·t)·cₚ = {shieldThermal.heatCapacity.toFixed(0)} J/K</code> (m=
+            {shieldThermal.massKg.toFixed(1)} kg). Helium conductance uses the same gaps as the fuel and the shell.
             <br />
-            Those arc fractions are the four disk pieces: fuel{" "}
-            <strong>{(100 * circuitArcs.fuelArcFrac).toFixed(1)}%</strong>, shield 1{" "}
-            <strong>{(100 * circuitArcs.shield1ArcFrac).toFixed(1)}%</strong>, TPV{" "}
-            <strong>{(100 * circuitArcs.tpvArcFrac).toFixed(1)}%</strong>, shield 2{" "}
-            <strong>{(100 * circuitArcs.shield2ArcFrac).toFixed(1)}%</strong>.
+            Circuit arcs from Geometry: fuel{" "}
+            <strong>{(100 * circuitArcs.fuelArcFrac).toFixed(1)}%</strong>, TPV{" "}
+            <strong>{(100 * circuitArcs.tpvArcFrac).toFixed(1)}%</strong>, each shield{" "}
+            <strong>{(100 * circuitArcs.shield1ArcFrac).toFixed(1)}%</strong> → Modelica{" "}
+            <code>fuel_arc_frac</code> / <code>tpv_arc_frac</code> / <code>shield*_arc_frac</code>.
             <br />
             Fuel heating (one disk × one slice):{" "}
             <code>
