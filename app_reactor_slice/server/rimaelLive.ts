@@ -140,12 +140,58 @@ function killChild(child: ChildProcess | null): void {
   }
 }
 
-function removeLiveContainer(): Promise<void> {
+function dockerCmd(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    const child = spawn("docker", ["rm", "-f", RIMAEL_CONTAINER], { stdio: "ignore" });
-    child.on("close", () => resolve());
-    child.on("error", () => resolve());
+    const child = spawn("docker", args, { stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", (error) => resolve({ code: 1, stdout, stderr: stderr || error.message }));
+    child.on("close", (code) => resolve({ code: code ?? 1, stdout, stderr }));
   });
+}
+
+function nameStillTaken(stdout: string): boolean {
+  return stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .some((name) => name === RIMAEL_CONTAINER);
+}
+
+/** One removal at a time, and do not return while the name is still reserved. */
+let removalChain: Promise<void> = Promise.resolve();
+
+function removeLiveContainer(): Promise<void> {
+  const run = removalChain.then(async () => {
+    await dockerCmd(["rm", "-f", RIMAEL_CONTAINER]);
+    for (let attempt = 0; attempt < 25; attempt += 1) {
+      const listed = await dockerCmd([
+        "ps",
+        "-a",
+        "--filter",
+        `name=${RIMAEL_CONTAINER}`,
+        "--format",
+        "{{.Names}}",
+      ]);
+      if (!nameStillTaken(listed.stdout)) return;
+      await dockerCmd(["rm", "-f", RIMAEL_CONTAINER]);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+  });
+  removalChain = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+function nameConflict(text: string): boolean {
+  return text.includes("already in use") || text.includes("Conflict");
 }
 
 function ensureSession(): Session {
@@ -250,33 +296,67 @@ export async function startLive(
     fs.writeFileSync(STATE, "", "utf8");
     current.offset = 0;
     current.partial = "";
-    await removeLiveContainer();
-    if (token !== liveToken) return false;
     const spec = rimaelLaunchSpec(
       prepared.launcher,
       [`-override=${override}`, "-stopTime=86400", `-stepSize=${stepS}`, "-variableFilter=time"],
-      RIMAEL_CONTAINER,
+      prepared.launcher.kind === "docker" ? RIMAEL_CONTAINER : undefined,
     );
-    const child = spawn(spec.command, spec.args, {
-      cwd: spec.cwd,
-      env: spec.env,
-      windowsHide: true,
-      shell: false,
-    });
+    const log = { text: "" };
+    let child: ChildProcess | null = null;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await removeLiveContainer();
+      if (token !== liveToken) return false;
+      log.text = "";
+      const next = spawn(spec.command, spec.args, {
+        cwd: spec.cwd,
+        env: spec.env,
+        windowsHide: true,
+        shell: false,
+      });
+      next.stderr.on("data", (chunk: Buffer) => {
+        log.text = (log.text + chunk.toString("utf8")).slice(-4000);
+      });
+      const conflict = await new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => resolve(nameConflict(log.text)), 700);
+        const consider = () => {
+          if (!nameConflict(log.text)) return;
+          clearTimeout(timer);
+          resolve(true);
+        };
+        next.stderr.on("data", consider);
+        next.on("close", () => {
+          clearTimeout(timer);
+          resolve(nameConflict(log.text));
+        });
+        next.on("error", () => {
+          clearTimeout(timer);
+          resolve(false);
+        });
+      });
+      if (!conflict) {
+        if (next.exitCode != null || next.signalCode != null) {
+          throw new Error(log.text.trim() || `Simulation exited (${next.exitCode ?? 1})`);
+        }
+        child = next;
+        break;
+      }
+      killChild(next);
+    }
+    if (!child || token !== liveToken) {
+      if (child) killChild(child);
+      if (token !== liveToken) return false;
+      throw new Error(log.text.trim() || "The previous live container was still named rimael-live.");
+    }
     current.child = child;
     current.running = true;
     current.message = "OpenModelica is integrating in real time";
     emit({ type: "status", running: true, message: current.message });
-    let stderr = "";
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderr = (stderr + chunk.toString("utf8")).slice(-4000);
-    });
     child.on("error", (error) => {
       if (token !== liveToken) return;
       emit({ type: "error", message: error.message });
     });
     child.on("close", (code) => {
-      if (token !== liveToken || !session) return;
+      if (token !== liveToken || !session || session.child !== child) return;
       pumpState();
       session.running = false;
       session.child = null;
@@ -284,8 +364,8 @@ export async function startLive(
       session.timer = null;
       const message = code === 0 ? "Simulation finished" : `Simulation exited (${code ?? 1})`;
       session.message = message;
-      if (code !== 0 && stderr.trim()) {
-        emit({ type: "error", message: `${message}. ${stderr.trim().slice(-600)}` });
+      if (code !== 0 && log.text.trim()) {
+        emit({ type: "error", message: `${message}. ${log.text.trim().slice(-600)}` });
       }
       emit({ type: "done", message });
       releaseRimael("live");
