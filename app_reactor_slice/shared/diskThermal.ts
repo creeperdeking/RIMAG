@@ -12,8 +12,11 @@ export const GRAPHITE_CP_J_KG_K = 1800;
 /** Through-thickness conductivity of polycrystalline graphite at elevated T (W/(m·K)). */
 export const GRAPHITE_K_W_M_K = 40;
 
-/** Angular sectors in RIMAEL.Disk / TwoFaceDiskSection. */
-export const RIMAEL_N_SECTIONS = 12;
+/**
+ * Disk pieces in RIMAEL.Disk. One piece per geometry zone:
+ * fuel, shield 1, TPV, shield 2. Widths come from the arc fractions.
+ */
+export const RIMAEL_N_SECTIONS = 4;
 
 export type GraphiteLumpedThermal = {
   heatCapacity: number;
@@ -23,7 +26,9 @@ export type GraphiteLumpedThermal = {
 };
 
 export type DiskSectionThermal = {
+  /** Heat capacity of the whole disk. Each piece holds its arc fraction. */
   heatCapacitySection: number;
+  /** Through-thickness conductance of the whole disk. Each piece holds its arc fraction. */
   throughThicknessG: number;
   massTotalKg: number;
   thicknessM: number;
@@ -55,9 +60,9 @@ export function shieldGraphiteThermal(
 }
 
 /**
- * Helium conductance of one shield conductor when its arc is fully covered.
- * The shield uses the same helium as the other gaps: both faces,
- * G = k A / d, with k taken from the fuel gap and the shell gap.
+ * Helium conductance of one face of the whole shield, per unit circle fraction.
+ * DiskSection multiplies by the piece fraction. The shield uses the same helium
+ * as the other gaps, G = k A / d, with k taken from the fuel gap and the shell gap.
  * `shieldAreaM2` is the one-face disk-facing area of every shield zone.
  */
 export function shieldHeliumPerFace(
@@ -67,14 +72,12 @@ export function shieldHeliumPerFace(
   tpvAreaM2: number,
   shieldAreaM2: number,
   shieldArcSum: number,
-  nSections: number = RIMAEL_N_SECTIONS,
 ): number {
   const shield = Number.isFinite(shieldAreaM2) && shieldAreaM2 > 0 ? shieldAreaM2 : 0;
   const fuelSide = fuelAreaM2 > 0 ? Math.max(gFuelBothFaces, 0) * (shield / fuelAreaM2) : 0;
   const shellSide = tpvAreaM2 > 0 ? Math.max(gShellBothFaces, 0) * (shield / tpvAreaM2) : 0;
   const arcSum = Math.max(shieldArcSum, 1e-6);
-  const n = Math.max(1, Math.round(nSections));
-  return (fuelSide + shellSide) / (2 * n * arcSum);
+  return (fuelSide + shellSide) / (2 * arcSum);
 }
 
 /** C = ρ · A · t · c_p for a single lumped graphite body (e.g. FuelPlate). */
@@ -91,26 +94,20 @@ export function graphiteLumpedThermal(areaM2: number, thicknessCm: number): Grap
 }
 
 /**
- * Lumped heat capacity of one Modelica disk sector:
- * C_section = (ρ · A · t · c_p) / N
- * and through-thickness conductance of that sector:
- * G = k · (A/N) / t
+ * Whole-disk graphite lump. Modelica splits it by the geometry arc fractions:
+ * C_piece = φ · ρ · A · t · c_p, and G_piece = φ · k · A / t.
  */
-export function diskSectionThermal(
-  areaM2: number,
-  thicknessCm: number,
-  nSections: number = RIMAEL_N_SECTIONS,
-): DiskSectionThermal {
+export function diskSectionThermal(areaM2: number, thicknessCm: number): DiskSectionThermal {
   const lumped = graphiteLumpedThermal(areaM2, thicknessCm);
-  const n = Math.max(1, Math.round(nSections));
-  const throughThicknessG = (GRAPHITE_K_W_M_K * (lumped.areaM2 / n)) / lumped.thicknessM;
+  const throughThicknessG =
+    lumped.thicknessM > 0 ? (GRAPHITE_K_W_M_K * lumped.areaM2) / lumped.thicknessM : 0;
   return {
-    heatCapacitySection: lumped.heatCapacity / n,
+    heatCapacitySection: lumped.heatCapacity,
     throughThicknessG,
     massTotalKg: lumped.massKg,
     thicknessM: lumped.thicknessM,
     areaM2: lumped.areaM2,
-    nSections: n,
+    nSections: RIMAEL_N_SECTIONS,
   };
 }
 
@@ -160,20 +157,14 @@ export function modelicaFuelHeatingPowerW(
 }
 
 /**
- * Modelica per-face factor for one sector window fully on an arc.
- * Twelve sectors rotate together. The time average of one sector's overlap
- * fraction is the arc fraction, and each sector has two faces, so
- * 2 · N · arcFrac · value_face = value over the whole area.
+ * Modelica per-face factor per unit of circle fraction.
+ * DiskSection multiplies by the piece fraction φ. A piece that fills the
+ * zone (φ = arcFrac) and lies fully on it then carries one face of `wholeArea`.
  */
-export function perFaceFullWindow(
-  wholeArea: number,
-  arcFrac: number,
-  nSections: number = RIMAEL_N_SECTIONS,
-): number {
+export function perFaceFullWindow(wholeArea: number, arcFrac: number): number {
   const arc = Math.min(1, Math.max(arcFrac, 1e-6));
-  const n = Math.max(1, Math.round(nSections));
   if (!(wholeArea > 0)) return 0;
-  return wholeArea / (2 * n * arc);
+  return wholeArea / (2 * arc);
 }
 
 /** TPV cell coolant temperature in the thermodynamics tab and in RIMAEL.Reactor. */
