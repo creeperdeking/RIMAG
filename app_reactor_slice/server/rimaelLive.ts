@@ -19,6 +19,8 @@ export type LiveSample = {
   shellC: number;
   shieldC: number;
   sectionC: number[];
+  /** Section-window rotation from the model [deg]. */
+  angleDeg: number;
 };
 
 export type LiveEvent =
@@ -83,7 +85,7 @@ function writeControl(powerW: number, rps: number, scale: number, run: boolean):
 
 function parseLine(line: string): LiveSample | null {
   const parts = line.trim().split(/\s+/).map(Number);
-  if (parts.length < 18 || parts.some((value) => !Number.isFinite(value))) return null;
+  if (parts.length < 19 || parts.some((value) => !Number.isFinite(value))) return null;
   const toC = (kelvin: number) => kelvin - 273.15;
   return {
     timeS: parts[0],
@@ -93,6 +95,7 @@ function parseLine(line: string): LiveSample | null {
     shellC: toC(parts[4]),
     shieldC: toC(parts[5]),
     sectionC: parts.slice(6, 18).map(toC),
+    angleDeg: parts[18],
   };
 }
 
@@ -122,8 +125,12 @@ function pumpState(): void {
     const sample = parseLine(line);
     if (!sample || !session) continue;
     const prev = session.history[session.history.length - 1];
-    if (prev && sample.timeS <= prev.timeS) continue;
-    session.history.push(sample);
+    if (prev && sample.timeS < prev.timeS - 1e-9) continue;
+    if (prev && Math.abs(sample.timeS - prev.timeS) <= 1e-9) {
+      session.history[session.history.length - 1] = sample;
+    } else {
+      session.history.push(sample);
+    }
     if (session.history.length > HISTORY_CAP) {
       session.history.splice(0, session.history.length - HISTORY_CAP);
     }

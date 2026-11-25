@@ -13,6 +13,7 @@ export type LiveSample = {
   shellC: number;
   shieldC: number;
   sectionC: number[];
+  angleDeg: number;
 };
 
 type ReadyEvent = {
@@ -231,10 +232,6 @@ const LiveReactorPanel: React.FC<Props> = ({
   const [error, setError] = useState<string | null>(null);
   const [sample, setSample] = useState<LiveSample | null>(null);
   const [samples, setSamples] = useState<LiveSample[]>([]);
-  const [angle, setAngle] = useState(0);
-  const motion = useRef({ wall: 0, angle: 0, rps: 0, scale: 1 });
-  const liveRef = useRef(false);
-  liveRef.current = live;
   const bodyRef = useRef(geometryBody);
   bodyRef.current = geometryBody;
 
@@ -252,13 +249,16 @@ const LiveReactorPanel: React.FC<Props> = ({
       } else if (data.type === "sample") {
         setSample(data.sample);
         setSamples((prev) => {
+          const last = prev[prev.length - 1];
+          if (last && data.sample.timeS <= last.timeS + 1e-9) {
+            const next = prev.slice();
+            next[next.length - 1] = data.sample;
+            return next;
+          }
           const next = prev.length > 2000 ? prev.slice(-1500) : prev.slice();
           next.push(data.sample);
           return next;
         });
-      } else if (data.type === "control") {
-        motion.current.rps = data.rps;
-        motion.current.scale = data.scale;
       } else if (data.type === "done") {
         setLive(false);
         if (data.message) setMessage(data.message);
@@ -272,28 +272,6 @@ const LiveReactorPanel: React.FC<Props> = ({
     };
     return () => source.close();
   }, []);
-
-  useEffect(() => {
-    let frame = 0;
-    const tick = (now: number) => {
-      const state = motion.current;
-      if (state.wall > 0 && liveRef.current) {
-        const dt = Math.min(0.1, (now - state.wall) / 1000);
-        state.angle = (state.angle + dt * state.scale * state.rps * 360) % 360;
-        setAngle(state.angle);
-      }
-      state.wall = now;
-      frame = window.requestAnimationFrame(tick);
-    };
-    frame = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(frame);
-  }, []);
-
-  useEffect(() => {
-    if (!sample) return;
-    motion.current.rps = sample.rps;
-    motion.current.scale = scale;
-  }, [sample, scale]);
 
   useEffect(() => {
     if (!live) return;
@@ -332,8 +310,6 @@ const LiveReactorPanel: React.FC<Props> = ({
     setError(null);
     setSamples([]);
     setSample(null);
-    motion.current.rps = rps;
-    motion.current.scale = scale;
     try {
       const response = await fetch("/api/rimael/live/start", {
         method: "POST",
@@ -381,9 +357,9 @@ const LiveReactorPanel: React.FC<Props> = ({
       </div>
       <p className="small text-secondary mb-2">
         One OpenModelica process keeps integrating <code>RIMAEL.Reactor</code>. Several times a second it reads the
-        power and disk speed you set here, writes the fuel, shield, shell, and twelve section temperatures back, and
-        waits so model time stays on the selected wall-clock scale. The disk drawing turns at that speed. Each 30°
-        section is tinted from its own temperature. The ring outside the disk is the fixed fuel, shield, and TPV arcs.
+        power and disk speed you set here, and writes back the fuel, shield, shell, and twelve section temperatures
+        together with the disk angle the section windows use. The drawing moves only when a new sample arrives. Each
+        30° section is tinted from its own temperature. The ring outside the disk is the fixed fuel, shield, and TPV arcs.
       </p>
       <div className="d-flex flex-wrap align-items-end gap-3 mb-2">
         <Form.Group controlId="live-power-kw">
@@ -452,7 +428,7 @@ const LiveReactorPanel: React.FC<Props> = ({
       <DiskView
         columns={columns}
         innerFrac={innerFrac}
-        angleDeg={angle}
+        angleDeg={sample?.angleDeg ?? 0}
         sectionC={sectionC}
         fuelArcFrac={fuelArcFrac}
         shield1ArcFrac={shield1ArcFrac}
