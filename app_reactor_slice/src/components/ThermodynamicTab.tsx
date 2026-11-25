@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Alert, Button, Col, Form, Row } from "react-bootstrap";
+import LiveReactorPanel from "./LiveReactorPanel";
 import type { NumericKey, Setup } from "../configurations";
 import {
   GRAPHITE_CP_J_KG_K,
@@ -76,6 +77,8 @@ type Props = {
   renderSlider: (key: NumericKey, label: string, format: (value: number) => string) => React.ReactNode;
   /** Apply a numeric setup field (the air-bridge cell choice). */
   onNumericChange?: (key: NumericKey, value: number) => void;
+  /** Geometry columns. Each column draws the same modeled disk. */
+  columns?: number;
 };
 
 function polylinePath(points: TpvPoint[], xOf: (t: number) => number, yOf: (v: number) => number): string {
@@ -356,6 +359,7 @@ const ThermodynamicTab: React.FC<Props> = ({
   absorberThicknessCm,
   operatingPoint,
   onNumericChange,
+  columns = 1,
 }) => {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -604,6 +608,43 @@ const ThermodynamicTab: React.FC<Props> = ({
               <strong>{diskSpin ? formatKineticEnergy(diskSpin.energyJ) : "—"}</strong>
             </div>
           </div>
+          <LiveReactorPanel
+            geometryBody={{
+              fuel_temp_c: setup.fuel_temp_c,
+              fuel_emissivity: setup.fuel_emissivity,
+              disk_emissivity: setup.disk_emissivity,
+              disk_thickness_cm: diskThicknessCm,
+              disk_area_m2: diskAreaM2,
+              fuel_thickness_cm: fuelThicknessCm,
+              fuel_area_m2: fuelAreaM2,
+              fuel_arc_frac: circuitArcs.fuelArcFrac,
+              tpv_arc_frac: circuitArcs.tpvArcFrac,
+              shield1_arc_frac: circuitArcs.shield1ArcFrac,
+              shield2_arc_frac: circuitArcs.shield2ArcFrac,
+              fuel_heating_power_w: fuelHeatingPowerW,
+              shell_emissivity: setup.shell_emissivity,
+              fuel_gap_cm: fuelGapCm,
+              tpv_gap_cm: tpvGapCm,
+              tpv_area_m2: tpvAreaM2,
+              tpv_cell_index: cellIndex,
+              reflector_area_m2: reflectorAreaM2,
+              moderator_area_m2: moderatorAreaM2,
+              absorber_area_m2: absorberAreaM2,
+              reflector_thickness_cm: reflectorThicknessCm,
+              moderator_thickness_cm: moderatorThicknessCm,
+              absorber_thickness_cm: absorberThicknessCm,
+            }}
+            nominalPowerW={fuelHeatingPowerW}
+            diskRps={diskRps}
+            columns={columns}
+            innerRadiusM={diskInnerRadiusM}
+            outerRadiusM={diskOuterRadiusM}
+            fuelArcFrac={circuitArcs.fuelArcFrac}
+            shield1ArcFrac={circuitArcs.shield1ArcFrac}
+            tpvArcFrac={circuitArcs.tpvArcFrac}
+            shield2ArcFrac={circuitArcs.shield2ArcFrac}
+            batchRunning={running}
+          />
           <p className="small text-secondary mb-3">
             Runs <code>RIMAEL.Reactor</code> from this operating point. Helium conduction stays on, including on the
             shield arcs. The shield is one graphite mass that starts at the disk temperature. The vacuum shell is its

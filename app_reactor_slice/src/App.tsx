@@ -900,6 +900,7 @@ const Explorer: React.FC = () => {
       operatingPoint={operatingPoint}
       renderSlider={renderSlider}
       onNumericChange={setNumber}
+      columns={columns}
     />
   );
 
