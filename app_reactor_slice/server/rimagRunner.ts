@@ -59,12 +59,14 @@ const CONTAINER_NAME = CONTAINER_PREFIX;
 
 export class RimagRunnerError extends Error {}
 
+type LoggedLine = { at: string; line: string };
+
 type JobState = {
   child: ChildProcessWithoutNullStreams | null;
-  listeners: Set<(line: string) => void>;
+  listeners: Set<(entry: LoggedLine) => void>;
   queueListeners: Set<(queue: SimQueueState) => void>;
   running: boolean;
-  lastLines: string[];
+  lastLines: LoggedLine[];
   currentId: string | null;
   /** Container that is actually transporting. Empty until it is visible. */
   containerName: string;
@@ -247,10 +249,20 @@ async function removeSimContainers(protect: readonly string[] = []) {
   emit(`[runner] warning: ${CONTAINER_PREFIX}* still present after retries; next compose run may fail`);
 }
 
-function emit(line: string) {
-  job.lastLines.push(line);
+function emit(line: string, at?: string) {
+  const entry = { at: at ?? new Date().toISOString(), line };
+  job.lastLines.push(entry);
   if (job.lastLines.length > 2000) job.lastLines.splice(0, job.lastLines.length - 2000);
-  for (const listener of job.listeners) listener(line);
+  for (const listener of job.listeners) listener(entry);
+}
+
+/** `docker logs -t` prefixes each line with an RFC3339 timestamp. */
+function dockerLogStamp(line: string): { at?: string; line: string } {
+  const match = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))\s(.*)$/.exec(line);
+  if (!match) return { line };
+  const date = new Date(match[1]);
+  if (Number.isNaN(date.getTime())) return { line };
+  return { at: date.toISOString(), line: match[2] };
 }
 
 function emitQueue() {
@@ -400,23 +412,37 @@ async function containerIsRunning(): Promise<boolean> {
   return (await resolveRunningSimContainer()) != null;
 }
 
-function forwardProcessOutput(child: ChildProcessWithoutNullStreams) {
+function forwardChunks(
+  child: ChildProcessWithoutNullStreams,
+  onLine: (line: string) => void,
+) {
   const forward = (chunk: Buffer) => {
     const text = chunk.toString("utf8");
     for (const line of text.split(/\r\n|\n|\r/)) {
-      if (line.length) emit(line);
+      if (line.length) onLine(line);
     }
   };
   child.stdout.on("data", forward);
   child.stderr.on("data", forward);
 }
 
+function forwardProcessOutput(child: ChildProcessWithoutNullStreams) {
+  forwardChunks(child, (line) => emit(line));
+}
+
+function forwardDockerLogs(child: ChildProcessWithoutNullStreams) {
+  forwardChunks(child, (line) => {
+    const parsed = dockerLogStamp(line);
+    emit(parsed.line, parsed.at);
+  });
+}
+
 let adopting: Promise<void> | null = null;
 let reconcileChain: Promise<void> = Promise.resolve();
 
 function logsShowFinalKeff(): boolean {
-  return job.lastLines.some((line) =>
-    /k-effective\s*\([^)]+\)\s*=\s*[0-9.]+\s*\+\/-\s*[0-9.]+/i.test(line),
+  return job.lastLines.some((entry) =>
+    /k-effective\s*\([^)]+\)\s*=\s*[0-9.]+\s*\+\/-\s*[0-9.]+/i.test(entry.line),
   );
 }
 
@@ -454,11 +480,11 @@ function followContainerLogs(name: string, launchGen = job.launchGen) {
   ) {
     return;
   }
-  const child = spawn("docker", ["logs", "-f", "--tail", "400", name], {
+  const child = spawn("docker", ["logs", "-f", "-t", "--tail", "400", name], {
     windowsHide: true,
   });
   job.child = child;
-  forwardProcessOutput(child);
+  forwardDockerLogs(child);
   child.on("error", (error) => {
     emit(`[runner] log follow failed: ${error.message}`);
   });
@@ -671,9 +697,9 @@ export function adoptRunningSimulation(): Promise<void> {
   return adopting;
 }
 
-export function subscribe(listener: (line: string) => void) {
+export function subscribe(listener: (entry: LoggedLine) => void) {
   job.listeners.add(listener);
-  for (const line of job.lastLines) listener(line);
+  for (const entry of job.lastLines) listener(entry);
   return () => job.listeners.delete(listener);
 }
 
@@ -722,7 +748,7 @@ function gammaFromLogs(): Pick<QueueItemResult, "gammaKGy" | "gammaCi95Pct" | "g
   const lineRe =
     /InGaAs gamma dose:\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*kGy\s+over\s+([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s+years\s+\((?:±|\+\/-)\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?|nan)%\s*,\s*95%\s*CI\)/i;
   for (let i = job.lastLines.length - 1; i >= 0; i -= 1) {
-    const match = job.lastLines[i].match(lineRe);
+    const match = job.lastLines[i].line.match(lineRe);
     if (!match) continue;
     const gammaKGy = Number(match[1]);
     const gammaYears = Number(match[2]);
@@ -784,7 +810,7 @@ function attachStoredGamma(result: QueueItemResult, item: QueueItem | null | und
 }
 
 function resultFromLogs(): QueueItemResult {
-  const depletion = parseDepletionLine(job.lastLines.join("\n"));
+  const depletion = parseDepletionLine(job.lastLines.map((entry) => entry.line).join("\n"));
   if (depletion) {
     return {
       summary: depletion.summary,
@@ -801,7 +827,7 @@ function resultFromLogs(): QueueItemResult {
   let keffUncertainty: number | null = null;
   let summary: string | null = null;
   for (let i = job.lastLines.length - 1; i >= 0; i -= 1) {
-    const line = job.lastLines[i];
+    const line = job.lastLines[i].line;
     const final = line.match(
       /k-effective\s*\([^)]+\)\s*=\s*([0-9.]+)\s*\+\/-\s*([0-9.]+)/i,
     );
@@ -814,7 +840,7 @@ function resultFromLogs(): QueueItemResult {
   }
   if (keff == null) {
     for (let i = job.lastLines.length - 1; i >= 0; i -= 1) {
-      const line = job.lastLines[i];
+      const line = job.lastLines[i].line;
       const progress = line.match(
         /\bk=([0-9.]+)(?:\s*\+\/-\s*([0-9.]+))?/i,
       );
