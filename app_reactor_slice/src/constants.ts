@@ -34,6 +34,7 @@ export const TAB_KEYS = [
   "overview",
   "fuel",
   "designer",
+  "thermophotovoltaics",
   "thermodynamic",
   "simulation",
   "visualisation",

@@ -355,8 +355,6 @@ const ThermodynamicTab: React.FC<Props> = ({
   moderatorThicknessCm,
   absorberThicknessCm,
   operatingPoint,
-  renderSlider,
-  onNumericChange,
 }) => {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -375,17 +373,6 @@ const ThermodynamicTab: React.FC<Props> = ({
     });
   }, [diskRps, diskInnerRadiusM, diskOuterRadiusM, diskThicknessCm]);
   const cellIndex = setup.tpv_airbridge_cell;
-
-  const curves = useMemo(
-    () => airbridgeCurves(cellIndex, setup.shell_emissivity),
-    [cellIndex, setup.shell_emissivity],
-  );
-  const effPoints = curves.efficiency;
-  const powerPoints = curves.power;
-  const egColor = curves.color;
-
-  /** Cells see the vacuum shell, so the shell temperature is the TPV emitter. */
-  const emitterTempC = operatingPoint.shellTempC;
   const fuelHeatingPowerW = operatingPoint.heatW;
 
   const diskThermal = useMemo(
@@ -482,96 +469,8 @@ const ThermodynamicTab: React.FC<Props> = ({
     <Row className="g-4">
       <Col lg={5}>
         <div className="border rounded p-3 bg-white h-100">
-          <h2 className="h6 mb-3">TPV and fuel temperature</h2>
-          <p className="small text-secondary mb-3">
-            Fuel temperature is fixed. Power density and efficiency are what the selected cell produces when the
-            shell sits at the temperature that carries that heat.
-          </p>
-          {renderSlider("fuel_temp_c", "Fuel temperature (°C)", fixed(0))}
-          {renderSlider("fuel_emissivity", "Fuel emissivity", fixed(2))}
-          {renderSlider("disk_emissivity", "Disk emissivity", fixed(2))}
-          {renderSlider("shell_emissivity", "Vacuum shell emissivity", fixed(2))}
-          <div className="small mb-2">
-            Power density <strong>{operatingPoint.powerWPerCm2.toFixed(2)} W/cm²</strong>
-            <span className="text-secondary"> · efficiency </span>
-            <strong>{operatingPoint.efficiencyPct.toFixed(1)}%</strong>
-            <span className="text-secondary"> · conduction </span>
-            <strong
-              title="Share of the fuel-to-cell path carried by helium conduction. The same heat crosses the fuel gap, the disk gap, and the vacuum gap, and the vacuum gap adds none."
-            >
-              {((100 * (operatingPoint.conductionShareFuel + operatingPoint.conductionShareDisk)) / 3).toFixed(1)}%
-            </strong>
-          </div>
-
-          <div className="mt-3 pt-3 border-top">
-            <h3 className="h6 mb-2">Air-bridge TPV cells (Roy-Layinde et al.)</h3>
-            <div className="btn-group btn-group-sm mb-3" role="group" aria-label="Air-bridge band gap">
-              {AIRBRIDGE_CELLS.map((cell) => (
-                <Button
-                  key={cell.id}
-                  size="sm"
-                  variant={cellIndex === cell.index ? "primary" : "outline-primary"}
-                  onClick={() => onNumericChange?.("tpv_airbridge_cell", cell.index)}
-                >
-                  {cell.label}
-                </Button>
-              ))}
-            </div>
-            <p className="small text-secondary mb-2">
-              Reflected light returns to the shell, so the shell emissivity and the measured absorptance set the
-              intensity in the gap. The gap is closed, so the view factor is 1. The 0.90 and 1.10 files integrate at
-              0.88 and 1.08 eV. The mark is the vacuum-shell temperature the cells see.
-            </p>
-            <div className="small mb-2">
-              Fuel <strong>{setup.fuel_temp_c.toFixed(0)} °C</strong>
-              <span className="text-secondary">
-                {" "}
-                supplies {(operatingPoint.heatW / 1000).toFixed(1)} kW. The same heat crosses the disk and is what the
-                cell absorbs.
-              </span>
-            </div>
-            <div className="small mb-2">
-              Disk <strong>{operatingPoint.diskTempC.toFixed(0)} °C</strong>
-              <span className="text-secondary">
-                {" "}
-                ({(operatingPoint.diskTempC - emitterTempC).toFixed(0)} °C above the shell,{" "}
-                {Math.round(100 * operatingPoint.conductionShareDisk)}% of the heat by conduction across{" "}
-                {tpvGapCm.toFixed(2)} cm of helium).
-              </span>
-            </div>
-            <div className="small mb-2">
-              Shell <strong>{emitterTempC.toFixed(0)} °C</strong>
-              <span className="text-secondary">
-                {" "}
-                radiates in vacuum onto the cells at {(TPV_CELL_TEMP_K - 273.15).toFixed(0)} °C. Across the{" "}
-                {fuelGapCm.toFixed(2)} cm fuel gap, conduction carries{" "}
-                {Math.round(100 * operatingPoint.conductionShareFuel)}% of the heat.
-              </span>
-            </div>
-            <TpvModelChart
-              title={`Efficiency — ${curves.label} · ε ${setup.shell_emissivity.toFixed(2)}`}
-              yLabel="η (%)"
-              points={effPoints}
-              color={egColor}
-              emitterTempC={emitterTempC}
-              yMin={0}
-              yMax={50}
-              valueFormat={(v) => v.toFixed(0)}
-            />
-            <TpvModelChart
-              title={`Power density — ${curves.label} · ε ${setup.shell_emissivity.toFixed(2)}`}
-              yLabel="P (W/cm²)"
-              points={powerPoints}
-              color={egColor}
-              emitterTempC={emitterTempC}
-              yMin={0.001}
-              yMax={10}
-              logY
-              valueFormat={(v) => v.toFixed(2)}
-            />
-          </div>
-
-          <div className="small text-secondary mt-2">
+          <h2 className="h6 mb-3">Disk thermal circuit</h2>
+          <div className="small text-secondary">
             Fuel temperature is the OpenMC fuel temperature and the initial <code>FuelPlate.T</code> of Run Sim (
             {Math.round(setup.fuel_temp_c + 273.15)} K). Each of the twelve disk sections meets the fuel, the shield,
             and the shell only while its window overlaps that arc. Across the helium gap,{" "}
@@ -717,6 +616,119 @@ const ThermodynamicTab: React.FC<Props> = ({
             <div className="small text-secondary">Click Run Sim to simulate and plot fuel temperature.</div>
           )}
           {running && <div className="small text-secondary">OpenModelica is simulating…</div>}
+        </div>
+      </Col>
+    </Row>
+  );
+};
+
+export const ThermophotovoltaicsTab: React.FC<Props> = ({
+  setup,
+  fuelGapCm,
+  tpvGapCm,
+  operatingPoint,
+  renderSlider,
+  onNumericChange,
+}) => {
+  const cellIndex = setup.tpv_airbridge_cell;
+  const curves = useMemo(
+    () => airbridgeCurves(cellIndex, setup.shell_emissivity),
+    [cellIndex, setup.shell_emissivity],
+  );
+  const emitterTempC = operatingPoint.shellTempC;
+
+  return (
+    <Row className="g-4">
+      <Col lg={8} xl={7}>
+        <div className="border rounded p-3 bg-white">
+          <h2 className="h6 mb-3">TPV and fuel temperature</h2>
+          <p className="small text-secondary mb-3">
+            Fuel temperature is fixed. Power density and efficiency are what the selected cell produces when the
+            shell sits at the temperature that carries that heat.
+          </p>
+          {renderSlider("fuel_temp_c", "Fuel temperature (°C)", fixed(0))}
+          {renderSlider("fuel_emissivity", "Fuel emissivity", fixed(2))}
+          {renderSlider("disk_emissivity", "Disk emissivity", fixed(2))}
+          {renderSlider("shell_emissivity", "Vacuum shell emissivity", fixed(2))}
+          <div className="small mb-2">
+            Power density <strong>{operatingPoint.powerWPerCm2.toFixed(2)} W/cm²</strong>
+            <span className="text-secondary"> · efficiency </span>
+            <strong>{operatingPoint.efficiencyPct.toFixed(1)}%</strong>
+            <span className="text-secondary"> · conduction </span>
+            <strong
+              title="Share of the fuel-to-cell path carried by helium conduction. The same heat crosses the fuel gap, the disk gap, and the vacuum gap, and the vacuum gap adds none."
+            >
+              {((100 * (operatingPoint.conductionShareFuel + operatingPoint.conductionShareDisk)) / 3).toFixed(1)}%
+            </strong>
+          </div>
+
+          <div className="mt-3 pt-3 border-top">
+            <h3 className="h6 mb-2">Air-bridge TPV cells (Roy-Layinde et al.)</h3>
+            <div className="btn-group btn-group-sm mb-3" role="group" aria-label="Air-bridge band gap">
+              {AIRBRIDGE_CELLS.map((cell) => (
+                <Button
+                  key={cell.id}
+                  size="sm"
+                  variant={cellIndex === cell.index ? "primary" : "outline-primary"}
+                  onClick={() => onNumericChange?.("tpv_airbridge_cell", cell.index)}
+                >
+                  {cell.label}
+                </Button>
+              ))}
+            </div>
+            <p className="small text-secondary mb-2">
+              Reflected light returns to the shell, so the shell emissivity and the measured absorptance set the
+              intensity in the gap. The gap is closed, so the view factor is 1. The 0.90 and 1.10 files integrate at
+              0.88 and 1.08 eV. The mark is the vacuum-shell temperature the cells see.
+            </p>
+            <div className="small mb-2">
+              Fuel <strong>{setup.fuel_temp_c.toFixed(0)} °C</strong>
+              <span className="text-secondary">
+                {" "}
+                supplies {(operatingPoint.heatW / 1000).toFixed(1)} kW. The same heat crosses the disk and is what the
+                cell absorbs.
+              </span>
+            </div>
+            <div className="small mb-2">
+              Disk <strong>{operatingPoint.diskTempC.toFixed(0)} °C</strong>
+              <span className="text-secondary">
+                {" "}
+                ({(operatingPoint.diskTempC - emitterTempC).toFixed(0)} °C above the shell,{" "}
+                {Math.round(100 * operatingPoint.conductionShareDisk)}% of the heat by conduction across{" "}
+                {tpvGapCm.toFixed(2)} cm of helium).
+              </span>
+            </div>
+            <div className="small mb-2">
+              Shell <strong>{emitterTempC.toFixed(0)} °C</strong>
+              <span className="text-secondary">
+                {" "}
+                radiates in vacuum onto the cells at {(TPV_CELL_TEMP_K - 273.15).toFixed(0)} °C. Across the{" "}
+                {fuelGapCm.toFixed(2)} cm fuel gap, conduction carries{" "}
+                {Math.round(100 * operatingPoint.conductionShareFuel)}% of the heat.
+              </span>
+            </div>
+            <TpvModelChart
+              title={`Efficiency — ${curves.label} · ε ${setup.shell_emissivity.toFixed(2)}`}
+              yLabel="η (%)"
+              points={curves.efficiency}
+              color={curves.color}
+              emitterTempC={emitterTempC}
+              yMin={0}
+              yMax={50}
+              valueFormat={(v) => v.toFixed(0)}
+            />
+            <TpvModelChart
+              title={`Power density — ${curves.label} · ε ${setup.shell_emissivity.toFixed(2)}`}
+              yLabel="P (W/cm²)"
+              points={curves.power}
+              color={curves.color}
+              emitterTempC={emitterTempC}
+              yMin={0.001}
+              yMax={10}
+              logY
+              valueFormat={(v) => v.toFixed(2)}
+            />
+          </div>
         </div>
       </Col>
     </Row>

@@ -5,7 +5,7 @@ import CompactSection from "./components/CompactSection";
 import LayerChart from "./components/LayerChart";
 import LayerEditor from "./components/LayerEditor";
 import SimulationTab from "./components/SimulationTab";
-import ThermodynamicTab from "./components/ThermodynamicTab";
+import ThermodynamicTab, { ThermophotovoltaicsTab } from "./components/ThermodynamicTab";
 import VisualisationTab from "./components/VisualisationTab";
 import ZoneChart, { columnPoses } from "./components/ZoneChart";
 import { LAYER_GROUPS, LAYER_MATCH_NOTE, TAB_KEYS, type LayerGroupId, type TabKey } from "./constants";
@@ -46,7 +46,8 @@ const TAB_LABELS: Record<TabKey, string> = {
   overview: "Geometry",
   fuel: "Fuel setup",
   designer: "Layer designer",
-  thermodynamic: "Thermodynamic",
+  thermophotovoltaics: "Thermophotovoltaics",
+  thermodynamic: "Thermodynamics",
   simulation: "Neutronics",
   visualisation: "Visualisation",
 };
@@ -847,6 +848,32 @@ const Explorer: React.FC = () => {
     [groups.shield_absorber],
   );
   const heliumGaps = useMemo(() => diskHeliumGapsCm(groups.disk), [groups.disk]);
+  const thermophotovoltaicsTab = (
+    <ThermophotovoltaicsTab
+      setup={setup}
+      diskThicknessCm={diskThicknessCm}
+      fuelGapCm={heliumGaps.fuelGapCm}
+      tpvGapCm={heliumGaps.tpvGapCm}
+      diskAreaM2={layout.totalArea}
+      diskInnerRadiusM={layout.rInner}
+      diskOuterRadiusM={layout.rOuter}
+      fuelThicknessCm={fuelThicknessCm}
+      fuelAreaM2={layout.fuelArea}
+      fuelAngleRad={layout.fuelAngle}
+      tpvAngleRad={layout.oppositeAngle}
+      tpvAreaM2={oppositeArea}
+      reflectorAreaM2={shieldZones.reflectorArea}
+      moderatorAreaM2={shieldZones.gapArea}
+      absorberAreaM2={shieldZones.absorberArea}
+      reflectorThicknessCm={reflectorThicknessCm}
+      moderatorThicknessCm={moderatorThicknessCm}
+      absorberThicknessCm={absorberThicknessCm}
+      operatingPoint={operatingPoint}
+      renderSlider={renderSlider}
+      onNumericChange={setNumber}
+    />
+  );
+
   const thermodynamicTab = (
     <ThermodynamicTab
       setup={setup}
@@ -890,6 +917,7 @@ const Explorer: React.FC = () => {
     overview: overviewTab,
     fuel: fuelTab,
     designer: designerTab,
+    thermophotovoltaics: thermophotovoltaicsTab,
     thermodynamic: thermodynamicTab,
     simulation: simulationTab,
     visualisation: <VisualisationTab />,
