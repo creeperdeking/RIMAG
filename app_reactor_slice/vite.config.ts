@@ -538,6 +538,10 @@ function rimaelApi(): Plugin {
       res.writeHead(200, {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache, no-transform",
+        // Caddy compresses responses when the browser sends Accept-Encoding: gzip.
+        // The encoder holds this stream until a gzip block fills, so EventSource
+        // never fires and the disk stays still. identity makes Caddy leave it alone.
+        "Content-Encoding": "identity",
         "X-Accel-Buffering": "no",
         Connection: "keep-alive",
       });
