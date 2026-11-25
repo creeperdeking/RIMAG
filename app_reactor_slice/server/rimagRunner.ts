@@ -1,7 +1,13 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  containersToStop,
+  protectedContainerNames,
+  weightWindowWriteBelongsToPass,
+} from "./containerPolicy";
 import {
   appendQueued,
   beginRunning,
@@ -11,6 +17,7 @@ import {
   markRunning,
   peekNextQueued,
   queueSnapshot,
+  readQueuePaused,
   reconcileAfterRestart,
   rememberContainer,
   removeQueued,
@@ -18,6 +25,7 @@ import {
   reorderQueued,
   saveQueue,
   updateQueuedPayload,
+  writeQueuePaused,
   type QueueItem,
   type QueueItemResult,
   type SimQueueState,
@@ -28,6 +36,9 @@ const APP_ROOT = path.resolve(HERE, "..");
 const REPO_ROOT = path.resolve(APP_ROOT, "..");
 const RUN_DIR = path.resolve(REPO_ROOT, "runs", "default");
 const PARAMS_FILE = "app_slice_run.json";
+/** Identifies this loaded module. A Vite reload starts a new one; stale sweeps must stop. */
+const RUNNER_EPOCH_FILE = path.join(RUN_DIR, "runner.epoch");
+const RUNNER_EPOCH = randomUUID();
 const RESULTSIM_FILE = "resultsim.json";
 /** Prefix for one-off sim containers (Stop / adopt match this). */
 const CONTAINER_PREFIX = "rimag-app-sim";
@@ -43,8 +54,12 @@ type JobState = {
   running: boolean;
   lastLines: string[];
   currentId: string | null;
-  /** Active compose container name for Stop / log follow. */
+  /** Container that is actually transporting. Empty until it is visible. */
   containerName: string;
+  /** Name passed to compose that is not confirmed in `docker ps` yet. */
+  pendingContainerName: string;
+  /** `Date.now()` immediately before this pass's container was spawned. */
+  passStartedAt: number;
   /** Monotonic id so overlapping launch/end callbacks ignore stale work. */
   launchGen: number;
   /** When true, the next job end does not start the following queued run (Stop). */
@@ -62,10 +77,12 @@ const job: JobState = {
   running: false,
   lastLines: [],
   currentId: null,
-  containerName: CONTAINER_NAME,
+  containerName: "",
+  pendingContainerName: "",
+  passStartedAt: 0,
   launchGen: 0,
   suppressQueueAdvance: false,
-  queuePaused: false,
+  queuePaused: readQueuePaused(),
   autoRefinePass: 0,
 };
 
@@ -78,6 +95,22 @@ const AUTOREFINE_MAX_PASSES = 25;
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+function claimRunnerEpoch() {
+  fs.mkdirSync(RUN_DIR, { recursive: true });
+  fs.writeFileSync(RUNNER_EPOCH_FILE, `${RUNNER_EPOCH}\n`, "utf8");
+}
+
+/** False after a newer copy of this module has been loaded in the same process. */
+function runnerEpochIsCurrent(): boolean {
+  try {
+    return fs.readFileSync(RUNNER_EPOCH_FILE, "utf8").trim() === RUNNER_EPOCH;
+  } catch {
+    return false;
+  }
+}
+
+claimRunnerEpoch();
 
 function runDocker(args: string[]): Promise<number> {
   return new Promise((resolve) => {
@@ -141,15 +174,21 @@ async function listSimContainerNames(): Promise<string[]> {
  * Remove any leftover `rimag-app-sim*` containers before a new compose run.
  * Serialized via launchChain so we never `rm -f` a container we just started.
  */
-async function removeSimContainers() {
+async function removeSimContainers(protect: readonly string[] = []) {
+  if (!runnerEpochIsCurrent()) return;
+  const keep = new Set(protect.filter((name) => name.length > 0));
   for (let attempt = 1; attempt <= 20; attempt++) {
     const names = await listSimContainerNames();
-    // Also try the legacy fixed name in case filters miss it.
-    const targets = names.length > 0 ? names : [CONTAINER_NAME];
+    const targets =
+      names.length > 0
+        ? containersToStop(names, [...keep])
+        : keep.has(CONTAINER_NAME)
+          ? []
+          : [CONTAINER_NAME];
     for (const name of targets) {
       await runDocker(["rm", "-f", name]);
     }
-    const left = await listSimContainerNames();
+    const left = containersToStop(await listSimContainerNames(), [...keep]);
     if (left.length === 0) return;
     if (attempt === 1 || attempt % 5 === 0) {
       emit(`[runner] Waiting for ${CONTAINER_PREFIX}* to release (attempt ${attempt})…`);
@@ -271,6 +310,7 @@ export function isQueuePaused() {
 
 export function setQueuePaused(paused: boolean): { paused: boolean; running: boolean } {
   job.queuePaused = paused;
+  writeQueuePaused(paused);
   if (paused) {
     emit("[runner] Queue paused — current run continues; next items will not start automatically.");
   } else {
@@ -325,8 +365,36 @@ function forwardProcessOutput(child: ChildProcessWithoutNullStreams) {
 let adopting: Promise<void> | null = null;
 let reconcileChain: Promise<void> = Promise.resolve();
 
-function followContainerLogs(name: string) {
-  if (!job.running) return;
+function logsShowFinalKeff(): boolean {
+  return job.lastLines.some((line) =>
+    /k-effective\s*\([^)]+\)\s*=\s*[0-9.]+\s*\+\/-\s*[0-9.]+/i.test(line),
+  );
+}
+
+function inspectExitCode(name: string): Promise<number> {
+  return new Promise((resolve) => {
+    const child = spawn("docker", ["inspect", "-f", "{{.State.ExitCode}}", name], {
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    let out = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      out += chunk.toString("utf8");
+    });
+    child.on("error", () => resolve(1));
+    child.on("close", (code) => {
+      if (code !== 0) {
+        resolve(1);
+        return;
+      }
+      const parsed = Number(out.trim());
+      resolve(Number.isFinite(parsed) ? parsed : 1);
+    });
+  });
+}
+
+function followContainerLogs(name: string, launchGen = job.launchGen) {
+  if (!runnerEpochIsCurrent() || !job.running) return;
   job.containerName = name;
   const current = job.child;
   if (
@@ -346,10 +414,13 @@ function followContainerLogs(name: string) {
     emit(`[runner] log follow failed: ${error.message}`);
   });
   child.on("close", () => {
-    void listSimContainerNames().then((names) => {
-      if (names.includes(name) || !job.running) return;
-      onJobEnded(0);
-    });
+    void (async () => {
+      if (!runnerEpochIsCurrent() || job.launchGen !== launchGen || !job.running) return;
+      const names = await listSimContainerNames();
+      if (names.includes(name)) return;
+      const code = logsShowFinalKeff() ? 0 : await inspectExitCode(name);
+      onJobEnded(code, launchGen);
+    })();
   });
 }
 
@@ -358,13 +429,36 @@ function followContainerLogs(name: string) {
  * stopped. A container that is still transporting is shown as the running item
  * instead of being ignored while another run starts.
  */
+function keepNames(): string[] {
+  const runningItem = queueSnapshot().items.find((entry) => entry.status === "running");
+  return protectedContainerNames({
+    live: job.containerName,
+    pending: job.pendingContainerName,
+    queuedRunning: runningItem?.containerName,
+  });
+}
+
 function reconcileContainers(): Promise<void> {
   const run = async () => {
+    if (!runnerEpochIsCurrent()) return;
     const names = await listSimContainerNames();
-    const keep = job.running && job.containerName ? job.containerName : null;
-    if (keep) {
-      for (const name of names) {
-        if (name !== keep) await runDocker(["rm", "-f", name]);
+    if (
+      job.pendingContainerName &&
+      names.includes(job.pendingContainerName) &&
+      job.running
+    ) {
+      job.containerName = job.pendingContainerName;
+      job.pendingContainerName = "";
+      if (job.currentId) rememberContainer(job.currentId, job.containerName);
+    }
+    if (job.running) {
+      const protect = keepNames();
+      if (protect.length === 0 && names.length > 0) {
+        job.containerName = names[0];
+        if (job.currentId) rememberContainer(job.currentId, names[0]);
+      }
+      for (const name of containersToStop(names, keepNames())) {
+        await runDocker(["rm", "-f", name]);
       }
       return;
     }
@@ -380,7 +474,11 @@ function reconcileContainers(): Promise<void> {
     }
     const live = (await listSimContainerNames()).filter((name) => !cancelled.has(name));
     if (live.length === 0) return;
-    const show = live[0];
+    const runningItem = state.items.find((entry) => entry.status === "running");
+    const show =
+      runningItem?.containerName && live.includes(runningItem.containerName)
+        ? runningItem.containerName
+        : live[0];
     for (const name of live) {
       if (name !== show) await runDocker(["rm", "-f", name]);
     }
@@ -395,6 +493,7 @@ function reconcileContainers(): Promise<void> {
     job.suppressQueueAdvance = false;
     job.currentId = item.id;
     job.containerName = show;
+    job.pendingContainerName = "";
     emit(
       `[runner] ${show} is still running. Showing ${item.label} instead of starting another run.`,
     );
@@ -406,6 +505,10 @@ function reconcileContainers(): Promise<void> {
 }
 
 const containerSweep = setInterval(() => {
+  if (!runnerEpochIsCurrent()) {
+    clearInterval(containerSweep);
+    return;
+  }
   void reconcileContainers();
 }, 15_000);
 containerSweep.unref?.();
@@ -659,22 +762,29 @@ function finishQueueItem(
   job.autoRefinePass = 0;
   emitQueue();
   emit(`[runner] done exit=${code}`);
-  if (finishedContainer) void runDocker(["rm", "-f", finishedContainer]);
+  if (
+    finishedContainer &&
+    finishedContainer !== job.pendingContainerName &&
+    runnerEpochIsCurrent()
+  ) {
+    void runDocker(["rm", "-f", finishedContainer]);
+  }
   if (advance) maybeStartNextFromQueue();
 }
 
-function wwMetaUpdatedRecently(maxAgeMs = 120_000): boolean {
+function weightWindowsWrittenDuringPass(): boolean {
+  if (!job.passStartedAt) return false;
   try {
     const metaPath = path.join(RUN_DIR, WW_META_FILE);
     if (!fs.existsSync(metaPath)) return false;
-    const age = Date.now() - fs.statSync(metaPath).mtimeMs;
-    return age >= 0 && age <= maxAgeMs;
+    return weightWindowWriteBelongsToPass(fs.statSync(metaPath).mtimeMs, job.passStartedAt);
   } catch {
     return false;
   }
 }
 
 function onJobEnded(code: number, endedGen?: number) {
+  if (!runnerEpochIsCurrent()) return;
   if (endedGen != null && endedGen !== job.launchGen) {
     emit(`[runner] Ignoring stale job end (gen ${endedGen}, current ${job.launchGen}).`);
     return;
@@ -694,15 +804,15 @@ function onJobEnded(code: number, endedGen?: number) {
   const itemId = job.currentId;
   const item = itemId ? getQueueItem(itemId) : null;
 
-  // Exit 137 = SIGKILL. Often the refine already finished (WW meta just written) and
-  // `docker compose` / a peer `docker rm -f` killed the follow-up container by name.
+  // Exit 137 = SIGKILL. A refine that already wrote weight windows during THIS pass
+  // can be torn down by container cleanup; a file left by the seed does not count.
   let effectiveCode = code;
   if (
     !stopped &&
     code === 137 &&
     item &&
     isAutoRefinePayload(item.payload) &&
-    wwMetaUpdatedRecently()
+    weightWindowsWrittenDuringPass()
   ) {
     emit(
       "[runner] Exit 137 after a fresh weight_windows write — treating refine pass as completed (SIGKILL during container teardown/relaunch).",
@@ -791,6 +901,7 @@ function onJobEnded(code: number, endedGen?: number) {
       summary: `Autorefine failed (exit ${code}${killHint}) · InGaAs ${pct}${reached ? ` (${reached})` : ""} · target ${(100 * AUTOREFINE_TARGET).toFixed(0)}%`,
     };
     job.queuePaused = true;
+    writeQueuePaused(true);
     emit(
       `[runner] Autorefine failed before InGaAs ≥ ${(100 * AUTOREFINE_TARGET).toFixed(0)}% (exit ${code}, coverage ${pct}${reached ? ` ${reached}` : ""}) — queue paused; next items will not start. Resume after fixing or re-queue autorefine.`,
     );
@@ -984,6 +1095,7 @@ function launchDockerJob(
   item: QueueItem,
   options: { continueAutoRefine?: boolean } = {},
 ) {
+  if (!runnerEpochIsCurrent()) return;
   let runnerPayload: unknown;
   let threads: number;
   try {
@@ -1008,8 +1120,7 @@ function launchDockerJob(
   }
   const launchGen = ++job.launchGen;
   const containerName = `${CONTAINER_PREFIX}-${Date.now().toString(36)}-${launchGen}`;
-  job.containerName = containerName;
-  rememberContainer(item.id, containerName);
+  job.pendingContainerName = containerName;
   emitQueue();
 
   const { command, prefix } = dockerComposeCommand();
@@ -1043,9 +1154,12 @@ function launchDockerJob(
   launchChain = launchChain
     .catch(() => undefined)
     .then(async () => {
+      if (!runnerEpochIsCurrent()) return;
       if (!job.running || job.currentId !== item.id || job.launchGen !== launchGen) return;
-      await removeSimContainers();
+      await removeSimContainers([containerName]);
+      if (!runnerEpochIsCurrent()) return;
       if (!job.running || job.currentId !== item.id || job.launchGen !== launchGen) return;
+      job.passStartedAt = Date.now();
       const child = spawn(command, args, {
         cwd: REPO_ROOT,
         env: {
@@ -1086,6 +1200,7 @@ function launchDockerJob(
 let startingNext = false;
 
 function maybeStartNextFromQueue() {
+  if (!runnerEpochIsCurrent()) return;
   if (job.running || startingNext) return;
   if (job.queuePaused) {
     emitQueue();

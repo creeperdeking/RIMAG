@@ -45,8 +45,32 @@ export type SimQueueState = {
   items: QueueItem[];
 };
 
+const PAUSE_FILE = path.join(RUN_DIR, "queue.paused");
+
 function nowIso() {
   return new Date().toISOString();
+}
+
+/** Pause survives a Vite reload. The queue file is rewritten by older processes, so this is a separate file. */
+export function readQueuePaused(): boolean {
+  try {
+    return fs.readFileSync(PAUSE_FILE, "utf8").trim() === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function writeQueuePaused(paused: boolean): void {
+  fs.mkdirSync(RUN_DIR, { recursive: true });
+  const next = paused ? "1\n" : "0\n";
+  let current = "";
+  try {
+    current = fs.readFileSync(PAUSE_FILE, "utf8");
+  } catch {
+    current = "";
+  }
+  if (current === next) return;
+  fs.writeFileSync(PAUSE_FILE, next);
 }
 
 export function labelFromPayload(payload: unknown): string {
