@@ -237,7 +237,6 @@ function FuelTempChart({ trace, sectionIndex }: { trace: FuelTrace; sectionIndex
     const series = [
       { name: "Fuel", color: "#c2410c", values: trace.fuelTempC },
       { name: `Section ${sectionIndex}`, color: "#7c3aed", values: sectionSeries(trace, sectionIndex) },
-      { name: "Disk", color: "#0f766e", values: trace.diskTempC ?? [] },
       { name: "Shell", color: "#1d4ed8", values: trace.shellTempC ?? [] },
     ].filter((item) => item.values.length === trace.timeS.length && item.values.length > 0);
     const xs = trace.timeS;
@@ -267,7 +266,7 @@ function FuelTempChart({ trace, sectionIndex }: { trace: FuelTrace; sectionIndex
   const xTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * xMax);
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="rimael-fuel-chart" role="img" aria-label="Fuel, disk, and shell temperature vs time">
+    <svg viewBox={`0 0 ${width} ${height}`} className="rimael-fuel-chart" role="img" aria-label="Fuel, selected disk section, and shell temperature vs time">
       <rect x={pad.left} y={pad.top} width={plotW} height={plotH} fill="#fafbfc" stroke="#dee2e6" />
       {paths.map((item, index) => (
         <g key={item.name}>
