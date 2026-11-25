@@ -19,15 +19,6 @@ export type LiveSample = {
 const SLOT_COUNT = 12;
 const SLOT_DEG = 30;
 
-type Spin = {
-  /** Model angle of section 0 at the last sample [deg]. */
-  angle: number;
-  timeS: number;
-  wall: number;
-  rps: number;
-  have: boolean;
-};
-
 function emptySlots(): (number | null)[] {
   return Array.from({ length: SLOT_COUNT }, () => null);
 }
@@ -37,16 +28,11 @@ function mod360(deg: number): number {
   return wrapped < 0 ? wrapped + 360 : wrapped;
 }
 
-/** Section 0's window starts here. Same quantity the model uses: 360 · rev/s · time. */
-function modelAngle(rps: number, timeS: number): number {
-  return mod360(360 * rps * timeS);
-}
-
 function slotIndex(deg: number): number {
   return Math.floor(mod360(deg) / SLOT_DEG) % SLOT_COUNT;
 }
 
-/** Paint every 30° place section 0's start crossed, using this sample's temperature. */
+/** Paint every 30° place between the two angles, going counter-clockwise. */
 function paintTravel(slots: (number | null)[], fromDeg: number, toDeg: number, tempC: number): void {
   const span = mod360(toDeg - fromDeg);
   const steps = Math.max(1, Math.ceil(span / SLOT_DEG));
@@ -57,44 +43,32 @@ function paintTravel(slots: (number | null)[], fromDeg: number, toDeg: number, t
 }
 
 /**
- * Remember section 0's temperature at the place it occupies in this sample.
- * A steady speed paints the places it crossed. A speed change jumps the model
- * angle (it is rev/s times time, not an accumulated turn), so only the new place is written.
+ * Rebuild the color memory by walking the recorded speed.
+ * A repeated timestamp only refreshes the place section 0 is already on.
+ * A large step backwards is a new run and starts the memory over once.
  */
-function rememberSection(spin: Spin, slots: (number | null)[], sample: LiveSample): (number | null)[] {
-  const next = slots.slice();
-  const at = modelAngle(sample.rps, sample.timeS);
-  if (!spin.have || sample.timeS + 1e-9 < spin.timeS) {
-    next.fill(null);
-    next[slotIndex(at)] = sample.section0C;
-  } else {
-    const expected = mod360(360 * sample.rps * (sample.timeS - spin.timeS));
-    const actual = mod360(at - spin.angle);
-    const continuous = Math.abs(actual - expected) < 2;
-    if (continuous && actual > 0.5) paintTravel(next, spin.angle, at, sample.section0C);
-    else next[slotIndex(at)] = sample.section0C;
+function slotsFromHistory(history: LiveSample[]): { slots: (number | null)[]; angle: number } {
+  const slots = emptySlots();
+  let angle = 0;
+  let prevT: number | null = null;
+  for (const sample of history) {
+    if (!Number.isFinite(sample.section0C)) continue;
+    if (prevT != null && sample.timeS + 0.5 < prevT) {
+      slots.fill(null);
+      angle = 0;
+      prevT = null;
+    }
+    const dt = prevT == null ? 0 : sample.timeS - prevT;
+    if (dt > 1e-6) {
+      const next = angle + 360 * Math.max(0, sample.rps) * dt;
+      paintTravel(slots, angle, next, sample.section0C);
+      angle = mod360(next);
+    } else {
+      slots[slotIndex(angle)] = sample.section0C;
+    }
+    prevT = sample.timeS;
   }
-  spin.angle = at;
-  spin.timeS = sample.timeS;
-  spin.wall = performance.now();
-  spin.rps = sample.rps;
-  spin.have = true;
-  return next;
-}
-
-function slotsFromHistory(spin: Spin, history: LiveSample[]): (number | null)[] {
-  spin.angle = 0;
-  spin.timeS = 0;
-  spin.wall = performance.now();
-  spin.rps = 0;
-  spin.have = false;
-  return history.reduce((slots, sample) => rememberSection(spin, slots, sample), emptySlots());
-}
-
-function shownAngle(spin: Spin, scale: number, now: number): number {
-  if (!spin.have) return 0;
-  const elapsed = Math.max(0, (now - spin.wall) / 1000);
-  return mod360(spin.angle + 360 * spin.rps * scale * elapsed);
+  return { slots, angle };
 }
 
 type ReadyEvent = {
@@ -174,7 +148,8 @@ function arcPath(a0: number, a1: number, r0: number, r1: number): string {
 function DiskView({
   columns,
   innerFrac,
-  angleDeg,
+  angleRef,
+  svgRef,
   slotC,
   fuelArcFrac,
   shield1ArcFrac,
@@ -183,8 +158,9 @@ function DiskView({
 }: {
   columns: number;
   innerFrac: number;
-  /** Section 0's start angle, computed in the browser [deg]. */
-  angleDeg: number;
+  /** Live rotation, degrees. The animation writes this; render must not snap it back to 0. */
+  angleRef: React.MutableRefObject<number>;
+  svgRef: React.RefObject<SVGSVGElement | null>;
   /** Temperature last left by section 0 in each fixed 30° place. */
   slotC: (number | null)[];
   fuelArcFrac: number;
@@ -211,10 +187,14 @@ function DiskView({
     { a0: fuelOnTop + tpvEnd, a1: fuelOnTop + shield2End, fill: "rgba(71, 85, 105, 0.4)", name: "Shield" },
   ];
   // SVG rotate() is clockwise on screen. Our angles grow counter-clockwise (y up).
-  const rotor = `rotate(${(-angleDeg).toFixed(2)})`;
+  // Re-apply after every render so a temperature update does not snap the disk back.
+  const bindRotor = (node: SVGGElement | null) => {
+    if (!node) return;
+    node.setAttribute("transform", `rotate(${(-angleRef.current).toFixed(2)})`);
+  };
 
   return (
-    <svg viewBox={`${-width / 2} -1.55 ${width} 3.15`} role="img" aria-label="Disk colored by where section 0 last was, turning with the set speed">
+    <svg ref={svgRef} viewBox={`${-width / 2} -1.55 ${width} 3.15`} role="img" aria-label="Disk colored by where section 0 last was, turning with the set speed">
       {Array.from({ length: n }, (_, disk) => {
         const cx = (disk - (n - 1) / 2) * pitch;
         return (
@@ -237,7 +217,7 @@ function DiskView({
                 />
               );
             })}
-            <g transform={rotor}>
+            <g data-rotor="" ref={bindRotor}>
               {Array.from({ length: SLOT_COUNT }, (_, index) => {
                 const rad = ((fuelOnTop + index * SLOT_DEG) * Math.PI) / 180;
                 const cos = Math.cos(rad);
@@ -344,14 +324,32 @@ const LiveReactorPanel: React.FC<Props> = ({
   const [sample, setSample] = useState<LiveSample | null>(null);
   const [samples, setSamples] = useState<LiveSample[]>([]);
   const [slotC, setSlotC] = useState<(number | null)[]>(emptySlots);
-  const [angleDeg, setAngleDeg] = useState(0);
   const bodyRef = useRef(geometryBody);
   bodyRef.current = geometryBody;
-  const spinRef = useRef<Spin>({ angle: 0, timeS: 0, wall: 0, rps: 0, have: false });
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const angleRef = useRef(0);
+  const paintFromRef = useRef(0);
+  const lastTempRef = useRef<number | null>(null);
+  const slotsRef = useRef<(number | null)[]>(emptySlots());
   const scaleRef = useRef(scale);
   scaleRef.current = scale;
   const liveRef = useRef(live);
   liveRef.current = live;
+  const rpsNow = Number(diskRps);
+  const rpsRef = useRef(0);
+  rpsRef.current = Number.isFinite(rpsNow) && rpsNow >= 0 ? rpsNow : 0;
+
+  const publishSlots = (next: (number | null)[]) => {
+    slotsRef.current = next;
+    setSlotC(next);
+  };
+
+  const resetDisk = () => {
+    angleRef.current = 0;
+    paintFromRef.current = 0;
+    lastTempRef.current = null;
+    publishSlots(emptySlots());
+  };
 
   useEffect(() => {
     const source = new EventSource("/api/rimael/live/stream");
@@ -360,15 +358,28 @@ const LiveReactorPanel: React.FC<Props> = ({
       if (data.type === "ready" || data.type === "status") {
         if (typeof data.running === "boolean") setLive(data.running);
         if (data.message) setMessage(data.message);
-        if (data.type === "ready" && Array.isArray(data.history)) {
+        if (data.type === "ready" && Array.isArray(data.history) && data.history.length) {
           setSamples(data.history);
-          setSample(data.history.length ? data.history[data.history.length - 1] : null);
-          setSlotC(slotsFromHistory(spinRef.current, data.history));
-          setAngleDeg(spinRef.current.angle);
+          setSample(data.history[data.history.length - 1]);
+          const built = slotsFromHistory(data.history);
+          if (!liveRef.current) {
+            angleRef.current = built.angle;
+            paintFromRef.current = built.angle;
+          }
+          lastTempRef.current = data.history[data.history.length - 1].section0C;
+          publishSlots(built.slots);
         }
       } else if (data.type === "sample") {
         setSample(data.sample);
-        setSlotC((prev) => rememberSection(spinRef.current, prev, data.sample));
+        if (Number.isFinite(data.sample.section0C)) {
+          lastTempRef.current = data.sample.section0C;
+          const index = slotIndex(angleRef.current);
+          if (slotsRef.current[index] !== data.sample.section0C) {
+            const next = slotsRef.current.slice();
+            next[index] = data.sample.section0C;
+            publishSlots(next);
+          }
+        }
         setSamples((prev) => {
           const last = prev[prev.length - 1];
           if (last && data.sample.timeS <= last.timeS + 1e-9) {
@@ -396,8 +407,26 @@ const LiveReactorPanel: React.FC<Props> = ({
 
   useEffect(() => {
     let frame = 0;
+    let last = performance.now();
     const tick = (now: number) => {
-      if (liveRef.current) setAngleDeg(shownAngle(spinRef.current, scaleRef.current, now));
+      const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
+      last = now;
+      if (liveRef.current && rpsRef.current > 0) {
+        const from = angleRef.current;
+        const to = mod360(from + 360 * rpsRef.current * scaleRef.current * dt);
+        angleRef.current = to;
+        const temp = lastTempRef.current;
+        if (temp != null && mod360(to - paintFromRef.current) >= 0.4) {
+          const next = slotsRef.current.slice();
+          paintTravel(next, paintFromRef.current, to, temp);
+          paintFromRef.current = to;
+          if (next.some((value, index) => value !== slotsRef.current[index])) publishSlots(next);
+        }
+      }
+      const transform = `rotate(${(-angleRef.current).toFixed(2)})`;
+      svgRef.current?.querySelectorAll("[data-rotor]").forEach((node) => {
+        node.setAttribute("transform", transform);
+      });
       frame = window.requestAnimationFrame(tick);
     };
     frame = window.requestAnimationFrame(tick);
@@ -441,9 +470,7 @@ const LiveReactorPanel: React.FC<Props> = ({
     setError(null);
     setSamples([]);
     setSample(null);
-    setSlotC(emptySlots());
-    spinRef.current = { angle: 0, timeS: 0, wall: performance.now(), rps: rps, have: false };
-    setAngleDeg(0);
+    resetDisk();
     try {
       const response = await fetch("/api/rimael/live/start", {
         method: "POST",
@@ -492,8 +519,9 @@ const LiveReactorPanel: React.FC<Props> = ({
       <p className="small text-secondary mb-2">
         One OpenModelica process keeps integrating <code>RIMAEL.Reactor</code>. Several times a second it reads the
         power and disk speed you set here, and writes back the fuel, shield, shell, and section 0 temperatures.
-        The disk turns in the browser from that speed. Each fixed 30° place keeps the temperature section 0 had the
-        last time its window was there, so a settled reactor holds still colors while the outline turns. The ring
+        The disk turns steadily in the browser from the speed above. Each fixed 30° place keeps the temperature
+        section 0 had the last time the outline passed it, and that color stays until section 0 comes around again.
+        The ring
         outside the disk is the fixed fuel, shield, and TPV arcs.
       </p>
       <div className="d-flex flex-wrap align-items-end gap-3 mb-2">
@@ -564,7 +592,8 @@ const LiveReactorPanel: React.FC<Props> = ({
       <DiskView
         columns={columns}
         innerFrac={innerFrac}
-        angleDeg={angleDeg}
+        angleRef={angleRef}
+        svgRef={svgRef}
         slotC={slotC}
         fuelArcFrac={fuelArcFrac}
         shield1ArcFrac={shield1ArcFrac}
