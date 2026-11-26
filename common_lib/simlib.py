@@ -321,6 +321,12 @@ WeightWindows = Literal["generate", "use", "no", "seed", "refine"]
 
 WW_META_FILE = "weight_windows_meta.json"
 WW_FILE = "weight_windows.h5"
+# Keep OpenMC's default max_lower_bound_ratio of 1 and a 100-split history cap.
+# A ratio above 1 raises every later window to the particle and suppresses the
+# splits that score the next InGaAs ring, so a refine pass stops gaining
+# coverage. That cap is what pushed this shield about 10% of the InGaAs mesh
+# per pass. Leave bins this pass did not score empty. Pasting the previous
+# pass's bounds back in mixes two flux maps, and the frontier stops moving.
 
 
 def make_ww_mesh(
@@ -807,6 +813,9 @@ def make_sim_settings(
         # Keep a modest lost-particle margin; dumps stay off (they dominate runtime).
         settings.rel_max_lost_particles = 0.05
         settings.max_write_lost_particles = 1
+        # Analog seed, and refine with the previous map. Cap splits at 100 so a
+        # history can cross the shield cliff. Leave max_lower_bound_ratio at 1
+        # so OpenMC does not raise the windows toward the particle.
         settings.max_history_splits = min(settings.max_history_splits, 100)
         ww_mesh = make_ww_mesh(
             lower_left_corner, upper_right_corner, cell_dimension=ww_mesh_cm
