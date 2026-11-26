@@ -330,17 +330,12 @@ WeightWindows = Literal["generate", "use", "no", "seed", "refine"]
 
 WW_META_FILE = "weight_windows_meta.json"
 WW_FILE = "weight_windows.h5"
-# MAGIC on this shield produces ~20 decades of lower bounds. OpenMC only pulls a
-# window up toward the particle when max_lower_bound_ratio is greater than 1,
-# and a history stops splitting once it has split max_history_splits times.
-# Leaving the ratio at 1 and the cap at 100 spends the whole budget in the fuel,
-# so the outer InGaAs cells never get a score and coverage stops climbing.
-WW_MAX_LOWER_BOUND_RATIO = 5.0
-WW_MAX_HISTORY_SPLITS = 500
-# Bounds from the file this refine pass started with. The generator replaces
-# every bin, and a bin it did not score becomes "no window". Filling those
-# holes from this copy keeps a cell that was reached on an earlier pass.
-_refine_previous_lower: np.ndarray | None = None
+# Keep OpenMC's default max_lower_bound_ratio of 1 and a 100-split history cap.
+# A ratio above 1 raises every later window to the particle and suppresses the
+# splits that score the next InGaAs ring, so a refine pass stops gaining
+# coverage. That cap is what pushed this shield about 10% of the InGaAs mesh
+# per pass. Leave bins this pass did not score empty. Pasting the previous
+# pass's bounds back in mixes two flux maps, and the frontier stops moving.
 
 
 def make_ww_mesh(
@@ -387,67 +382,6 @@ def load_weight_windows_list(ww_path: str | Path = WW_FILE):
         return openmc.WeightWindowsList.from_hdf5(str(path))
     except Exception:
         return openmc.hdf5_to_wws(str(path))
-
-
-def fill_unscored_bounds(new: np.ndarray, previous: np.ndarray) -> np.ndarray:
-    """Keep a previous positive lower bound where this pass scored nothing."""
-    out = np.array(new, dtype=float, copy=True)
-    old = np.asarray(previous, dtype=float)
-    if out.shape != old.shape:
-        return out
-    scored = np.isfinite(out) & (out > 0.0)
-    keep = (~scored) & np.isfinite(old) & (old > 0.0)
-    out[keep] = old[keep]
-    return out
-
-
-def arm_weight_windows_for_transport(ww):
-    """Make a steep MAGIC map followable for one history."""
-    ww.max_lower_bound_ratio = WW_MAX_LOWER_BOUND_RATIO
-    ww.max_split = 10
-    return ww
-
-
-def remember_refine_bounds(bounds: np.ndarray | None) -> None:
-    global _refine_previous_lower
-    if bounds is None:
-        _refine_previous_lower = None
-        return
-    _refine_previous_lower = np.array(bounds, dtype=float, copy=True)
-
-
-def restore_unscored_refine_bounds(ww_path: str | Path = WW_FILE) -> int:
-    """Write previous lower bounds back into bins this pass left empty.
-
-    Returns the number of bins restored. The upper bound of a restored bin is
-    five times the lower bound, the MAGIC generator's default ratio.
-    """
-    global _refine_previous_lower
-    previous = _refine_previous_lower
-    _refine_previous_lower = None
-    if previous is None or not Path(ww_path).is_file():
-        return 0
-    wws = load_weight_windows_list(ww_path)
-    if not wws:
-        return 0
-    ww = wws[-1]
-    new = np.asarray(ww.lower_ww_bounds, dtype=float)
-    merged = fill_unscored_bounds(new, previous)
-    restored = int(np.sum((merged > 0.0) & ~((new > 0.0) & np.isfinite(new))))
-    if restored == 0:
-        return 0
-    upper = np.array(ww.upper_ww_bounds, dtype=float, copy=True)
-    if upper.shape == merged.shape:
-        changed = merged != new
-        upper[changed] = 5.0 * merged[changed]
-        ww.upper_ww_bounds = upper
-    ww.lower_ww_bounds = merged
-    openmc.WeightWindowsList(list(wws)).export_to_hdf5(str(ww_path))
-    print(
-        f"Weight windows: kept {restored} bins from the previous pass "
-        "where this pass had no score"
-    )
-    return restored
 
 
 def latest_weight_windows(ww_path: str | Path = WW_FILE):
@@ -754,8 +688,6 @@ def write_ww_meta(
         "file": WW_FILE,
     }
     try:
-        if pass_kind == "refine":
-            restore_unscored_refine_bounds(WW_FILE)
         depth = summarize_weight_windows(WW_FILE)
         payload["spatial_coverage"] = depth["spatial_coverage"]
         payload["energy_coverage"] = depth["energy_coverage"]
@@ -890,8 +822,9 @@ def make_sim_settings(
         # Keep a modest lost-particle margin; dumps stay off (they dominate runtime).
         settings.rel_max_lost_particles = 0.05
         settings.max_write_lost_particles = 1
-        # Seed transport is analog. Refine applies the previous map, and that
-        # map is steep: the cap below is raised on the refine branch.
+        # Analog seed, and refine with the previous map. Cap splits at 100 so a
+        # history can cross the shield cliff. Leave max_lower_bound_ratio at 1
+        # so OpenMC does not raise the windows toward the particle.
         settings.max_history_splits = min(settings.max_history_splits, 100)
         ww_mesh = make_ww_mesh(
             lower_left_corner, upper_right_corner, cell_dimension=ww_mesh_cm
@@ -919,18 +852,10 @@ def make_sim_settings(
                 "surface": False,
             }
             settings.weight_windows_on = True
-            loaded = arm_weight_windows_for_transport(latest_weight_windows(WW_FILE))
-            remember_refine_bounds(np.asarray(loaded.lower_ww_bounds))
-            settings.weight_windows = [loaded]
-            settings.max_history_splits = WW_MAX_HISTORY_SPLITS
+            settings.weight_windows = [latest_weight_windows(WW_FILE)]
             settings.survival_biasing = False
             settings.cutoff = {"weight": 1e-4, "weight_avg": 1.0}
             print(f"Weight windows: refining from latest set in {WW_FILE}")
-            print(
-                "Weight windows: max_lower_bound_ratio="
-                f"{WW_MAX_LOWER_BOUND_RATIO:g}, max_history_splits="
-                f"{WW_MAX_HISTORY_SPLITS} so a history can follow the shield gradient"
-            )
         else:
             print("Weight windows: seeding MAGIC (offline, after analog transport)")
         print(
@@ -948,12 +873,10 @@ def make_sim_settings(
             "surface": False,
         }
         settings.weight_windows_on = True
-        settings.weight_windows = [
-            arm_weight_windows_for_transport(latest_weight_windows(WW_FILE))
-        ]
+        settings.weight_windows = [latest_weight_windows(WW_FILE)]
         settings.survival_biasing = False  # WW handles weights
         settings.cutoff = {"weight": 1e-4, "weight_avg": 1.0}  # RR safety
-        settings.max_history_splits = WW_MAX_HISTORY_SPLITS
+        settings.max_history_splits = min(settings.max_history_splits, 100)
         settings.rel_max_lost_particles = 0.05
         settings.max_write_lost_particles = 1
 
