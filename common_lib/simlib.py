@@ -332,7 +332,7 @@ WW_FILE = "weight_windows.h5"
 # from settings.xml on every run, so change this constant, or set
 # RIMAG_MAX_GENERATION_TRACKS, and the next run picks it up. Zero disables
 # the limit. Neither change needs another OpenMC build.
-WW_MAX_GENERATION_TRACKS = 5_000_000
+WW_MAX_GENERATION_TRACKS = 2_000_000
 
 
 def generation_track_limit() -> int:
