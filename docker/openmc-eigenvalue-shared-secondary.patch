@@ -1,0 +1,563 @@
+diff --git a/docs/source/io_formats/settings.rst b/docs/source/io_formats/settings.rst
+index 7091757f2..b3dc94b18 100644
+--- a/docs/source/io_formats/settings.rst
++++ b/docs/source/io_formats/settings.rst
+@@ -752,10 +752,14 @@ pseudo-random number generator.
+ 
+   The ``shared_secondary_bank`` element indicates whether to use a shared
+   secondary particle bank. When enabled, secondary particles are collected into
+-  a global bank, sorted for reproducibility, and load-balanced across MPI ranks
++  a global bank, sorted for reproducibility, and load-balanced across threads
+   between generations. If not specified, the shared secondary bank is enabled
+-  automatically for fixed-source simulations with weight windows active, and
+-  disabled otherwise.
++  automatically for fixed-source and eigenvalue simulations with weight windows
++  active, and disabled otherwise. Event-based eigenvalue calculations keep the
++  particle-local bank. In an eigenvalue calculation each fission neutron stays
++  attached to the source particle that started its family, so the fission bank
++  can still be sorted after daughters have run in parallel. A history that
++  banks no secondary fission sites reproduces the local-bank result.
+ 
+ .. _source_element:
+ 
+diff --git a/include/openmc/particle.h b/include/openmc/particle.h
+index 8db9721ba..e4fd10353 100644
+--- a/include/openmc/particle.h
++++ b/include/openmc/particle.h
+@@ -58,6 +58,17 @@ public:
+   //! \param wgt Weight of the new particle
+   void split(double wgt);
+ 
++  //! Tag a fission site with the ids the fission-bank sort expects.
++  //
++  //! In the shared secondary bank, daughters run on other threads, so the
++  //! site keeps the original source index rather than the daughter's work
++  //! index. The final progeny numbers are assigned once every daughter has
++  //! been transported.
++  void tag_fission_site(SourceSite& site);
++
++  //! Roll back the progeny counter after a fission site could not be stored.
++  void untag_failed_fission_site();
++
+   //! initialize from a source site
+   //
+   //! initializes a particle from data stored in a source site. The source
+diff --git a/include/openmc/particle_data.h b/include/openmc/particle_data.h
+index 24b7eb53c..3d705a289 100644
+--- a/include/openmc/particle_data.h
++++ b/include/openmc/particle_data.h
+@@ -56,6 +56,10 @@ struct SourceSite {
+   double wgt_ww_born {-1.0};
+   int64_t n_split {0};
+   int n_collision {0};
++  // Original eigenvalue source index. Secondary sites carry it so a daughter
++  // transported on another thread still banks fission neutrons under that
++  // source. Fission sites use it only as a temporary track id.
++  int64_t ancestor_id {0};
+ };
+ 
+ struct CollisionTrackSite {
+@@ -573,6 +577,9 @@ private:
+   double ww_factor_ {0.0};
+ 
+   int64_t n_progeny_ {0};
++  int64_t n_fission_progeny_ {0};
++  int64_t ancestor_id_ {0};
++  int64_t track_id_ {0};
+ 
+ public:
+   //----------------------------------------------------------------------------
+@@ -766,6 +773,19 @@ public:
+   // Number of progeny produced by this particle
+   int64_t& n_progeny() { return n_progeny_; }
+ 
++  // Fission sites created by this track. Separate from n_progeny(), which the
++  // shared secondary bank uses to sort daughter tracks.
++  int64_t& n_fission_progeny() { return n_fission_progeny_; }
++
++  // Eigenvalue source index this track descends from.
++  int64_t& ancestor_id() { return ancestor_id_; }
++  const int64_t& ancestor_id() const { return ancestor_id_; }
++
++  // Deterministic id of this track within the generation, used to order
++  // fission sites after daughters have run in parallel.
++  int64_t& track_id() { return track_id_; }
++  const int64_t& track_id() const { return track_id_; }
++
+   //! Gets the pointer to the particle's current PRN seed
+   uint64_t* current_seed() { return seeds_ + stream_; }
+   const uint64_t* current_seed() const { return seeds_ + stream_; }
+diff --git a/include/openmc/simulation.h b/include/openmc/simulation.h
+index 454752cd2..888e30f89 100644
+--- a/include/openmc/simulation.h
++++ b/include/openmc/simulation.h
+@@ -98,13 +98,15 @@ void free_memory_simulation();
+ 
+ //! Compute unique particle ID from a 1-based source index
+ //! \param index_source 1-based source index within this rank's work
++//! \param is_secondary true when the track is a daughter from the shared bank
+ //! \return globally unique particle ID
+-int64_t compute_particle_id(int64_t index_source);
++int64_t compute_particle_id(int64_t index_source, bool is_secondary = false);
+ 
+ //! Compute the transport RNG seed from a particle ID
+ //! \param particle_id the particle's globally unique ID
++//! \param is_secondary true when the track is a daughter from the shared bank
+ //! \return seed value passed to init_particle_seeds()
+-int64_t compute_transport_seed(int64_t particle_id);
++int64_t compute_transport_seed(int64_t particle_id, bool is_secondary = false);
+ 
+ //! Simulate a single particle history from birth to death, inclusive of any
+ //! secondary particles. In shared secondary mode, only a single track is
+diff --git a/openmc/lib/core.py b/openmc/lib/core.py
+index 22580d52a..47e85defd 100644
+--- a/openmc/lib/core.py
++++ b/openmc/lib/core.py
+@@ -35,7 +35,8 @@ class _SourceSite(Structure):
+                 ('wgt_born', c_double),
+                 ('wgt_ww_born', c_double),
+                 ('n_split', c_int64),
+-                ('n_collision', c_int)]
++                ('n_collision', c_int),
++                ('ancestor_id', c_int64)]
+ 
+ # Define input type for numpy arrays that will be passed into C++ functions
+ # Must be an int or double array, with single dimension that is contiguous
+diff --git a/openmc/settings.py b/openmc/settings.py
+index 3d75ee80d..e723f7142 100644
+--- a/openmc/settings.py
++++ b/openmc/settings.py
+@@ -263,10 +263,11 @@ class Settings:
+     shared_secondary_bank : bool
+         Whether to use a shared secondary particle bank. When enabled,
+         secondary particles are collected into a global bank, sorted for
+-        reproducibility, and load-balanced across MPI ranks between
++        reproducibility, and load-balanced across threads between
+         generations. If not specified, the shared secondary bank is
+-        enabled automatically for fixed-source simulations with weight
+-        windows active, and disabled otherwise.
++        enabled automatically for fixed-source and eigenvalue simulations
++        with weight windows active, and disabled otherwise. Event-based
++        eigenvalue calculations keep the particle-local bank.
+ 
+         .. versionadded:: 0.16.0
+     source : Iterable of openmc.SourceBase
+diff --git a/src/initialize.cpp b/src/initialize.cpp
+index 9af4b638b..7483d8c1a 100644
+--- a/src/initialize.cpp
++++ b/src/initialize.cpp
+@@ -161,7 +161,7 @@ void initialize_mpi(MPI_Comm intracomm)
+ 
+   // Create bank datatype
+   SourceSite b;
+-  MPI_Aint disp[15];
++  MPI_Aint disp[16];
+   MPI_Get_address(&b.r, &disp[0]);
+   MPI_Get_address(&b.u, &disp[1]);
+   MPI_Get_address(&b.E, &disp[2]);
+@@ -177,12 +177,13 @@ void initialize_mpi(MPI_Comm intracomm)
+   MPI_Get_address(&b.wgt_ww_born, &disp[12]);
+   MPI_Get_address(&b.n_split, &disp[13]);
+   MPI_Get_address(&b.n_collision, &disp[14]);
+-  for (int i = 14; i >= 0; --i) {
++  MPI_Get_address(&b.ancestor_id, &disp[15]);
++  for (int i = 15; i >= 0; --i) {
+     disp[i] -= disp[0];
+   }
+ 
+   // Block counts for each field
+-  int blocks[] = {3, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
++  int blocks[] = {3, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
+ 
+   // Types for each field
+   MPI_Datatype types[] = {
+@@ -200,10 +201,11 @@ void initialize_mpi(MPI_Comm intracomm)
+     MPI_DOUBLE,  // wgt_born
+     MPI_DOUBLE,  // wgt_ww_born
+     MPI_INT64_T, // n_split
+-    MPI_INT      // n_collision
++    MPI_INT,     // n_collision
++    MPI_INT64_T  // ancestor_id
+   };
+ 
+-  MPI_Type_create_struct(15, blocks, disp, types, &mpi::source_site);
++  MPI_Type_create_struct(16, blocks, disp, types, &mpi::source_site);
+   MPI_Type_commit(&mpi::source_site);
+ 
+   CollisionTrackSite bc;
+diff --git a/src/particle.cpp b/src/particle.cpp
+index 30ccb903b..b17bd15f5 100644
+--- a/src/particle.cpp
++++ b/src/particle.cpp
+@@ -106,6 +106,7 @@ bool Particle::create_secondary(
+   if (settings::use_shared_secondary_bank) {
+     bank.progeny_id = n_progeny()++;
+   }
++  bank.ancestor_id = ancestor_id();
+   bank.wgt_born = wgt_born();
+   bank.wgt_ww_born = wgt_ww_born();
+   bank.n_split = n_split();
+@@ -140,10 +141,37 @@ void Particle::split(double wgt)
+   if (settings::use_shared_secondary_bank) {
+     bank.progeny_id = n_progeny()++;
+   }
++  bank.ancestor_id = ancestor_id();
+ 
+   local_secondary_bank().emplace_back(bank);
+ }
+ 
++void Particle::tag_fission_site(SourceSite& site)
++{
++  if (settings::run_mode == RunMode::EIGENVALUE &&
++      settings::use_shared_secondary_bank) {
++    // Daughters of this source may be running on other threads. Keep the
++    // original source index, and record which track gave birth to the site
++    // so the progeny numbers can be assigned in a fixed order afterwards.
++    site.parent_id = ancestor_id();
++    site.progeny_id = n_fission_progeny()++;
++    site.ancestor_id = track_id();
++  } else {
++    site.parent_id = current_work();
++    site.progeny_id = n_progeny()++;
++  }
++}
++
++void Particle::untag_failed_fission_site()
++{
++  if (settings::run_mode == RunMode::EIGENVALUE &&
++      settings::use_shared_secondary_bank) {
++    n_fission_progeny()--;
++  } else {
++    n_progeny()--;
++  }
++}
++
+ void Particle::from_source(const SourceSite* src)
+ {
+   // Reset some attributes
+diff --git a/src/physics.cpp b/src/physics.cpp
+index 4bf459b45..03b0e3360 100644
+--- a/src/physics.cpp
++++ b/src/physics.cpp
+@@ -229,8 +229,7 @@ void create_fission_sites(Particle& p, int i_nuclide, const Reaction& rx)
+     }
+ 
+     // Set parent and progeny IDs
+-    site.parent_id = p.current_work();
+-    site.progeny_id = p.n_progeny()++;
++    p.tag_fission_site(site);
+ 
+     // Store fission site in bank
+     if (use_fission_bank) {
+@@ -244,7 +243,7 @@ void create_fission_sites(Particle& p, int i_nuclide, const Reaction& rx)
+         // Decrement number of particle progeny as storage was unsuccessful.
+         // This step is needed so that the sum of all progeny is equal to the
+         // size of the shared fission bank.
+-        p.n_progeny()--;
++        p.untag_failed_fission_site();
+ 
+         // Break out of loop as no more sites can be added to fission bank
+         break;
+diff --git a/src/physics_mg.cpp b/src/physics_mg.cpp
+index 212ba765c..2301b3bf5 100644
+--- a/src/physics_mg.cpp
++++ b/src/physics_mg.cpp
+@@ -179,8 +179,7 @@ void create_fission_sites(Particle& p)
+     }
+ 
+     // Set parent and progeny ID
+-    site.parent_id = p.current_work();
+-    site.progeny_id = p.n_progeny()++;
++    p.tag_fission_site(site);
+ 
+     // Store fission site in bank
+     if (use_fission_bank) {
+@@ -194,7 +193,7 @@ void create_fission_sites(Particle& p)
+         // Decrement number of particle progeny as storage was unsuccessful.
+         // This step is needed so that the sum of all progeny is equal to the
+         // size of the shared fission bank.
+-        p.n_progeny()--;
++        p.untag_failed_fission_site();
+ 
+         // Break out of loop as no more sites can be added to fission bank
+         break;
+diff --git a/src/settings.cpp b/src/settings.cpp
+index 15a7b9c27..1798869bd 100644
+--- a/src/settings.cpp
++++ b/src/settings.cpp
+@@ -1324,22 +1324,24 @@ void read_settings_xml(pugi::xml_node root)
+   }
+ 
+   // If weight windows are on, also enable shared secondary bank (unless
+-  // explicitly disabled by user).
++  // explicitly disabled by user). Eigenvalue histories use the same bank so
++  // weight-window daughters can run on every thread. Event-based eigenvalue
++  // transport still walks each history on one particle, so the bank stays off.
+   if (check_for_node(root, "shared_secondary_bank")) {
+     bool val = get_node_value_bool(root, "shared_secondary_bank");
+-    if (val && run_mode == RunMode::EIGENVALUE) {
+-      warning(
+-        "Shared secondary bank is not supported in eigenvalue calculations. "
+-        "Setting will be ignored.");
++    if (val && run_mode == RunMode::EIGENVALUE && event_based) {
++      warning("Shared secondary bank is not supported for event-based "
++              "eigenvalue calculations. Setting will be ignored.");
+     } else {
+       settings::use_shared_secondary_bank = val;
+     }
+   } else if (settings::weight_windows_on) {
+-    if (run_mode == RunMode::EIGENVALUE) {
+-      warning(
+-        "Shared secondary bank is not supported in eigenvalue calculations. "
+-        "Particle local secondary banks will be used instead.");
+-    } else if (run_mode == RunMode::FIXED_SOURCE) {
++    if (run_mode == RunMode::EIGENVALUE && event_based) {
++      warning("Shared secondary bank is not supported for event-based "
++              "eigenvalue calculations. Particle local secondary banks will "
++              "be used instead.");
++    } else if (run_mode == RunMode::FIXED_SOURCE ||
++               run_mode == RunMode::EIGENVALUE) {
+       settings::use_shared_secondary_bank = true;
+     }
+   }
+diff --git a/src/simulation.cpp b/src/simulation.cpp
+index 03f40a726..d0e69e7f5 100644
+--- a/src/simulation.cpp
++++ b/src/simulation.cpp
+@@ -717,10 +717,15 @@ void initialize_particle_track(
+   p.current_work() = index_source - 1;
+ 
+   // set identifier for particle
+-  p.id() = compute_particle_id(index_source);
++  p.id() = compute_particle_id(index_source, is_secondary);
+ 
+   // set progeny count to zero
+   p.n_progeny() = 0;
++  p.n_fission_progeny() = 0;
++  if (!is_secondary) {
++    p.ancestor_id() = p.current_work();
++    p.track_id() = p.current_work();
++  }
+ 
+   // Reset particle event counter
+   p.n_event() = 0;
+@@ -741,7 +746,7 @@ void initialize_particle_track(
+   std::fill(p.pht_storage().begin(), p.pht_storage().end(), 0);
+ 
+   // set random number seed
+-  int64_t particle_seed = compute_transport_seed(p.id());
++  int64_t particle_seed = compute_transport_seed(p.id(), is_secondary);
+   init_particle_seeds(particle_seed, p.seeds());
+ 
+   // set particle trace
+@@ -787,25 +792,45 @@ int overall_generation()
+   return settings::gen_per_batch * (current_batch - 1) + current_gen;
+ }
+ 
+-int64_t compute_particle_id(int64_t index_source)
++int64_t compute_particle_id(int64_t index_source, bool is_secondary)
+ {
++  // Eigenvalue primaries keep the history-based id. Their random stream then
++  // matches the local secondary bank, so a generation whose daughters never
++  // fission reproduces that result. Daughters get an id that cannot collide
++  // with those primary ids.
++  if (settings::use_shared_secondary_bank &&
++      settings::run_mode == RunMode::EIGENVALUE && is_secondary) {
++    int64_t local = simulation::simulation_tracks_completed + index_source;
++    if (local < 0 || local >= (int64_t(1) << 48)) {
++      fatal_error("Eigenvalue shared-secondary track index overflowed.");
++    }
++    if (mpi::rank >= (1 << 14)) {
++      fatal_error("Eigenvalue shared secondary bank supports at most 16384 "
++                  "MPI ranks.");
++    }
++    return (static_cast<int64_t>(mpi::rank) << 48) | local;
++  }
+   if (settings::use_shared_secondary_bank) {
+     return simulation::work_index[mpi::rank] + index_source +
+            simulation::simulation_tracks_completed;
+-  } else {
+-    return simulation::work_index[mpi::rank] + index_source;
+   }
++  return simulation::work_index[mpi::rank] + index_source;
+ }
+ 
+-int64_t compute_transport_seed(int64_t particle_id)
++int64_t compute_transport_seed(int64_t particle_id, bool is_secondary)
+ {
++  if (settings::use_shared_secondary_bank &&
++      settings::run_mode == RunMode::EIGENVALUE && is_secondary) {
++    // Bit 62 stays clear of the rank field (bits 48-61) and of every
++    // history-based primary seed, which does not set it.
++    return particle_id | (int64_t(1) << 62);
++  }
+   if (settings::use_shared_secondary_bank) {
+     return particle_id;
+-  } else {
+-    return (simulation::total_gen + overall_generation() - 1) *
+-             settings::n_particles +
+-           particle_id;
+   }
++  return (simulation::total_gen + overall_generation() - 1) *
++           settings::n_particles +
++         particle_id;
+ }
+ 
+ void calculate_work(int64_t n_particles)
+@@ -987,6 +1012,61 @@ void transport_history_based()
+   }
+ }
+ 
++namespace {
++
++//! Give every fission site a progeny id that is unique within its source
++//! family and independent of which thread transported the daughter.
++void assign_eigenvalue_fission_progeny()
++{
++  auto& bank = simulation::fission_bank;
++  const int64_t n_source = simulation::work_per_rank;
++  simulation::progeny_per_particle.assign(n_source, 0);
++  if (bank.size() == 0)
++    return;
++
++  struct Key {
++    int64_t parent;
++    int64_t track;
++    int64_t local;
++    int64_t index;
++  };
++  vector<Key> keys;
++  keys.reserve(bank.size());
++  for (int64_t i = 0; i < bank.size(); ++i) {
++    const auto& site = bank[i];
++    if (site.parent_id < 0 || site.parent_id >= n_source) {
++      fatal_error(fmt::format(
++        "Invalid fission parent_id {} (expected range [0, {})).",
++        site.parent_id, n_source));
++    }
++    keys.push_back({site.parent_id, site.ancestor_id, site.progeny_id, i});
++  }
++  std::sort(keys.begin(), keys.end(), [](const Key& a, const Key& b) {
++    if (a.parent != b.parent)
++      return a.parent < b.parent;
++    if (a.track != b.track)
++      return a.track < b.track;
++    if (a.local != b.local)
++      return a.local < b.local;
++    return a.index < b.index;
++  });
++
++  int64_t previous_parent = -1;
++  int64_t progeny = 0;
++  for (const auto& key : keys) {
++    if (key.parent != previous_parent) {
++      previous_parent = key.parent;
++      progeny = 0;
++    }
++    auto& site = bank[key.index];
++    site.progeny_id = progeny++;
++    site.ancestor_id = 0;
++    simulation::progeny_per_particle[key.parent]++;
++  }
++}
++
++} // namespace
++
+ // The shared secondary bank transport algorithm works in two phases. In the
+ // first phase, all primary particles are sampled then transported, and their
+ // secondary particles are deposited into a shared secondary bank. The second
+@@ -995,6 +1075,10 @@ void transport_history_based()
+ // deposited back into the shared secondary bank. The shared secondary bank is
+ // sorted for consistent ordering and load balanced across MPI ranks. This loop
+ // continues until there are no more secondary tracks left to transport.
++//
++// Eigenvalue mode does not move daughters across MPI ranks. A fission site
++// must stay on the rank that owns its source particle. OpenMP still shares
++// the daughters of one history across the cores of that rank.
+ void transport_history_based_shared_secondary()
+ {
+   // Clear shared secondary banks from any prior use
+@@ -1036,21 +1120,39 @@ void transport_history_based_shared_secondary()
+   simulation::simulation_tracks_completed += settings::n_particles;
+ 
+   // Phase 2: Now that the secondary bank has been populated, enter loop over
+-  // all secondary generations
++  // all secondary generations. Track ids continue after the primary source
++  // slots so a daughter's fission sites sort after its parent's.
++  const bool eigenvalue = settings::run_mode == RunMode::EIGENVALUE;
++  int64_t track_id_base = simulation::work_per_rank;
+   int n_generation_depth = 1;
+-  int64_t alive_secondary = 1;
+-  while (alive_secondary) {
++  while (true) {
++    int64_t local_alive = simulation::shared_secondary_bank_write.size();
++    int64_t alive_secondary = local_alive;
+ 
+-    // Synchronize the shared secondary bank amongst all MPI ranks, such
+-    // that each MPI rank has an approximately equal number of secondary
+-    // tracks. Also reports the total number of secondaries alive across
+-    // all MPI ranks.
+-    alive_secondary = synchronize_global_secondary_bank(
+-      simulation::shared_secondary_bank_write);
++    if (eigenvalue) {
++      // Keep daughters on this rank. Their fission sites belong in this
++      // rank's fission bank, under the local source index.
++#ifdef OPENMC_MPI
++      MPI_Allreduce(&local_alive, &alive_secondary, 1, MPI_INT64_T, MPI_SUM,
++        mpi::intracomm);
++#endif
++    } else {
++      // Fixed source: balance daughters across MPI ranks. The returned
++      // count is the total number of secondary tracks on every rank.
++      alive_secondary = synchronize_global_secondary_bank(
++        simulation::shared_secondary_bank_write);
++      local_alive = simulation::shared_secondary_bank_write.size();
++      calculate_work(alive_secondary);
++    }
+ 
+-    // Recalculate work for each MPI rank based on number of alive secondary
+-    // tracks
+-    calculate_work(alive_secondary);
++    if (alive_secondary == 0) {
++      if (mpi::master) {
++        write_message(fmt::format(" Secondary generation {:<2}    tracks: 0",
++                        n_generation_depth),
++          6);
++      }
++      break;
++    }
+ 
+     // Display the number of secondary tracks in this generation. This
+     // is useful for user monitoring so as to see if the secondary population is
+@@ -1083,6 +1185,11 @@ void transport_history_based_shared_secondary()
+         initialize_particle_track(p, i, true);
+         SourceSite& site = simulation::shared_secondary_bank_read[i - 1];
+         p.event_revive_from_secondary(site);
++        if (eigenvalue) {
++          p.ancestor_id() = site.ancestor_id;
++          p.track_id() = track_id_base + (i - 1);
++          p.n_fission_progeny() = 0;
++        }
+         transport_history_based_single_particle(p);
+         for (auto& secondary_site : p.local_secondary_bank()) {
+           thread_bank.push_back(secondary_site);
+@@ -1096,11 +1203,18 @@ void transport_history_based_shared_secondary()
+     collect_sorted_history_secondary_banks(thread_banks);
+     thread_banks.clear();
+     n_generation_depth++;
+-    simulation::simulation_tracks_completed += alive_secondary;
++    if (eigenvalue) {
++      track_id_base += local_alive;
++      simulation::simulation_tracks_completed += local_alive;
++    } else {
++      simulation::simulation_tracks_completed += alive_secondary;
++    }
+   } // End of loop over secondary generations
+ 
+   // Reset work so that fission bank etc works correctly
+   calculate_work(settings::n_particles);
++  if (eigenvalue)
++    assign_eigenvalue_fission_progeny();
+ }
+ 
+ void transport_event_based()

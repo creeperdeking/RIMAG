@@ -27,6 +27,16 @@ RUN git clone --depth 1 --branch periodic-zcone https://github.com/creeperdeking
 COPY docker/openmc-zcone-landing-nudge.patch /tmp/openmc-zcone-landing-nudge.patch
 RUN git apply /tmp/openmc-zcone-landing-nudge.patch
 
+# Bound the complex-cell boundary walk. A z-cone graze otherwise repeats a
+# tiny step forever inside one particle event, and the generation never ends.
+COPY docker/openmc-complex-region-hang.patch /tmp/openmc-complex-region-hang.patch
+RUN git apply /tmp/openmc-complex-region-hang.patch
+
+# Eigenvalue weight-window daughters are load-balanced across OpenMP threads.
+# Without this, one long history keeps the other cores idle for the generation.
+COPY docker/openmc-eigenvalue-shared-secondary.patch /tmp/openmc-eigenvalue-shared-secondary.patch
+RUN git apply /tmp/openmc-eigenvalue-shared-secondary.patch
+
 RUN mkdir build && cd build \
     && cmake -DCMAKE_BUILD_TYPE=Release -DOPENMC_USE_MPI=OFF -DOPENMC_BUILD_TESTS=OFF \
              -DCMAKE_INSTALL_PREFIX=/usr/local .. \
