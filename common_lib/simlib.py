@@ -327,6 +327,30 @@ WW_FILE = "weight_windows.h5"
 # coverage. That cap is what pushed this shield about 10% of the InGaAs mesh
 # per pass. Leave bins this pass did not score empty. Pasting the previous
 # pass's bounds back in mixes two flux maps, and the frontier stops moving.
+# A secondary generation above this is a split cascade. Discard it and keep
+# the tracks already run in that fission generation. OpenMC reads the number
+# from settings.xml on every run, so change this constant, or set
+# RIMAG_MAX_GENERATION_TRACKS, and the next run picks it up. Zero disables
+# the limit. Neither change needs another OpenMC build.
+WW_MAX_GENERATION_TRACKS = 5_000_000
+
+
+def generation_track_limit() -> int:
+    raw = os.environ.get("RIMAG_MAX_GENERATION_TRACKS", "").strip()
+    if not raw:
+        return WW_MAX_GENERATION_TRACKS
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(
+            f"RIMAG_MAX_GENERATION_TRACKS must be an integer, got {raw!r}"
+        ) from exc
+    if value < 0:
+        raise ValueError(
+            "RIMAG_MAX_GENERATION_TRACKS must be zero or positive, "
+            f"got {value}"
+        )
+    return value
 
 
 def make_ww_mesh(
@@ -817,6 +841,7 @@ def make_sim_settings(
         # history can cross the shield cliff. Leave max_lower_bound_ratio at 1
         # so OpenMC does not raise the windows toward the particle.
         settings.max_history_splits = min(settings.max_history_splits, 100)
+        settings.max_generation_tracks = generation_track_limit()
         ww_mesh = make_ww_mesh(
             lower_left_corner, upper_right_corner, cell_dimension=ww_mesh_cm
         )
@@ -852,7 +877,9 @@ def make_sim_settings(
         print(
             f"Weight windows: {settings.particles} particles/gen, "
             f"rel_max_lost={settings.rel_max_lost_particles}, "
-            f"max_splits={settings.max_history_splits}, on_the_fly=False"
+            f"max_splits={settings.max_history_splits}, "
+            f"max_generation_tracks={settings.max_generation_tracks}, "
+            f"on_the_fly=False"
         )
     elif weight_windows == "use":
         if not Path(WW_FILE).is_file():
@@ -868,6 +895,7 @@ def make_sim_settings(
         settings.survival_biasing = False  # WW handles weights
         settings.cutoff = {"weight": 1e-4, "weight_avg": 1.0}  # RR safety
         settings.max_history_splits = min(settings.max_history_splits, 100)
+        settings.max_generation_tracks = generation_track_limit()
         settings.rel_max_lost_particles = 0.05
         settings.max_write_lost_particles = 1
 

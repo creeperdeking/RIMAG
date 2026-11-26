@@ -37,10 +37,18 @@ RUN git apply /tmp/openmc-complex-region-hang.patch
 COPY docker/openmc-eigenvalue-shared-secondary.patch /tmp/openmc-eigenvalue-shared-secondary.patch
 RUN git apply /tmp/openmc-eigenvalue-shared-secondary.patch
 
+# Read <max_generation_tracks> from settings.xml each run. A secondary
+# generation above that count is discarded. The number itself is a RIMAG
+# setting, so changing it does not require another OpenMC build.
+COPY docker/openmc-generation-track-cap.patch /tmp/openmc-generation-track-cap.patch
+RUN git apply /tmp/openmc-generation-track-cap.patch
+
+# Default is every core. Pass OPENMC_BUILD_JOBS to keep a live simulation's cores.
+ARG OPENMC_BUILD_JOBS
 RUN mkdir build && cd build \
     && cmake -DCMAKE_BUILD_TYPE=Release -DOPENMC_USE_MPI=OFF -DOPENMC_BUILD_TESTS=OFF \
              -DCMAKE_INSTALL_PREFIX=/usr/local .. \
-    && make -j"$(nproc)" \
+    && make -j"${OPENMC_BUILD_JOBS:-$(nproc)}" \
     && make install
 
 RUN pip install --no-cache-dir /opt/openmc
