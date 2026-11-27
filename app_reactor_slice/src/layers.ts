@@ -33,13 +33,12 @@ function solidMaterialNames(rows: LayerRow[]): string[] {
     .filter((name) => name && name.toLowerCase() !== "void");
 }
 
-/** Fold the reflector chord into the shield moderator. */
-export function mergeReflectorIntoShield(
+/** Graphite-like reflector and shield moderator share one fuel-to-TPV chord. */
+export function sharedGraphiteChord(
   left: LayerRow[],
   right: LayerRow[],
   isGraphite: (name: string) => boolean,
 ): boolean {
-  if (sameMaterialNames(left, right)) return true;
   const leftNames = solidMaterialNames(left);
   const rightNames = solidMaterialNames(right);
   if (!leftNames.length || !rightNames.length) return false;

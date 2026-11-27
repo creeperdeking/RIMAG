@@ -232,16 +232,27 @@ def test_materials_json_matches_the_graphite_like_flag():
 
 
 def test_graphite_like_zones_share_one_fuel_to_absorber_distance():
-    from app_slice_design.materials_map import merge_reflector_into_shield
+    import math
+
+    from app_slice_design.layout import center_cuts, compute_layout_for_ratio
+    from app_slice_design.materials_map import shared_graphite_chord
     from app_slice_design.setup import LayerRow
 
     graphite = [LayerRow(name="Graphite", cm=1)]
     natural = [LayerRow(name="Natural Graphite", cm=1)]
     beryllia = [LayerRow(name="Beryllium Oxide", cm=1)]
-    assert merge_reflector_into_shield(graphite, natural)
-    assert merge_reflector_into_shield(beryllia, beryllia)
-    assert not merge_reflector_into_shield(graphite, beryllia)
-    assert merge_reflector_into_shield(
+    assert shared_graphite_chord(graphite, natural)
+    assert not shared_graphite_chord(beryllia, beryllia)
+    assert not shared_graphite_chord(graphite, beryllia)
+    assert shared_graphite_chord(
         [LayerRow(name="Graphite", cm=1), LayerRow(name="Void", cm=0.1)],
         [LayerRow(name="Low Density Graphite", cm=1)],
     )
+
+    # fissiovolt-reference chords: reflector 0.3 m, shield moderator 3.7 m.
+    layout = compute_layout_for_ratio(3.7, 1.85, 1.5, 0.4, 0.3, 0.2)
+    cuts = center_cuts(layout, shared_chord=True)
+    y_fuel = layout.r_inner * math.cos(layout.fuel_angle / 2.0)
+    assert layout.reflector_angle > 0
+    assert abs((y_fuel - cuts.reflector_y) - 0.3) < 1e-9
+    assert abs((cuts.reflector_y - cuts.moderator_y) - 3.7) < 1e-9

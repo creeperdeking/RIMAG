@@ -56,15 +56,13 @@ def layers_are_graphite_like(rows: List[LayerRow]) -> bool:
     return bool(names) and all(is_graphite_like(name) for name in names)
 
 
-def merge_reflector_into_shield(left: List[LayerRow], right: List[LayerRow]) -> bool:
-    """Fold the reflector chord into the shield moderator.
+def shared_graphite_chord(left: List[LayerRow], right: List[LayerRow]) -> bool:
+    """Reflector and shield moderator share one fuel-to-TPV chord.
 
-    Identical layer lists still merge. Graphite-like lists merge too, so
-    Graphite beside Natural Graphite is one fuel-to-absorber distance.
+    Both stacks are graphite-like. The chord length is the sum of the two
+    thicknesses, and the zones stay separate cells.
     """
-    return same_material_names(left, right) or (
-        layers_are_graphite_like(left) and layers_are_graphite_like(right)
-    )
+    return layers_are_graphite_like(left) and layers_are_graphite_like(right)
 
 
 def collect_material_names(setup: AppSliceSetup, nsm_material: str) -> Set[str]:

@@ -25,9 +25,8 @@ import { burnupDays, computeLayoutForRatio, formatBurnupTime, uraniumInventoryKg
 import {
   applyTrisoFuel,
   groupThicknesses,
-  mergeReflectorIntoShield,
-  sameMaterialNames,
   setupFromState,
+  sharedGraphiteChord,
   sharedThickness,
   diskHeliumGapsCm,
   solidDiskThicknessCm,
@@ -366,25 +365,18 @@ const Explorer: React.FC = () => {
   const layerCm = useMemo(() => sharedThickness(layerTotals), [layerTotals]);
 
   // -- Geometry -------------------------------------------------------------
-  const sameReflectorMaterial = sameMaterialNames(groups.reflector, groups.shield_moderator);
-  const mergeReflector = mergeReflectorIntoShield(
-    groups.reflector,
-    groups.shield_moderator,
-    isGraphiteLike,
-  );
-  const shieldA = mergeReflector ? setup.a + setup.refl : setup.a;
-  const reflector = mergeReflector ? 0 : setup.refl;
+  const sharedChord = sharedGraphiteChord(groups.reflector, groups.shield_moderator, isGraphiteLike);
   const layout = useMemo(
     () =>
       computeLayoutForRatio(
-        shieldA,
+        setup.a,
         (setup.a * setup.b_pct) / 100,
         setup.w,
         setup.ratio_pct / 100,
-        reflector,
+        setup.refl,
         setup.abs,
       ),
-    [shieldA, setup.a, setup.b_pct, setup.w, setup.ratio_pct, reflector, setup.abs],
+    [setup.a, setup.b_pct, setup.w, setup.ratio_pct, setup.refl, setup.abs],
   );
 
   // -- Power ----------------------------------------------------------------
@@ -617,16 +609,15 @@ const Explorer: React.FC = () => {
     );
   };
 
-  const shieldLabel = mergeReflector ? "Shield moderator (+ reflector)" : "Shield moderator";
   const resultRows: Array<[string, string]> = [
     ["Thermal", thermalPower === null ? "—" : formatPower(thermalPower)],
     ["Stack", stackPower === null ? "—" : formatPower(stackPower)],
     ["Fuel", `${fmtG(layout.fuelArea * columns)} m²`],
+    ["Reflector", `${fmtG(layout.reflectorArea * columns)} m²`],
   ];
-  if (!mergeReflector) resultRows.push(["Reflector", `${fmtG(layout.reflectorArea * columns)} m²`]);
   resultRows.push(
     ["TPV", `${fmtG(oppositeArea * columns)} m²`],
-    [shieldLabel, `${fmtG(layout.gapArea * columns)} m²`],
+    ["Shield moderator", `${fmtG(layout.gapArea * columns)} m²`],
     ["Shield absorber", `${fmtG(layout.absorberArea * columns)} m²`],
     ["Disk", `${fmtG(layout.totalArea * columns)} m²`],
     ["Diameter", `${fmtG(2 * layout.rOuter)} m`],
@@ -676,14 +667,13 @@ const Explorer: React.FC = () => {
           showDims={setup.dims}
           columns={columns}
           outerReflector={columns === 1 ? setup.refl : 0}
+          sharedChord={sharedChord}
         />
-        {mergeReflector && (
+        {sharedChord && (
           <div className="small text-secondary mt-2">
-            {sameReflectorMaterial
-              ? "Reflector and shield moderator use the same materials, so the reflector"
-              : "Reflector and shield moderator are both graphite, so the reflector"}{" "}
-            ({setup.refl.toFixed(2)} m) is folded into the shield moderator ({setup.a.toFixed(2)} m →{" "}
-            {(setup.a + setup.refl).toFixed(2)} m) and omitted as a separate core sector.
+            Reflector and shield moderator are both graphite. The fuel-to-TPV chord is{" "}
+            {(setup.a + setup.refl).toFixed(2)} m: the reflector is {setup.refl.toFixed(2)} m and the shield
+            moderator fills the remaining {setup.a.toFixed(2)} m. They stay separate cells.
           </div>
         )}
       </Col>

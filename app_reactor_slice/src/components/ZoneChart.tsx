@@ -147,9 +147,11 @@ type Props = {
   columns: number;
   /** Radial reflector outside the rim, metres. Used for a single column. */
   outerReflector?: number;
+  /** Graphite reflector and shield moderator share one fuel-to-TPV chord. */
+  sharedChord?: boolean;
 };
 
-const ZoneChart: React.FC<Props> = ({ layout, showDims, columns, outerReflector = 0 }) => {
+const ZoneChart: React.FC<Props> = ({ layout, showDims, columns, outerReflector = 0, sharedChord = false }) => {
   const { paths, lines, dots, dot, labels, reach, legend, home } = useMemo(() => {
     const fuelHalf = (layout.fuelAngle * 180) / Math.PI / 2;
     const oppHalf = (layout.oppositeAngle * 180) / Math.PI / 2;
@@ -192,7 +194,7 @@ const ZoneChart: React.FC<Props> = ({ layout, showDims, columns, outerReflector 
       const shieldRight: [number, number] = [reflRight[0] - shieldDeg, reflRight[0]];
       const absRight: [number, number] = [shieldRight[0] - absDeg, shieldRight[0]];
 
-      const edges = centerCuts(layout);
+      const edges = centerCuts(layout, sharedChord);
       const cuts: Array<[keyof typeof ZONE_COLORS, string, number]> = [["gap", "Shield moderator", edges.moderatorY]];
       if (edges.reflectorY != null) cuts.push(["reflector", "Reflector", edges.reflectorY]);
       for (const [colorKey, name, yLine] of cuts) {
@@ -329,7 +331,7 @@ const ZoneChart: React.FC<Props> = ({ layout, showDims, columns, outerReflector 
       if (layout.absorber > 1e-9) {
         const yAbsFar = Math.min(ri, -ri + layout.absorber);
         dimParts.push([-ri, yAbsFar, "abs"]);
-        const yGap = centerCuts(layout).moderatorY;
+        const yGap = centerCuts(layout, sharedChord).moderatorY;
         if (yGap > yAbsFar + 1e-6) dimParts.push([yAbsFar, yGap, "b"]);
       } else {
         dimParts.push([yAfterShield, -ri, "b"]);
@@ -403,7 +405,7 @@ const ZoneChart: React.FC<Props> = ({ layout, showDims, columns, outerReflector 
     };
 
     return { paths: drawn, lines: strokeLines, dots, dot, labels: dimLabels, reach: box, legend: legendItems, home };
-  }, [layout, showDims, columns, outerReflector]);
+  }, [layout, showDims, columns, outerReflector, sharedChord]);
 
   const [frame, setFrame] = useState<typeof home | null>(null);
   const [panning, setPanning] = useState(false);
