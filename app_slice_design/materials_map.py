@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Dict, Iterable, List, Set
 
-from common_lib.materials import MaterialChoice
+from common_lib.materials import MaterialChoice, is_graphite_like
 
 from app_slice_design.setup import AppSliceSetup, LayerRow
 
@@ -38,6 +38,33 @@ def same_material_names(left: List[LayerRow], right: List[LayerRow]) -> bool:
     names_left = [resolve_material_name(row.name) for row in left]
     names_right = [resolve_material_name(row.name) for row in right]
     return bool(names_left) and names_left == names_right
+
+
+def _solid_material_names(rows: List[LayerRow]) -> List[str]:
+    names = []
+    for row in rows:
+        name = resolve_material_name(row.name)
+        if name.lower() == "void":
+            continue
+        names.append(name)
+    return names
+
+
+def layers_are_graphite_like(rows: List[LayerRow]) -> bool:
+    """Every solid sheet in the stack is a graphite-like catalog material."""
+    names = _solid_material_names(rows)
+    return bool(names) and all(is_graphite_like(name) for name in names)
+
+
+def merge_reflector_into_shield(left: List[LayerRow], right: List[LayerRow]) -> bool:
+    """Fold the reflector chord into the shield moderator.
+
+    Identical layer lists still merge. Graphite-like lists merge too, so
+    Graphite beside Natural Graphite is one fuel-to-absorber distance.
+    """
+    return same_material_names(left, right) or (
+        layers_are_graphite_like(left) and layers_are_graphite_like(right)
+    )
 
 
 def collect_material_names(setup: AppSliceSetup, nsm_material: str) -> Set[str]:

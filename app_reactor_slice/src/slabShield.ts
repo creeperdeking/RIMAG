@@ -1,5 +1,7 @@
 import type { Setup } from "./configurations";
 import type { LayerRow } from "./geometry";
+import { mergeReflectorIntoShield } from "./layers";
+import { isGraphiteLike } from "./materials";
 
 export type SlabRole = "reflector" | "moderator" | "absorber" | "detector";
 
@@ -34,17 +36,14 @@ function roundCm(cm: number): number {
 
 /**
  * Chord the fast slab transports, in the same order and thicknesses as the
- * full geometry. When the reflector and shield-moderator layer names match,
- * those metres are one block of the neutron-shield material. The last cell
- * is 1 cm of void, where the damage-weighted flux is scored.
+ * full geometry. When the reflector and shield moderator are the same material,
+ * or both are graphite, those metres are one block of the neutron-shield
+ * material. The last cell is 1 cm of void, where the damage-weighted flux is scored.
  */
 export function slabLayersFromSetup(setup: Setup): SlabLayerSpec[] {
   const reflectorRows = setup.layers.reflector ?? [];
   const moderatorRows = setup.layers.shield_moderator ?? [];
-  const reflectorNames = namesOf(reflectorRows);
-  const moderatorNames = namesOf(moderatorRows);
-  const merged =
-    reflectorNames.length > 0 && reflectorNames.join("\0") === moderatorNames.join("\0");
+  const merged = mergeReflectorIntoShield(reflectorRows, moderatorRows, isGraphiteLike);
   const moderatorCm = (merged ? setup.a + setup.refl : setup.a) * 100;
   const reflectorCm = merged ? 0 : setup.refl * 100;
   const absorberCm = setup.abs * 100;

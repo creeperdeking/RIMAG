@@ -83,6 +83,12 @@ const ROLE_CATALOG_NAMES: Record<string, string> = {
   "TPV layer": "InGaAs",
 };
 
+export function isGraphiteLike(name: string, shieldModerator = "Graphite"): boolean {
+  const catalog = catalogNameForLayer(name, shieldModerator);
+  const [spec, mix] = libraryEntry(catalog, BASE.specs, BASE.mixed);
+  return Boolean(spec?.graphite_like || mix?.graphite_like);
+}
+
 export function catalogNameForLayer(name: string, shieldModerator = "Graphite"): string {
   const trimmed = name.trim();
   if (trimmed === "Shield moderator") return shieldModerator.trim() || "Graphite";

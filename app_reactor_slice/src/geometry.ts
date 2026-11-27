@@ -40,6 +40,8 @@ export type LayerRow = { name: string; cm: number };
 export type MaterialSpec = {
   density: number;
   color: string | null;
+  /** Carbon moderator. Set in common_lib/materials.py and exported with the catalog. */
+  graphite_like?: boolean;
   composition: Array<{
     atom: string;
     atomic_weight: number;
@@ -52,6 +54,7 @@ export type MaterialSpec = {
 export type MixedSpec = {
   materials: string[];
   proportions: number[];
+  graphite_like?: boolean;
 };
 
 export function chordAngle(thickness: number, innerDiameter: number): number {

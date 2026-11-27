@@ -27,6 +27,25 @@ export function sameMaterialNames(left: LayerRow[], right: LayerRow[]): boolean 
   return Boolean(namesLeft.length) && namesLeft.every((name, index) => name === namesRight[index]);
 }
 
+function solidMaterialNames(rows: LayerRow[]): string[] {
+  return rows
+    .map((row) => String(row.name ?? "").trim())
+    .filter((name) => name && name.toLowerCase() !== "void");
+}
+
+/** Fold the reflector chord into the shield moderator. */
+export function mergeReflectorIntoShield(
+  left: LayerRow[],
+  right: LayerRow[],
+  isGraphite: (name: string) => boolean,
+): boolean {
+  if (sameMaterialNames(left, right)) return true;
+  const leftNames = solidMaterialNames(left);
+  const rightNames = solidMaterialNames(right);
+  if (!leftNames.length || !rightNames.length) return false;
+  return leftNames.every(isGraphite) && rightNames.every(isGraphite);
+}
+
 export function groupThicknesses(groups: Groups): Array<[string, number]> {
   const diskCm = (groups.disk ?? []).reduce((sum, layer) => sum + layer.cm, 0);
   return LAYER_GROUPS.map(([groupId, title]) => {

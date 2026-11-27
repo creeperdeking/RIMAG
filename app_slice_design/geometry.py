@@ -17,8 +17,8 @@ from app_slice_design.layout import (
 )
 from app_slice_design.materials_map import (
     fuel_and_tpv_thickness_cm,
+    merge_reflector_into_shield,
     resolve_material_name,
-    same_material_names,
     shared_stack_thickness_cm,
     stack_with_disk,
 )
@@ -648,7 +648,7 @@ def make_app_slice_geometry(
     material_choice: MaterialChoice,
 ) -> MakeAppSliceGeometryResult:
     setup = config.setup
-    merge_reflector = same_material_names(
+    merge_reflector = merge_reflector_into_shield(
         setup.layers.get("reflector", []),
         setup.layers.get("shield_moderator", []),
     )

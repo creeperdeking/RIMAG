@@ -30,11 +30,15 @@ class Material(BaseModel):
     boiling_point: Optional[float] = None  # K
     color: Optional[str] = None
     scattering: Optional[str] = None
+    # Carbon moderator. Reflector and shield-moderator zones of graphite-like
+    # materials share one fuel-to-absorber distance even when the names differ.
+    graphite_like: bool = False
 
 
 class MixedMaterial(BaseModel):
     materials: List[str]
     proportions: List[float]
+    graphite_like: bool = False
 
 
 class MaterialChoice(BaseModel):
@@ -226,6 +230,20 @@ def graphite_material_base_name(name: str) -> str:
     if suffix.isdigit():
         return base
     return name
+
+
+def graphite_like_names() -> set[str]:
+    """Catalog names flagged ``graphite_like``, including mixed materials."""
+    if not _MATERIAL_SPECS and not _MATERIAL_MIXED:
+        material_definitions(0.0)
+    names = {name for name, spec in _MATERIAL_SPECS.items() if spec.graphite_like}
+    names.update(name for name, mix in _MATERIAL_MIXED.items() if mix.graphite_like)
+    return names
+
+
+def is_graphite_like(name: str) -> bool:
+    """True when ``name`` is a graphite-like catalog material or a numbered copy."""
+    return graphite_material_base_name(name or "") in graphite_like_names()
 
 
 # IG-430 isotropic graphite bulk density, g/cm³.
@@ -725,12 +743,14 @@ def make_materials(
         density=ISOTROPIC_GRAPHITE_DENSITY,
         color="black",
         scattering="c_Graphite",
+        graphite_like=True,
     )
     natural_graphite = Material(
         composition=natural_graphite_atom_proportions(),
         density=ISOTROPIC_GRAPHITE_DENSITY,
         color="brown",
         scattering="c_Graphite",
+        graphite_like=True,
     )
 
     silicon_carbide = Material(
@@ -1063,12 +1083,14 @@ def make_materials(
             density=2.26*0.1,
             color="lightgray",
             scattering="c_Graphite",
+            graphite_like=True,
         ),
         "Graphite NO Scattering": Material(
             composition=[AtomProportion(atom=atoms["C"])],
             density=2.26,
             color="yellow",
             scattering=None,
+            graphite_like=True,
         ),
         "Lead": Material(
             composition=[AtomProportion(atom=atoms["Pb"])], density=11.34, color="gray"

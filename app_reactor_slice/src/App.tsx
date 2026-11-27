@@ -25,6 +25,7 @@ import { burnupDays, computeLayoutForRatio, formatBurnupTime, uraniumInventoryKg
 import {
   applyTrisoFuel,
   groupThicknesses,
+  mergeReflectorIntoShield,
   sameMaterialNames,
   setupFromState,
   sharedThickness,
@@ -35,7 +36,7 @@ import {
   thicknessWarning,
   type Groups,
 } from "./layers";
-import { materialLibrary, materialLines } from "./materials";
+import { isGraphiteLike, materialLibrary, materialLines } from "./materials";
 import { airbridgeOperatingPoint } from "./data/tpvEmpiricalLimits";
 import { chooseSetupToOpen, readStoredSetup, usesSavedFile, writeStoredSetup } from "./openSetup";
 
@@ -365,7 +366,12 @@ const Explorer: React.FC = () => {
   const layerCm = useMemo(() => sharedThickness(layerTotals), [layerTotals]);
 
   // -- Geometry -------------------------------------------------------------
-  const mergeReflector = sameMaterialNames(groups.reflector, groups.shield_moderator);
+  const sameReflectorMaterial = sameMaterialNames(groups.reflector, groups.shield_moderator);
+  const mergeReflector = mergeReflectorIntoShield(
+    groups.reflector,
+    groups.shield_moderator,
+    isGraphiteLike,
+  );
   const shieldA = mergeReflector ? setup.a + setup.refl : setup.a;
   const reflector = mergeReflector ? 0 : setup.refl;
   const layout = useMemo(
@@ -673,9 +679,11 @@ const Explorer: React.FC = () => {
         />
         {mergeReflector && (
           <div className="small text-secondary mt-2">
-            Reflector and shield moderator use the same materials, so the reflector ({setup.refl.toFixed(2)} m) is
-            folded into the shield moderator ({setup.a.toFixed(2)} m → {(setup.a + setup.refl).toFixed(2)} m) and
-            omitted as a separate core sector.
+            {sameReflectorMaterial
+              ? "Reflector and shield moderator use the same materials, so the reflector"
+              : "Reflector and shield moderator are both graphite, so the reflector"}{" "}
+            ({setup.refl.toFixed(2)} m) is folded into the shield moderator ({setup.a.toFixed(2)} m →{" "}
+            {(setup.a + setup.refl).toFixed(2)} m) and omitted as a separate core sector.
           </div>
         )}
       </Col>

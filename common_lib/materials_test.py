@@ -4,7 +4,9 @@ from common_lib.materials import (
     atoms,
     borated_water_atom_proportions_from_boron_ppm,
     graphite_boron_weight_fractions,
+    graphite_like_names,
     graphite_material_base_name,
+    is_graphite_like,
     natural_graphite_atom_proportions,
     shield_graphite_fields,
 )
@@ -198,3 +200,48 @@ def test_borated_water_raises_when_ppm_exceeds_pure_boric_acid_limit():
         assert False, "Expected ValueError for excessive ppm"
     except ValueError:
         pass
+
+
+def test_graphite_like_flag_covers_carbon_moderators_only():
+    assert is_graphite_like("Graphite")
+    assert is_graphite_like("Graphite 2")
+    assert is_graphite_like("Natural Graphite")
+    assert is_graphite_like("Low Density Graphite")
+    assert is_graphite_like("Graphite NO Scattering")
+    assert not is_graphite_like("Beryllium Oxide")
+    assert not is_graphite_like("Boron Carbide")
+    assert not is_graphite_like("Borated Graphite")
+    assert graphite_like_names() == {
+        "Graphite",
+        "Natural Graphite",
+        "Low Density Graphite",
+        "Graphite NO Scattering",
+    }
+
+
+def test_materials_json_matches_the_graphite_like_flag():
+    import json
+    from pathlib import Path
+
+    catalog = json.loads(
+        Path("app_reactor_slice/src/data/materials.json").read_text(encoding="utf-8")
+    )
+    flagged = {name for name, spec in catalog["specs"].items() if spec.get("graphite_like")}
+    flagged.update(name for name, spec in catalog["mixed"].items() if spec.get("graphite_like"))
+    assert flagged == graphite_like_names()
+
+
+def test_graphite_like_zones_share_one_fuel_to_absorber_distance():
+    from app_slice_design.materials_map import merge_reflector_into_shield
+    from app_slice_design.setup import LayerRow
+
+    graphite = [LayerRow(name="Graphite", cm=1)]
+    natural = [LayerRow(name="Natural Graphite", cm=1)]
+    beryllia = [LayerRow(name="Beryllium Oxide", cm=1)]
+    assert merge_reflector_into_shield(graphite, natural)
+    assert merge_reflector_into_shield(beryllia, beryllia)
+    assert not merge_reflector_into_shield(graphite, beryllia)
+    assert merge_reflector_into_shield(
+        [LayerRow(name="Graphite", cm=1), LayerRow(name="Void", cm=0.1)],
+        [LayerRow(name="Low Density Graphite", cm=1)],
+    )
