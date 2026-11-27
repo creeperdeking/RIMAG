@@ -68,16 +68,21 @@ def test_graphite_material_base_name():
     assert graphite_material_base_name("Low Density Graphite") == "Low Density Graphite"
 
 
-def test_natural_graphite_matches_isotropic_density_and_flake_ash():
+def test_natural_graphite_matches_commercial_isostatic_impurities():
     props = natural_graphite_atom_proportions()
     assert ISOTROPIC_GRAPHITE_DENSITY == 1.82
     total = sum(part.proportion * part.atom.atomic_weight for part in props)
-    by_name = {part.atom.name: part.proportion * part.atom.atomic_weight / total for part in props}
-    assert abs(by_name["C"] - 0.95) < 1e-12
-    # GBM ash is mostly silica, then iron oxide, then alumina.
-    assert by_name["Si"] > by_name["Fe"] > by_name["Al"]
-    assert by_name["O"] > by_name["Si"]
-    assert set(by_name) == {"C", "O", "Si", "Fe", "Al", "Mg", "Ca", "K", "Na", "Ti", "P", "S", "Mn"}
+    ppm = {
+        part.atom.name: part.proportion * part.atom.atomic_weight / total * 1e6
+        for part in props
+    }
+    # Lee, Ghosh, and Loyalka, IG-11, Table 1. Vanadium dominates the ash.
+    assert ppm["V"] > ppm["Ca"] > ppm["Fe"]
+    assert abs(ppm["V"] - 177.2) < 1e-6
+    assert abs(ppm["B"] - 2.9) < 1e-9
+    assert abs(ppm["C"] - (1e6 - 222.27)) < 1e-6
+    assert "O" not in ppm
+    assert set(ppm) == {"C", "V", "Ca", "Fe", "Ni", "B", "Mg", "Si", "Co", "Li"}
 
 
 def test_borated_water_raises_when_ppm_exceeds_pure_boric_acid_limit():

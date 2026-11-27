@@ -97,6 +97,7 @@ atoms: Dict[str, Atom] = {
     "P": Atom(name="P", atomic_weight=30.973762),
     "Cr": Atom(name="Cr", atomic_weight=51.9961),
     "Ni": Atom(name="Ni", atomic_weight=58.6934),
+    "Co": Atom(name="Co", atomic_weight=58.933194),
     "Mn": Atom(name="Mn", atomic_weight=54.938045),
     "S": Atom(name="S", atomic_weight=32.065),
     "Ti": Atom(name="Ti", atomic_weight=47.867),
@@ -231,50 +232,40 @@ def graphite_material_base_name(name: str) -> str:
 # Campbell, Snead, and Katoh, J. Nucl. Mater. (2023), https://www.osti.gov/servlets/purl/1928952
 ISOTROPIC_GRAPHITE_DENSITY = 1.82
 
-# Typical ash of commercial natural flake graphite, weight percent of the ash.
-# Global Battery Materials GBM 50×100 technical data sheet. Carbon grades on
-# that sheet run from 94% to 97%; the material uses the midpoint, 95 wt% C.
-# https://www.globalbatterymaterials.com/wp-content/uploads/2026/03/GBM-Natural-Flake-Tech-Data-Sheet-50-x-100.pdf
-_NATURAL_GRAPHITE_CARBON_WEIGHT_FRACTION = 0.95
-_NATURAL_GRAPHITE_ASH: tuple[tuple[tuple[tuple[str, int], ...], float], ...] = (
-    ((("Si", 1), ("O", 2)), 45.0),   # SiO2
-    ((("Fe", 2), ("O", 3)), 29.6),   # Fe2O3
-    ((("Al", 2), ("O", 3)), 14.8),   # Al2O3
-    ((("Mg", 1), ("O", 1)), 4.0),    # MgO
-    ((("Ca", 1), ("O", 1)), 2.9),    # CaO
-    ((("K", 2), ("O", 1)), 1.2),     # K2O
-    ((("Na", 2), ("O", 1)), 0.6),    # Na2O
-    ((("Ti", 1), ("O", 2)), 0.5),    # TiO2
-    ((("P", 2), ("O", 5)), 0.5),     # P2O5
-    ((("S", 1),), 0.4),              # S
-    ((("Mn", 1), ("O", 2)), 0.3),    # MnO2
+# Commercial isostatic graphite, Toyo Tanso IG-11, weight ppm.
+# IG-11 is the unpurified isostatic block from which nuclear IG-110 is made.
+# Lee, Ghosh, and Loyalka, Table 1, Evans Analytical GDMS / ICP-OES.
+# https://www.osti.gov/servlets/purl/1423049
+# The paper reports ash above 200 ppm. Only elements given as measured
+# values are included; detection-limit entries are left out. Carbon is
+# the balance. IG-11's catalog density is 1.77 g/cm³; this card keeps the
+# isotropic graphite density so it stays comparable with the pure graphite.
+_ISOSTATIC_GRAPHITE_IMPURITY_PPM: tuple[tuple[str, float], ...] = (
+    ("V", 177.2),
+    ("Ca", 22.32),
+    ("Fe", 9.59),
+    ("Ni", 8.31),
+    ("B", 2.9),
+    ("Mg", 0.99),
+    ("Si", 0.7),
+    ("Co", 0.2),
+    ("Li", 0.06),
 )
 
 
 def natural_graphite_atom_proportions() -> List[AtomProportion]:
-    """Atom amounts for natural flake graphite and its typical ash.
+    """Atom amounts for commercial isostatic graphite.
 
-    Carbon is 95 wt%. The other 5 wt% is the GBM ash analysis. Those named
-    constituents sum to 99.8% of the ash and are scaled onto the full 5%.
-    The sheet's remaining 0.3% is labeled only as trace elements, so it is
-    not assigned to a nuclide.
+    Impurity masses are the IG-11 analysis above. The balance is carbon.
     """
-    named = sum(percent for _, percent in _NATURAL_GRAPHITE_ASH)
-    ash_weight = 1.0 - _NATURAL_GRAPHITE_CARBON_WEIGHT_FRACTION
+    impurity_weight = sum(ppm for _, ppm in _ISOSTATIC_GRAPHITE_IMPURITY_PPM) * 1e-6
     moles: Dict[str, float] = {
-        "C": _NATURAL_GRAPHITE_CARBON_WEIGHT_FRACTION / atoms["C"].atomic_weight
+        "C": (1.0 - impurity_weight) / atoms["C"].atomic_weight
     }
-    for stoich, percent in _NATURAL_GRAPHITE_ASH:
-        molar_mass = sum(count * atoms[element].atomic_weight for element, count in stoich)
-        oxide_moles = ash_weight * (percent / named) / molar_mass
-        for element, count in stoich:
-            moles[element] = moles.get(element, 0.0) + oxide_moles * count
-    order = ["C", "Si", "Fe", "Al", "Mg", "Ca", "K", "Na", "Ti", "P", "S", "Mn", "O"]
-    return [
-        AtomProportion(atom=atoms[name], proportion=moles[name])
-        for name in order
-        if moles.get(name, 0.0) > 0.0
-    ]
+    for element, ppm in _ISOSTATIC_GRAPHITE_IMPURITY_PPM:
+        moles[element] = ppm * 1e-6 / atoms[element].atomic_weight
+    order = ["C", *(element for element, _ in _ISOSTATIC_GRAPHITE_IMPURITY_PPM)]
+    return [AtomProportion(atom=atoms[name], proportion=moles[name]) for name in order]
 
 
 def apply_boron_ppm_to_fuel_graphite(
