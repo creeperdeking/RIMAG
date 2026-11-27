@@ -316,6 +316,78 @@ def apply_boron_ppm_to_fuel_graphite(
     )
 
 
+# Shield zones whose graphite can carry the append-menu boron concentration.
+# The fuel-side reflector bump and the disk stay on their own graphite copies.
+_SHIELD_GRAPHITE_FIELDS = (
+    "neutron_shield_moderator",
+    "shaft_shield_moderator",
+    "outer_cold_shield_moderator",
+    "shield_moderator_cladding",
+    "neutron_absorber",
+)
+SHIELD_GRAPHITE_NAME = "Shield graphite"
+
+
+def shield_graphite_fields(material_choice: MaterialChoice) -> List[str]:
+    """Choice fields that name graphite in the shield, in choice order."""
+    return [
+        field
+        for field in _SHIELD_GRAPHITE_FIELDS
+        if graphite_material_base_name(getattr(material_choice, field) or "") == "Graphite"
+    ]
+
+
+def apply_boron_ppm_to_shield_graphite(
+    materials_dict: Dict[str, object],
+    material_choice: MaterialChoice,
+    boron_ppm: float,
+    colors: Optional[Dict] = None,
+) -> None:
+    """Point shield graphite zones at one graphite doped with ``boron_ppm``.
+
+    The neutron-shield moderator is doped when it is graphite. The absorber
+    zone is doped only when that layer is graphite too; a boron-carbide wedge
+    is left alone. Fuel, disk, and reflector graphite keep their own materials.
+    Non-positive ppm leaves every zone untouched.
+    """
+    ppm = float(boron_ppm)
+    if ppm <= 0:
+        return
+    fields = shield_graphite_fields(material_choice)
+    if not fields:
+        print(
+            f"Shield boron {ppm:g} ppm ignored: "
+            f"shield moderator is '{material_choice.neutron_shield_moderator}', not graphite."
+        )
+        return
+    weight_carbon, weight_boron = graphite_boron_weight_fractions(ppm)
+
+    import openmc
+
+    spec = _MATERIAL_SPECS.get("Graphite")
+    density = spec.density if spec is not None else ISOTROPIC_GRAPHITE_DENSITY
+    scattering = spec.scattering if spec is not None and spec.scattering else "c_Graphite"
+
+    doped = openmc.Material(name=SHIELD_GRAPHITE_NAME)
+    doped.add_element("C", weight_carbon, percent_type="wo")
+    doped.add_element("B", weight_boron, percent_type="wo")
+    doped.add_s_alpha_beta(scattering)
+    doped.set_density("g/cm3", density)
+    materials_dict[SHIELD_GRAPHITE_NAME] = doped
+    if colors is not None:
+        for field in fields:
+            old = materials_dict.get(getattr(material_choice, field))
+            if old is not None and old in colors:
+                colors[doped] = colors[old]
+                break
+    for field in fields:
+        setattr(material_choice, field, SHIELD_GRAPHITE_NAME)
+    print(
+        f"Shield graphite: {ppm:g} ppm boron by mass "
+        f"({', '.join(fields)}; density {density} g/cm3, {scattering})."
+    )
+
+
 def heavy_metal_density(mat, elements=None, z_min=90):
     """
     Return the heavy-metal mass density of an OpenMC Material in g/cm^3.

@@ -73,6 +73,9 @@ class AppSliceSimulationParams(BaseModel):
     dose_time: float = 10.0
     print_core_characteristics: bool = True
     boron_concentration_ppm: float = Field(default=0.0, ge=0)
+    # Elemental boron by mass in shield graphite. The boron-carbide wedge is
+    # unchanged. Zero leaves the shield graphite pure.
+    shield_boron_ppm: float = Field(default=0.0, ge=0)
     # When true, keff tallies are only the photovoltaic SR-NIEL DDD flux tally.
     ddd_tallies_only: bool = True
     # MAGIC weight-window mesh / groups for seed and refine passes.

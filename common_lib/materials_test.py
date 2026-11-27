@@ -1,10 +1,12 @@
 from common_lib.materials import (
     ISOTROPIC_GRAPHITE_DENSITY,
+    MaterialChoice,
     atoms,
     borated_water_atom_proportions_from_boron_ppm,
     graphite_boron_weight_fractions,
     graphite_material_base_name,
     natural_graphite_atom_proportions,
+    shield_graphite_fields,
 )
 
 
@@ -83,6 +85,105 @@ def test_natural_graphite_matches_commercial_isostatic_impurities():
     assert abs(ppm["C"] - (1e6 - 222.27)) < 1e-6
     assert "O" not in ppm
     assert set(ppm) == {"C", "V", "Ca", "Fe", "Ni", "B", "Mg", "Si", "Co", "Li"}
+
+
+def _choice(**overrides: str) -> MaterialChoice:
+    fields = {name: "Void" for name in MaterialChoice.model_fields}
+    fields.update(overrides)
+    return MaterialChoice(**fields)
+
+
+def test_shield_graphite_fields_cover_moderator_and_a_graphite_absorber():
+    choice = _choice(
+        neutron_shield_moderator="Graphite",
+        shaft_shield_moderator="Graphite 2",
+        outer_cold_shield_moderator="Graphite 3",
+        shield_moderator_cladding="Graphite 4",
+        neutron_absorber="Graphite 5",
+        neutron_reflector="Graphite 6",
+        fuel_cladding="Graphite 7",
+    )
+    assert shield_graphite_fields(choice) == [
+        "neutron_shield_moderator",
+        "shaft_shield_moderator",
+        "outer_cold_shield_moderator",
+        "shield_moderator_cladding",
+        "neutron_absorber",
+    ]
+
+
+def test_shield_graphite_fields_leave_a_carbide_wedge_alone():
+    choice = _choice(
+        neutron_shield_moderator="Graphite",
+        neutron_absorber="Boron Carbide",
+        neutron_reflector="Graphite",
+    )
+    assert shield_graphite_fields(choice) == ["neutron_shield_moderator"]
+
+
+def _nuclides(mat) -> set[str]:
+    return set(mat.get_nuclide_atom_densities())
+
+
+def test_shield_boron_dopes_shield_graphite_and_leaves_the_carbide_wedge():
+    from common_lib.materials import (
+        apply_boron_ppm_to_fuel_graphite,
+        apply_boron_ppm_to_shield_graphite,
+        make_materials,
+    )
+
+    fields = {name: "Void" for name in MaterialChoice.model_fields}
+    fields.update(
+        {
+            "moderator": "Graphite",
+            "neutron_reflector": "Graphite",
+            "bottom_reflector": "Graphite",
+            "neutron_shield_moderator": "Graphite",
+            "shaft_shield_moderator": "Graphite",
+            "outer_cold_shield_moderator": "Graphite",
+            "shield_moderator_cladding": "Graphite",
+            "fuel_cladding": "Graphite",
+            "emitter": "Graphite",
+            "coolant_cladding": "Graphite",
+            "neutron_absorber": "Boron Carbide",
+        }
+    )
+    materials, colors, choice = make_materials(
+        9.7, MaterialChoice(**fields), extra_names=["Graphite", "Boron Carbide"]
+    )
+    reflector_name = choice.neutron_reflector
+    fuel_name = choice.fuel_cladding
+    apply_boron_ppm_to_fuel_graphite(materials, choice, 200, colors)
+    apply_boron_ppm_to_shield_graphite(materials, choice, 740, colors)
+
+    assert choice.neutron_shield_moderator == "Shield graphite"
+    assert choice.shaft_shield_moderator == "Shield graphite"
+    assert choice.outer_cold_shield_moderator == "Shield graphite"
+    assert choice.shield_moderator_cladding == "Shield graphite"
+    assert choice.neutron_absorber == "Boron Carbide"
+    assert choice.neutron_reflector == reflector_name
+    assert choice.fuel_cladding == fuel_name
+    shield = _nuclides(materials["Shield graphite"])
+    assert any(nuc.startswith("B") for nuc in shield)
+    assert not any(nuc.startswith("B") for nuc in _nuclides(materials[reflector_name]))
+    assert any(nuc.startswith("B") for nuc in _nuclides(materials[fuel_name]))
+
+
+def test_shield_boron_zero_ppm_leaves_the_choice_unchanged():
+    from common_lib.materials import apply_boron_ppm_to_shield_graphite
+
+    choice = _choice(neutron_shield_moderator="Graphite", neutron_absorber="Boron Carbide")
+    apply_boron_ppm_to_shield_graphite({}, choice, 0)
+    assert choice.neutron_shield_moderator == "Graphite"
+    assert choice.neutron_absorber == "Boron Carbide"
+
+
+def test_shield_graphite_fields_ignore_a_non_graphite_moderator():
+    choice = _choice(
+        neutron_shield_moderator="Beryllium Oxide",
+        neutron_absorber="Boron Carbide",
+    )
+    assert shield_graphite_fields(choice) == []
 
 
 def test_borated_water_raises_when_ppm_exceeds_pure_boric_acid_limit():

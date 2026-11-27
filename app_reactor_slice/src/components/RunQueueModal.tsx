@@ -510,7 +510,7 @@ const RunQueueModal: React.FC<Props> = ({
         </Form.Group>
 
         <Form.Group className="simulation-field">
-          <FieldLabel info="Elemental boron by mass in the graphite of the fuel layer. Reflector, disk, and shield graphite stay pure carbon.">
+          <FieldLabel info="Elemental boron by mass in the graphite of the fuel layer. The reflector bump, the disk, and the shield graphite are unchanged.">
             Boron concentration (ppm)
           </FieldLabel>
           <Form.Control
@@ -522,6 +522,24 @@ const RunQueueModal: React.FC<Props> = ({
             disabled={fieldDisabled}
             onChange={(event) =>
               setField("boron_concentration_ppm", Math.max(0, Number(event.target.value) || 0))
+            }
+            />
+        </Form.Group>
+
+        <Form.Group className="simulation-field">
+          <FieldLabel info="Elemental boron by mass in the neutron-shield graphite. The boron-carbide wedge stays as it is. Zero leaves the shield graphite pure.">
+            Shield graphite boron (ppm)
+          </FieldLabel>
+          <Form.Control
+            size="sm"
+            type="number"
+            min={0}
+            max={999999}
+            step={1}
+            value={draft.shield_boron_ppm}
+            disabled={fieldDisabled}
+            onChange={(event) =>
+              setField("shield_boron_ppm", Math.max(0, Math.min(999999, Number(event.target.value) || 0)))
             }
           />
         </Form.Group>

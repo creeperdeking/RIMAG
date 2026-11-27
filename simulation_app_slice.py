@@ -14,7 +14,11 @@ from app_slice_design.materials_map import (
 )
 from app_slice_design.plot_defaults import write_plot_defaults
 from app_slice_design.setup import load_app_slice_run_config
-from common_lib.materials import apply_boron_ppm_to_fuel_graphite, make_materials
+from common_lib.materials import (
+    apply_boron_ppm_to_fuel_graphite,
+    apply_boron_ppm_to_shield_graphite,
+    make_materials,
+)
 from common_lib.runlib import start_program
 from one_layer_disk_design.disks_core_characteristics import (
     characteristics_from_thermodynamics,
@@ -61,6 +65,7 @@ def main(argv: list[str] | None = None) -> None:
     print(f"dose_time: {sim.dose_time}")
     print(f"print_core_characteristics: {sim.print_core_characteristics}")
     print(f"boron_concentration_ppm: {sim.boron_concentration_ppm}")
+    print(f"shield_boron_ppm: {sim.shield_boron_ppm}")
     print(f"ddd_tallies_only: {sim.ddd_tallies_only}")
     print(
         "thermal_power_mw: "
@@ -100,6 +105,12 @@ def main(argv: list[str] | None = None) -> None:
         materials_dict,
         material_choice,
         sim.boron_concentration_ppm,
+        colors,
+    )
+    apply_boron_ppm_to_shield_graphite(
+        materials_dict,
+        material_choice,
+        sim.shield_boron_ppm,
         colors,
     )
     ensure_materials_available(

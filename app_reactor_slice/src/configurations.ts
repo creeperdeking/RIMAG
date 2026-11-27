@@ -83,6 +83,8 @@ export type SimulationParams = {
   dose_time: number;
   print_core_characteristics: boolean;
   boron_concentration_ppm: number;
+  /** Elemental boron by mass in the neutron-shield graphite. */
+  shield_boron_ppm: number;
   ddd_tallies_only: boolean;
   ww_mesh_cm: number;
   ww_energy_groups: number;
@@ -107,6 +109,7 @@ export const DEFAULT_SIMULATION_PARAMS: SimulationParams = {
   dose_time: 10,
   print_core_characteristics: true,
   boron_concentration_ppm: 0,
+  shield_boron_ppm: 0,
   ddd_tallies_only: true,
   ww_mesh_cm: 40,
   ww_energy_groups: 10,
@@ -156,6 +159,7 @@ export function normalizeSimulation(raw: unknown): SimulationParams {
   const conicalPitch = Number(source.conical_pitch);
   const doseTime = Number(source.dose_time);
   const boronPpm = Number(source.boron_concentration_ppm);
+  const shieldBoronPpm = Number(source.shield_boron_ppm);
   const wwMesh = Number(source.ww_mesh_cm);
   const wwGroups = Number(source.ww_energy_groups);
   const thermalMw = Number(source.thermal_power_mw);
@@ -188,6 +192,10 @@ export function normalizeSimulation(raw: unknown): SimulationParams {
       Number.isFinite(boronPpm) && boronPpm >= 0
         ? boronPpm
         : DEFAULT_SIMULATION_PARAMS.boron_concentration_ppm,
+    shield_boron_ppm:
+      Number.isFinite(shieldBoronPpm) && shieldBoronPpm >= 0
+        ? shieldBoronPpm
+        : DEFAULT_SIMULATION_PARAMS.shield_boron_ppm,
     ddd_tallies_only: pickBoolean(source.ddd_tallies_only, DEFAULT_SIMULATION_PARAMS.ddd_tallies_only),
     ww_mesh_cm:
       Number.isFinite(wwMesh) && wwMesh > 0 ? wwMesh : DEFAULT_SIMULATION_PARAMS.ww_mesh_cm,
