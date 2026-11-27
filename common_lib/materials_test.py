@@ -1,8 +1,10 @@
 from common_lib.materials import (
+    ISOTROPIC_GRAPHITE_DENSITY,
     atoms,
     borated_water_atom_proportions_from_boron_ppm,
     graphite_boron_weight_fractions,
     graphite_material_base_name,
+    natural_graphite_atom_proportions,
 )
 
 
@@ -64,6 +66,18 @@ def test_graphite_material_base_name():
     assert graphite_material_base_name("Graphite") == "Graphite"
     assert graphite_material_base_name("Graphite 2") == "Graphite"
     assert graphite_material_base_name("Low Density Graphite") == "Low Density Graphite"
+
+
+def test_natural_graphite_matches_isotropic_density_and_flake_ash():
+    props = natural_graphite_atom_proportions()
+    assert ISOTROPIC_GRAPHITE_DENSITY == 1.82
+    total = sum(part.proportion * part.atom.atomic_weight for part in props)
+    by_name = {part.atom.name: part.proportion * part.atom.atomic_weight / total for part in props}
+    assert abs(by_name["C"] - 0.95) < 1e-12
+    # GBM ash is mostly silica, then iron oxide, then alumina.
+    assert by_name["Si"] > by_name["Fe"] > by_name["Al"]
+    assert by_name["O"] > by_name["Si"]
+    assert set(by_name) == {"C", "O", "Si", "Fe", "Al", "Mg", "Ca", "K", "Na", "Ti", "P", "S", "Mn"}
 
 
 def test_borated_water_raises_when_ppm_exceeds_pure_boric_acid_limit():

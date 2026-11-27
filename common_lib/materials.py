@@ -227,6 +227,56 @@ def graphite_material_base_name(name: str) -> str:
     return name
 
 
+# IG-430 isotropic graphite bulk density, g/cm³.
+# Campbell, Snead, and Katoh, J. Nucl. Mater. (2023), https://www.osti.gov/servlets/purl/1928952
+ISOTROPIC_GRAPHITE_DENSITY = 1.82
+
+# Typical ash of commercial natural flake graphite, weight percent of the ash.
+# Global Battery Materials GBM 50×100 technical data sheet. Carbon grades on
+# that sheet run from 94% to 97%; the material uses the midpoint, 95 wt% C.
+# https://www.globalbatterymaterials.com/wp-content/uploads/2026/03/GBM-Natural-Flake-Tech-Data-Sheet-50-x-100.pdf
+_NATURAL_GRAPHITE_CARBON_WEIGHT_FRACTION = 0.95
+_NATURAL_GRAPHITE_ASH: tuple[tuple[tuple[tuple[str, int], ...], float], ...] = (
+    ((("Si", 1), ("O", 2)), 45.0),   # SiO2
+    ((("Fe", 2), ("O", 3)), 29.6),   # Fe2O3
+    ((("Al", 2), ("O", 3)), 14.8),   # Al2O3
+    ((("Mg", 1), ("O", 1)), 4.0),    # MgO
+    ((("Ca", 1), ("O", 1)), 2.9),    # CaO
+    ((("K", 2), ("O", 1)), 1.2),     # K2O
+    ((("Na", 2), ("O", 1)), 0.6),    # Na2O
+    ((("Ti", 1), ("O", 2)), 0.5),    # TiO2
+    ((("P", 2), ("O", 5)), 0.5),     # P2O5
+    ((("S", 1),), 0.4),              # S
+    ((("Mn", 1), ("O", 2)), 0.3),    # MnO2
+)
+
+
+def natural_graphite_atom_proportions() -> List[AtomProportion]:
+    """Atom amounts for natural flake graphite and its typical ash.
+
+    Carbon is 95 wt%. The other 5 wt% is the GBM ash analysis. Those named
+    constituents sum to 99.8% of the ash and are scaled onto the full 5%.
+    The sheet's remaining 0.3% is labeled only as trace elements, so it is
+    not assigned to a nuclide.
+    """
+    named = sum(percent for _, percent in _NATURAL_GRAPHITE_ASH)
+    ash_weight = 1.0 - _NATURAL_GRAPHITE_CARBON_WEIGHT_FRACTION
+    moles: Dict[str, float] = {
+        "C": _NATURAL_GRAPHITE_CARBON_WEIGHT_FRACTION / atoms["C"].atomic_weight
+    }
+    for stoich, percent in _NATURAL_GRAPHITE_ASH:
+        molar_mass = sum(count * atoms[element].atomic_weight for element, count in stoich)
+        oxide_moles = ash_weight * (percent / named) / molar_mass
+        for element, count in stoich:
+            moles[element] = moles.get(element, 0.0) + oxide_moles * count
+    order = ["C", "Si", "Fe", "Al", "Mg", "Ca", "K", "Na", "Ti", "P", "S", "Mn", "O"]
+    return [
+        AtomProportion(atom=atoms[name], proportion=moles[name])
+        for name in order
+        if moles.get(name, 0.0) > 0.0
+    ]
+
+
 def apply_boron_ppm_to_fuel_graphite(
     materials_dict: Dict[str, object],
     material_choice: MaterialChoice,
@@ -609,8 +659,14 @@ def make_materials(
 
     graphite = Material(
         composition=[AtomProportion(atom=atoms["C"])],
-        density=1.82, # https://www.osti.gov/servlets/purl/1928952
+        density=ISOTROPIC_GRAPHITE_DENSITY,
         color="black",
+        scattering="c_Graphite",
+    )
+    natural_graphite = Material(
+        composition=natural_graphite_atom_proportions(),
+        density=ISOTROPIC_GRAPHITE_DENSITY,
+        color="brown",
         scattering="c_Graphite",
     )
 
@@ -938,6 +994,7 @@ def make_materials(
         #     color="green",
         # ),
         "Graphite": graphite,
+        "Natural Graphite": natural_graphite,
         "Low Density Graphite": Material(
             composition=[AtomProportion(atom=atoms["C"])],
             density=2.26*0.1,
