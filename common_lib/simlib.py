@@ -659,10 +659,15 @@ def print_weight_windows_depth_summary(stats: dict, ingaas: dict | None = None) 
             f"InGaAs WW coverage: {hit}/{voxels} mesh cells "
             f"({frac:.1f}%); energy groups when reached {efrac:.1f}%"
         )
-        print(
-            "Tip: empty InGaAs cells → refine again; "
-            "then run keff with weight_windows=use for DDD."
-        )
+        if hit < voxels:
+            print(
+                "Empty InGaAs mesh cells score no neutrons. "
+                "DDD and gamma dose divide by the full InGaAs volume, "
+                "so those cells bias the result down. "
+                "Refine until they are reached, then run keff with weight_windows=use."
+            )
+        else:
+            print("Every InGaAs mesh cell has a window.")
     else:
         spat = 100.0 * float(stats.get("spatial_coverage") or 0.0)
         outer = 100.0 * float(stats.get("outer_coverage") or 0.0)

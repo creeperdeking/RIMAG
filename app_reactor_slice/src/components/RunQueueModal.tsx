@@ -245,6 +245,12 @@ function LiveWwCoverage({ startedAt }: { startedAt: string | null }) {
         }
       />
       <div className="small text-secondary mb-2">The mark is the 80% target.</div>
+      {ingaas < 1 && (
+        <Alert variant="warning" className="py-2 px-3 small mb-2">
+          Empty InGaAs cells score no neutrons. A later DDD or gamma dose divides by the
+          full InGaAs volume, so those cells bias it down.
+        </Alert>
+      )}
       {status.ingaasEnergyFraction != null && (
         <CoverageBar
           label="Energy groups in reached cells"
@@ -391,6 +397,16 @@ const RunQueueModal: React.FC<Props> = ({
                 {result.gammaCi95Pct != null ? ` (± ${result.gammaCi95Pct.toFixed(2)}%, 95% CI)` : ""}
               </div>
             )}
+            {result?.gammaKGy != null &&
+              !(result.ingaasReachFraction != null && result.ingaasReachFraction >= 1) && (
+                <Alert variant="warning" className="py-2 px-3 small mt-2 mb-0">
+                  Empty InGaAs weight-window cells score no neutrons. This dose divides by
+                  the full InGaAs volume, so those cells bias it down.
+                  {result.ingaasReachFraction != null
+                    ? ` Coverage is ${(100 * result.ingaasReachFraction).toFixed(0)}%.`
+                    : ""}
+                </Alert>
+              )}
             {result?.ingaasReachFraction != null && (
               <div className="font-monospace mt-2">
                 InGaAs coverage {(100 * result.ingaasReachFraction).toFixed(0)}%
@@ -399,11 +415,22 @@ const RunQueueModal: React.FC<Props> = ({
                   : ""}
                 {result.ingaasReachFraction < 0.8 ? (
                   <span className="small text-secondary"> · target 80%</span>
+                ) : result.ingaasReachFraction < 1 ? (
+                  <span className="small text-secondary"> · target met, cells still empty</span>
                 ) : (
-                  <span className="small text-success"> · target met</span>
+                  <span className="small text-success"> · every cell reached</span>
                 )}
               </div>
             )}
+            {result?.ingaasReachFraction != null &&
+              result.ingaasReachFraction < 1 &&
+              result.gammaKGy == null && (
+                <Alert variant="warning" className="py-2 px-3 small mt-2 mb-0">
+                  Empty InGaAs cells score no neutrons. A tally run with these windows
+                  divides the dose by the full InGaAs volume, so those cells bias the DDD
+                  and the gamma dose down.
+                </Alert>
+              )}
             {result?.ingaasEnergyFraction != null && (
               <div className="small text-secondary font-monospace">
                 InGaAs energy groups {(100 * result.ingaasEnergyFraction).toFixed(0)}%
@@ -802,7 +829,7 @@ const RunQueueModal: React.FC<Props> = ({
           label={
             <span className="d-inline-flex align-items-center gap-1">
               Photovoltaic DDD tallies only
-              <InfoTip text="When on, keff keeps only the SR-NIEL flux tally on the InGaAs cells (keff itself still comes from the eigenvalue solve). Turn off for heating, tritium, C-14, IFP, and the rest." />
+              <InfoTip text="When on, keff keeps only the SR-NIEL flux tally on the InGaAs cells (keff itself still comes from the eigenvalue solve). Turn off for heating, tritium, C-14, IFP, and the rest. Empty InGaAs weight-window cells score no neutrons and bias this dose down, because it still divides by the full InGaAs volume." />
             </span>
           }
           checked={draft.ddd_tallies_only}
