@@ -309,8 +309,8 @@ function simulationApi(): Plugin {
             queue: getSimulationQueue(),
           })}\n\n`,
         );
-        const unsubscribeLog = subscribe((line) => {
-          res.write(`data: ${JSON.stringify({ type: "log", line })}\n\n`);
+        const unsubscribeLog = subscribe(({ at, line }) => {
+          res.write(`data: ${JSON.stringify({ type: "log", line, at })}\n\n`);
           if (line.startsWith("[runner] done exit=")) {
             const code = Number(line.slice("[runner] done exit=".length));
             res.write(

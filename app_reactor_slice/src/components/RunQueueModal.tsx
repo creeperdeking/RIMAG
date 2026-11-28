@@ -41,6 +41,13 @@ type QueueResult = {
   gammaKGy?: number | null;
   gammaCi95Pct?: number | null;
   gammaYears?: number | null;
+  dddMeVPerG?: number | null;
+  dddCi95Pct?: number | null;
+  dddYears?: number | null;
+  depletionYears?: number | null;
+  depletionDays?: number | null;
+  depletionBurnup?: number | null;
+  depletionBelowOne?: boolean | null;
 };
 
 type Props = {
@@ -130,9 +137,25 @@ function formatDoseYears(years: number): string {
 
 const RUN_MODE_LABEL: Record<string, string> = {
   slab: "fast slab",
+  depletion: "fuel depletion",
   keff_gamma_dose: "InGaAs gamma dose",
   keff_emitter_gamma_source: "emitter gamma (fixed source)",
 };
+
+function formatBurnup(value: number): string {
+  if (!Number.isFinite(value)) return "—";
+  if (Math.abs(value) >= 100) return value.toFixed(1);
+  if (Math.abs(value) >= 10) return value.toFixed(2);
+  return value.toPrecision(3);
+}
+
+function formatDepletionTime(years: number, days: number | null | undefined): string {
+  if (years < 0.05 && days != null && Number.isFinite(days)) {
+    const rounded = Math.round(days * 10) / 10;
+    return `${rounded} days`;
+  }
+  return `${formatDoseYears(years)} years`;
+}
 
 type WwLive = {
   passes: number | null;
@@ -341,6 +364,8 @@ const RunQueueModal: React.FC<Props> = ({
   const hasSavedResult =
     result?.keff != null ||
     result?.gammaKGy != null ||
+    result?.dddMeVPerG != null ||
+    result?.depletionBurnup != null ||
     result?.ingaasReachFraction != null ||
     Boolean(result?.summary);
 
@@ -397,16 +422,31 @@ const RunQueueModal: React.FC<Props> = ({
                 {result.gammaCi95Pct != null ? ` (± ${result.gammaCi95Pct.toFixed(2)}%, 95% CI)` : ""}
               </div>
             )}
-            {result?.gammaKGy != null &&
-              !(result.ingaasReachFraction != null && result.ingaasReachFraction >= 1) && (
+            {result?.dddMeVPerG != null && (
+              <div className="font-monospace mt-1">
+                InGaAs DDD {formatSci(result.dddMeVPerG)} MeV/g
+                {result.dddYears != null ? ` over ${formatDoseYears(result.dddYears)} years` : ""}
+                {result.dddCi95Pct != null ? ` (± ${result.dddCi95Pct.toFixed(2)}%, 95% CI)` : ""}
+              </div>
+            )}
+            {(result?.dddMeVPerG != null || result?.gammaKGy != null) &&
+              !(result?.ingaasReachFraction != null && result.ingaasReachFraction >= 1) && (
                 <Alert variant="warning" className="py-2 px-3 small mt-2 mb-0">
                   Empty InGaAs weight-window cells score no neutrons. This dose divides by
                   the full InGaAs volume, so those cells bias it down.
-                  {result.ingaasReachFraction != null
+                  {result?.ingaasReachFraction != null
                     ? ` Coverage is ${(100 * result.ingaasReachFraction).toFixed(0)}%.`
                     : ""}
                 </Alert>
               )}
+            {result?.depletionBurnup != null && result.depletionYears != null && (
+              <div className="font-monospace mt-1">
+                {result.depletionBelowOne
+                  ? `keff below 1 after ${formatDepletionTime(result.depletionYears, result.depletionDays)}`
+                  : `keff stayed at or above 1 through ${formatDepletionTime(result.depletionYears, result.depletionDays)}`}
+                {` · ${formatBurnup(result.depletionBurnup)} MWd/kgHM`}
+              </div>
+            )}
             {result?.ingaasReachFraction != null && (
               <div className="font-monospace mt-2">
                 InGaAs coverage {(100 * result.ingaasReachFraction).toFixed(0)}%
@@ -424,6 +464,7 @@ const RunQueueModal: React.FC<Props> = ({
             )}
             {result?.ingaasReachFraction != null &&
               result.ingaasReachFraction < 1 &&
+              result.dddMeVPerG == null &&
               result.gammaKGy == null && (
                 <Alert variant="warning" className="py-2 px-3 small mt-2 mb-0">
                   Empty InGaAs cells score no neutrons. A tally run with these windows
@@ -471,6 +512,14 @@ const RunQueueModal: React.FC<Props> = ({
             Coupled neutron–photon keff. Photon heating in every InGaAs sheet is summed into one kGy
             over the dose time, scaled by this item’s slice of the stack thermal power. Neutron weight
             windows apply. The photons stay analog.
+          </p>
+        )}
+        {draft.run_mode === "depletion" && (
+          <p className="small text-secondary mb-3">
+            Burns the fuel at this item’s slice thermal power. Each step is an eigenvalue calculation.
+            The run stops when the mean keff stays below 1, and reports how long that took and the
+            heavy-metal burnup at the crossing. The first steps are a day or less so xenon can build
+            in. Later steps are longer while keff is still well above 1, then shorter as it approaches 1.
           </p>
         )}
 
@@ -550,7 +599,7 @@ const RunQueueModal: React.FC<Props> = ({
             onChange={(event) =>
               setField("boron_concentration_ppm", Math.max(0, Number(event.target.value) || 0))
             }
-            />
+          />
         </Form.Group>
 
         <Form.Group className="simulation-field">

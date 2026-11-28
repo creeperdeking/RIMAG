@@ -17,6 +17,9 @@
     "disk_emissivity": 0.95,
     "shell_emissivity": 0.95,
     "tpv_airbridge_cell": 0,
+    "rimael_run_min": 11.67,
+    "rimael_disk_rps": 0.2,
+    "rimael_section": 0,
     "stack_m": 10,
     "columns": 1,
     "tpv_density": 0.9941282143868063,
@@ -68,6 +71,12 @@
           "cm": 1
         }
       ],
+      "inner_shield_moderator": [
+        {
+          "name": "Graphite",
+          "cm": 1
+        }
+      ],
       "shield_absorber": [
         {
           "name": "Boron Carbide",
@@ -102,6 +111,7 @@
       "dose_time": 10,
       "print_core_characteristics": true,
       "boron_concentration_ppm": 200,
+      "shield_boron_ppm": 0,
       "ddd_tallies_only": true,
       "ww_mesh_cm": 40,
       "ww_energy_groups": 10,
@@ -126,6 +136,9 @@
     "disk_emissivity": 0.95,
     "shell_emissivity": 0.3,
     "tpv_airbridge_cell": 0,
+    "rimael_run_min": 11.67,
+    "rimael_disk_rps": 0.2,
+    "rimael_section": 0,
     "stack_m": 10,
     "columns": 1,
     "tpv_density": 0.89,
@@ -177,6 +190,12 @@
           "cm": 1
         }
       ],
+      "inner_shield_moderator": [
+        {
+          "name": "Graphite",
+          "cm": 1
+        }
+      ],
       "shield_absorber": [
         {
           "name": "Boron Carbide",
@@ -211,6 +230,7 @@
       "dose_time": 10,
       "print_core_characteristics": true,
       "boron_concentration_ppm": 200,
+      "shield_boron_ppm": 0,
       "ddd_tallies_only": true,
       "ww_mesh_cm": 40,
       "ww_energy_groups": 10,
@@ -218,11 +238,11 @@
     }
   },
   "fissiovolt-reference": {
-    "a": 2.7,
-    "abs": 0.1,
+    "a": 3.7,
+    "abs": 0.2,
     "refl": 0.3,
     "b_pct": 50,
-    "w": 1.7,
+    "w": 1.5,
     "ratio_pct": 40,
     "enrichment_pct": 9.8,
     "packing_pct": 20,
@@ -235,14 +255,17 @@
     "disk_emissivity": 0.95,
     "shell_emissivity": 0.95,
     "tpv_airbridge_cell": 0,
+    "rimael_run_min": 11.67,
+    "rimael_disk_rps": 0.2,
+    "rimael_section": 0,
     "stack_m": 10,
-    "columns": 1,
+    "columns": 3,
     "tpv_density": 0.8913810994770395,
     "tpv_eff_pct": 34.98831677043301,
     "tpv_absorbed_w_per_cm2": 2.5476535467529926,
     "shell_temp_c": 1149.9863556306022,
-    "period_thermal_w": 615284.6057369594,
-    "period_electric_w": 215277.72842273468,
+    "period_thermal_w": 2016451.9319976193,
+    "period_electric_w": 705522.5944977781,
     "reload_fraction": "1/4",
     "dims": true,
     "layers": {
@@ -281,6 +304,12 @@
         }
       ],
       "shield_moderator": [
+        {
+          "name": "Graphite",
+          "cm": 1
+        }
+      ],
+      "inner_shield_moderator": [
         {
           "name": "Graphite",
           "cm": 1
@@ -334,20 +363,164 @@
     "simulation": {
       "run_mode": "keff",
       "n_batches": 20,
-      "n_threads": 12,
+      "n_threads": 8,
       "nsm_material": "Graphite",
-      "nsm_thickness": 125,
+      "nsm_thickness": 270,
       "conical_pitch": 15,
       "particle_type": "neutron",
-      "weight_windows": "no",
+      "weight_windows": "use",
       "survival_biasing": false,
       "dose_time": 10,
       "print_core_characteristics": true,
       "boron_concentration_ppm": 200,
+      "shield_boron_ppm": 0,
       "ddd_tallies_only": true,
       "ww_mesh_cm": 40,
       "ww_energy_groups": 10,
-      "thermal_power_mw": null
+      "thermal_power_mw": 300
+    }
+  },
+  "fissiovolt-reference-copy": {
+    "a": 3.7,
+    "abs": 0.1,
+    "refl": 0.3,
+    "b_pct": 50,
+    "w": 1.5,
+    "ratio_pct": 40,
+    "enrichment_pct": 9.8,
+    "packing_pct": 20,
+    "hm_particle_pct": 30,
+    "cylinder_diameter_mm": 10,
+    "wall_margin_mm": 0.5,
+    "compact_spacing_mm": 1,
+    "fuel_temp_c": 1250,
+    "fuel_emissivity": 0.95,
+    "disk_emissivity": 0.95,
+    "shell_emissivity": 0.95,
+    "tpv_airbridge_cell": 0,
+    "rimael_run_min": 11.67,
+    "rimael_disk_rps": 0.2,
+    "rimael_section": 0,
+    "stack_m": 10,
+    "columns": 1,
+    "tpv_density": 0.8913810994770395,
+    "tpv_eff_pct": 34.98831677043301,
+    "tpv_absorbed_w_per_cm2": 2.5476535467529926,
+    "shell_temp_c": 1149.9863556306022,
+    "period_thermal_w": 677136.098129427,
+    "period_electric_w": 236918.52466183138,
+    "reload_fraction": "1/4",
+    "dims": true,
+    "layers": {
+      "disk": [
+        {
+          "name": "Void",
+          "cm": 0.2
+        },
+        {
+          "name": "Disk",
+          "cm": 0.8
+        },
+        {
+          "name": "Void",
+          "cm": 0.2
+        }
+      ],
+      "fuel": [
+        {
+          "name": "Graphite",
+          "cm": 0.4827
+        },
+        {
+          "name": "Uranium Dioxide",
+          "cm": 0.0347
+        },
+        {
+          "name": "Graphite",
+          "cm": 0.4826
+        }
+      ],
+      "reflector": [
+        {
+          "name": "Graphite",
+          "cm": 1
+        }
+      ],
+      "shield_moderator": [
+        {
+          "name": "Natural Graphite",
+          "cm": 1
+        }
+      ],
+      "inner_shield_moderator": [
+        {
+          "name": "Graphite",
+          "cm": 1
+        }
+      ],
+      "shield_absorber": [
+        {
+          "name": "Boron Carbide",
+          "cm": 1
+        }
+      ],
+      "tpv": [
+        {
+          "name": "TZM",
+          "cm": 0.02
+        },
+        {
+          "name": "Void",
+          "cm": 0.03
+        },
+        {
+          "name": "InGaAs",
+          "cm": 0.02
+        },
+        {
+          "name": "Stainless Steel",
+          "cm": 0.1
+        },
+        {
+          "name": "Light Water",
+          "cm": 0.66
+        },
+        {
+          "name": "Stainless Steel",
+          "cm": 0.1
+        },
+        {
+          "name": "InGaAs",
+          "cm": 0.02
+        },
+        {
+          "name": "Void",
+          "cm": 0.03
+        },
+        {
+          "name": "TZM",
+          "cm": 0.02
+        }
+      ]
+    },
+    "simulation": {
+      "run_mode": "keff",
+      "n_batches": 20,
+      "n_threads": 8,
+      "nsm_material": "Graphite",
+      "nsm_thickness": 270,
+      "conical_pitch": 15,
+      "particle_type": "neutron",
+      "weight_windows": "use",
+      "survival_biasing": false,
+      "dose_time": 10,
+      "print_core_characteristics": true,
+      "boron_concentration_ppm": 200,
+      "shield_boron_ppm": 27000,
+      "ddd_tallies_only": true,
+      "ww_mesh_cm": 40,
+      "ww_energy_groups": 10,
+      "thermal_power_mw": 300
     }
   }
 }

@@ -25,6 +25,15 @@ export type QueueItemResult = {
   gammaKGy?: number | null;
   gammaCi95Pct?: number | null;
   gammaYears?: number | null;
+  /** Cumulative InGaAs displacement damage, MeV/g over dddYears. */
+  dddMeVPerG?: number | null;
+  dddCi95Pct?: number | null;
+  dddYears?: number | null;
+  /** Fuel lifetime at this item's slice power, until mean keff stays below 1. */
+  depletionYears?: number | null;
+  depletionDays?: number | null;
+  depletionBurnup?: number | null;
+  depletionBelowOne?: boolean | null;
 };
 
 export type QueueItem = {
@@ -39,6 +48,8 @@ export type QueueItem = {
   result?: QueueItemResult | null;
   /** Docker container created for this item, when the run was launched. */
   containerName?: string | null;
+  /** Autorefine passes that already finished. Survives a server reload. */
+  refinePassesDone?: number;
 };
 
 export type SimQueueState = {
@@ -84,7 +95,13 @@ export function labelFromPayload(payload: unknown): string {
       : root;
   const mode = String(simulation.run_mode ?? "keff");
   const modeLabel =
-    mode === "keff_gamma_dose" ? "InGaAs gamma dose" : mode === "slab" ? "fast slab" : mode;
+    mode === "keff_gamma_dose"
+      ? "InGaAs gamma dose"
+      : mode === "slab"
+        ? "fast slab"
+        : mode === "depletion"
+          ? "fuel depletion"
+          : mode;
   const ww = String(simulation.weight_windows ?? "no");
   const batches = simulation.n_batches;
   const pitch = simulation.conical_pitch;
@@ -278,6 +295,14 @@ export function getQueueItem(id: string): QueueItem | null {
 export function peekNextQueued(): QueueItem | null {
   const state = loadQueue();
   return state.items.find((entry) => entry.status === "queued") ?? null;
+}
+
+export function setRefinePassesDone(id: string, count: number): void {
+  const state = loadQueue();
+  const item = state.items.find((entry) => entry.id === id);
+  if (!item) return;
+  item.refinePassesDone = count;
+  saveQueue(state);
 }
 
 export function rememberContainer(id: string, containerName: string): void {

@@ -9,7 +9,22 @@ from typing import List, Dict, Literal
 from tabulate import tabulate
 import json
 import scipy.constants as cst
+from common_lib.depletion_lifetime import (
+    MAX_DAYS,
+    MAX_STEPS,
+    XENON_STEPS_DAYS,
+    find_crossing,
+    format_depletion_line,
+    max_step_days,
+    next_step_days,
+)
 from common_lib.materials import MonitoredNuclide
+from common_lib.weight_window_bounds import (
+    DEFAULT_HISTORY_SPLITS,
+    clamp_weight_window_span,
+    extend_weight_window_frontier,
+    followable_decades,
+)
 import numpy as np
 import h5py
 import math
@@ -321,12 +336,11 @@ WeightWindows = Literal["generate", "use", "no", "seed", "refine"]
 
 WW_META_FILE = "weight_windows_meta.json"
 WW_FILE = "weight_windows.h5"
-# Keep OpenMC's default max_lower_bound_ratio of 1 and a 100-split history cap.
-# A ratio above 1 raises every later window to the particle and suppresses the
-# splits that score the next InGaAs ring, so a refine pass stops gaining
-# coverage. That cap is what pushed this shield about 10% of the InGaAs mesh
-# per pass. Leave bins this pass did not score empty. Pasting the previous
-# pass's bounds back in mixes two flux maps, and the frontier stops moving.
+# Leave max_lower_bound_ratio at 1. OpenMC turns a ratio above 1 into one
+# scale factor, taken from the first window that deep, and applies it to every
+# later window, which stops the splits that score the next InGaAs cell.
+# max_history_splits stays at DEFAULT_HISTORY_SPLITS. The saved map is clamped
+# into that budget and a one-split lip is added only in memory at transport.
 # A secondary generation above this is a split cascade. Discard it and keep
 # the tracks already run in that fission generation. OpenMC reads the number
 # from settings.xml on every run, so change this constant, or set
@@ -350,7 +364,91 @@ def generation_track_limit() -> int:
             "RIMAG_MAX_GENERATION_TRACKS must be zero or positive, "
             f"got {value}"
         )
-    return value
+        return value
+
+
+def _window_split_factor(ww) -> int:
+    try:
+        factor = int(ww.max_split)
+    except (TypeError, ValueError):
+        factor = 10
+    return max(2, factor)
+
+
+def _lower_bound_decades(lower) -> float | None:
+    vals = np.asarray(lower, dtype=float)
+    vals = vals[np.isfinite(vals) & (vals > 0.0)]
+    if vals.size == 0:
+        return None
+    lo = float(vals.min())
+    hi = float(vals.max())
+    if lo <= 0.0 or hi <= 0.0:
+        return None
+    return float(math.log10(hi / lo))
+
+
+def limit_saved_weight_windows(ww_path: str | Path = WW_FILE) -> int:
+    """Raise bounds the split budget cannot follow, and keep only the latest set.
+
+    The one-split lip is not written. Saving it would make the next clamp
+    treat those bins as scored and walk the frontier without new tallies.
+    """
+    path = Path(ww_path)
+    wws = load_weight_windows_list(path)
+    if not wws:
+        return 0
+    ww = wws[-1]
+    factor = _window_split_factor(ww)
+    lower, upper, raised = clamp_weight_window_span(
+        ww.lower_ww_bounds,
+        ww.upper_ww_bounds,
+        history_splits=DEFAULT_HISTORY_SPLITS,
+        max_split=factor,
+    )
+    if raised or len(wws) > 1:
+        ww.lower_ww_bounds = lower
+        ww.upper_ww_bounds = upper
+        openmc.WeightWindowsList([ww]).export_to_hdf5(str(path))
+        if len(wws) > 1:
+            print(f"Weight windows: pruned {len(wws)} sets → 1 (kept latest)")
+    if raised:
+        decades = _lower_bound_decades(lower)
+        span = f" ({decades:.2f} decades)" if decades is not None else ""
+        print(
+            f"Weight windows: raised {raised} bins so the saved map stays within "
+            f"{followable_decades(DEFAULT_HISTORY_SPLITS, factor)} splits of its peak"
+            f"{span}."
+        )
+    return raised
+
+
+def prepare_weight_windows_for_transport(ww):
+    """Clamp the loaded map and add a one-split lip on its deep edge.
+
+    The lip lives on this object only. The file on disk stays without it.
+    """
+    factor = _window_split_factor(ww)
+    lower, upper, raised = clamp_weight_window_span(
+        ww.lower_ww_bounds,
+        ww.upper_ww_bounds,
+        history_splits=DEFAULT_HISTORY_SPLITS,
+        max_split=factor,
+    )
+    decades = _lower_bound_decades(lower)
+    lower, upper, added = extend_weight_window_frontier(
+        lower, upper, max_split=factor
+    )
+    ww.lower_ww_bounds = lower
+    ww.upper_ww_bounds = upper
+    span = f", span {decades:.2f} decades" if decades is not None else ""
+    print(
+        "Weight windows: kept the map within "
+        f"{followable_decades(DEFAULT_HISTORY_SPLITS, factor)} "
+        f"factor-of-{factor} splits of its peak "
+        f"(raised {raised} bins{span}) and added a one-split lip on "
+        f"{added} empty neighbor bins."
+    )
+    return ww
 
 
 def make_ww_mesh(
@@ -409,18 +507,6 @@ def latest_weight_windows(ww_path: str | Path = WW_FILE):
     if not wws:
         raise ValueError(f"{ww_path} contains no weight windows")
     return wws[-1]
-
-
-def prune_weight_windows_file(ww_path: str | Path = WW_FILE) -> int:
-    """Keep only the latest WW set so refine does not stack forever."""
-    path = Path(ww_path)
-    wws = load_weight_windows_list(path)
-    n = len(wws)
-    if n <= 1:
-        return n
-    openmc.WeightWindowsList([wws[-1]]).export_to_hdf5(str(path))
-    print(f"Weight windows: pruned {n} sets → 1 (kept latest)")
-    return 1
 
 
 def summarize_weight_windows(ww_path: str | Path = WW_FILE) -> dict:
@@ -708,6 +794,7 @@ def write_ww_meta(
         "file": WW_FILE,
     }
     try:
+        limit_saved_weight_windows(WW_FILE)
         depth = summarize_weight_windows(WW_FILE)
         payload["spatial_coverage"] = depth["spatial_coverage"]
         payload["energy_coverage"] = depth["energy_coverage"]
@@ -731,8 +818,6 @@ def write_ww_meta(
             print(f"InGaAs WW coverage skipped: {ingaas_exc}")
             traceback.print_exc()
         print_weight_windows_depth_summary(depth, ingaas)
-        # Drop older MAGIC generations so the next refine/use loads only the latest.
-        prune_weight_windows_file(WW_FILE)
     except Exception as exc:
         print(f"Weight-window depth summary skipped: {exc}")
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -842,10 +927,10 @@ def make_sim_settings(
         # Keep a modest lost-particle margin; dumps stay off (they dominate runtime).
         settings.rel_max_lost_particles = 0.05
         settings.max_write_lost_particles = 1
-        # Analog seed, and refine with the previous map. Cap splits at 100 so a
-        # history can cross the shield cliff. Leave max_lower_bound_ratio at 1
-        # so OpenMC does not raise the windows toward the particle.
-        settings.max_history_splits = min(settings.max_history_splits, 100)
+        # Analog seed, and refine with the previous map. The history cap and
+        # the saved-map clamp share DEFAULT_HISTORY_SPLITS. Leave
+        # max_lower_bound_ratio at 1 so OpenMC does not rescale later windows.
+        settings.max_history_splits = DEFAULT_HISTORY_SPLITS
         settings.max_generation_tracks = generation_track_limit()
         ww_mesh = make_ww_mesh(
             lower_left_corner, upper_right_corner, cell_dimension=ww_mesh_cm
@@ -873,7 +958,9 @@ def make_sim_settings(
                 "surface": False,
             }
             settings.weight_windows_on = True
-            settings.weight_windows = [latest_weight_windows(WW_FILE)]
+            settings.weight_windows = [
+                prepare_weight_windows_for_transport(latest_weight_windows(WW_FILE))
+            ]
             settings.survival_biasing = False
             settings.cutoff = {"weight": 1e-4, "weight_avg": 1.0}
             print(f"Weight windows: refining from latest set in {WW_FILE}")
@@ -896,10 +983,12 @@ def make_sim_settings(
             "surface": False,
         }
         settings.weight_windows_on = True
-        settings.weight_windows = [latest_weight_windows(WW_FILE)]
+        settings.weight_windows = [
+            prepare_weight_windows_for_transport(latest_weight_windows(WW_FILE))
+        ]
         settings.survival_biasing = False  # WW handles weights
         settings.cutoff = {"weight": 1e-4, "weight_avg": 1.0}  # RR safety
-        settings.max_history_splits = min(settings.max_history_splits, 100)
+        settings.max_history_splits = DEFAULT_HISTORY_SPLITS
         settings.max_generation_tracks = generation_track_limit()
         settings.rel_max_lost_particles = 0.05
         settings.max_write_lost_particles = 1
@@ -1193,6 +1282,143 @@ def print_depletion_result(materials_dict, material_choice, thermal_power, fuel_
     print(tabulate(fission_products_results_table))
 
 
+# Recoverable energy per fission, eV. U233 and Pu239 matter once bred.
+FISSION_Q_EV = {"U235": 202.5e6, "U233": 200.1e6, "Pu239": 211.5e6}
+
+
+def depletion_chain_path() -> str:
+    """Chain file shipped with RIMAG, or a full ENDF/B-VII.1 chain placed beside the run."""
+    candidates = [
+        Path("chain_endfb71_pwr.xml"),
+        Path("chain_casl_thermal.xml"),
+        Path(__file__).resolve().parent / "data" / "chain_endfb71_pwr.xml",
+        Path(__file__).resolve().parent / "data" / "chain_casl_thermal.xml",
+        Path("/data/chain_endfb71_pwr.xml"),
+        Path("/data/chain_casl_thermal.xml"),
+    ]
+    for path in candidates:
+        if path.is_file():
+            return str(path)
+    raise FileNotFoundError(
+        "Fuel depletion needs a chain file. Expected common_lib/data/chain_casl_thermal.xml "
+        "or chain_endfb71_pwr.xml in the run directory."
+    )
+
+
+def _is_fuel_material(name: str, fuel_name: str) -> bool:
+    if not fuel_name or not name:
+        return False
+    if name == fuel_name:
+        return True
+    prefix = fuel_name + " "
+    suffix = name[len(prefix) :] if name.startswith(prefix) else ""
+    return suffix.isdigit()
+
+
+def mark_fuel_depletable(materials, fuel_name: str) -> int:
+    marked = 0
+    for mat in materials:
+        name = getattr(mat, "name", "") or ""
+        if _is_fuel_material(name, fuel_name):
+            mat.depletable = True
+            marked += 1
+    if marked == 0:
+        raise RuntimeError(f"No fuel material named '{fuel_name}' to deplete.")
+    return marked
+
+
+def run_depletion_until_keff_below_one(
+    thermal_power: float,
+    geometry,
+    settings,
+    materials,
+    fuel_name: str,
+    fuel_mass: float,
+) -> str:
+    """Deplete at constant power until the mean keff stays below 1.
+
+    Returns the one-line summary (time and MWd/kgHM). The caller prints it
+    again after the inventory tables so it stays at the end of the log.
+    """
+    if thermal_power <= 0.0:
+        raise SystemExit("Fuel depletion needs a positive slice thermal power.")
+    if fuel_mass <= 0.0:
+        raise SystemExit("Fuel depletion needs a positive heavy-metal mass.")
+
+    chain = depletion_chain_path()
+    mats = list(materials)
+    marked = mark_fuel_depletable(mats, fuel_name)
+    results_path = "depletion_results.h5"
+    if os.path.exists(results_path):
+        os.remove(results_path)
+
+    model = openmc.Model(geometry, mats, settings)
+    steps: List[float] = []
+
+    def make_operator(prev=None):
+        return openmc.deplete.CoupledOperator(
+            model, chain, prev_results=prev, fission_q=FISSION_Q_EV
+        )
+
+    operator = make_operator()
+    print(
+        f"Fuel depletion of {marked} material(s) named '{fuel_name}' at {thermal_power:.6g} W. "
+        f"OpenMC heavy metal {float(operator.heavy_metal):.6g} g, slice inventory {fuel_mass:.6g} kg. "
+        f"Chain {chain}."
+    )
+
+    def advance(extra: List[float]) -> None:
+        nonlocal operator
+        continuing = len(steps) > 0
+        steps.extend(extra)
+        prev = openmc.deplete.Results(results_path) if continuing else None
+        operator = make_operator(prev)
+        print(
+            f"Fuel depletion advancing {' '.join(f'{step:.6g}' for step in extra)} d "
+            f"(schedule {sum(steps):.6g} d, {len(steps)} steps)."
+        )
+        openmc.deplete.CECMIntegrator(
+            operator,
+            list(steps),
+            thermal_power,
+            timestep_units="d",
+            continue_timesteps=continuing,
+        ).integrate()
+
+    advance(list(XENON_STEPS_DAYS))
+    while len(steps) < MAX_STEPS:
+        time, keff = openmc.deplete.Results(results_path).get_keff(time_units="d")
+        latest = float(keff[-1][0])
+        elapsed = float(time[-1])
+        print(
+            f"Depletion keff {latest:.5f} +/- {float(keff[-1][1]):.5f} "
+            f"at {elapsed:.6g} d."
+        )
+        if float(keff[0][0]) < 1.0 or latest < 1.0 or elapsed >= MAX_DAYS - 1.0e-6:
+            break
+        nxt = next_step_days(latest, elapsed)
+        if nxt is None:
+            break
+        cap = max_step_days(float(operator.heavy_metal), thermal_power)
+        if cap > 0.0 and nxt > cap:
+            print(
+                f"Fuel depletion step {nxt:.4g} d exceeds the 2 MWd/kgHM guide ({cap:.4g} d)."
+            )
+        advance([nxt])
+    else:
+        print(f"Fuel depletion stopped after {len(steps)} steps.")
+
+    time, keff = openmc.deplete.Results(results_path).get_keff(time_units="d")
+    crossing = find_crossing(
+        [float(t) for t in time],
+        [float(row[0]) for row in keff],
+        [float(row[1]) for row in keff],
+        thermal_power,
+        fuel_mass,
+    )
+    return format_depletion_line(crossing)
+
+
 def run_depletion_sim(
     thermal_power: float,
     geometry,
@@ -1201,10 +1427,10 @@ def run_depletion_sim(
     sim_steps: List[float] = [],
     steps_units: str = "d",
 ):
-    fission_q = {"U235": 202.5e6}  # energy in eV # "U233": 200.1e6, "Pu239": 211.5e6
+    fission_q = FISSION_Q_EV
     model = openmc.Model(geometry, materials, settings)
     op = openmc.deplete.CoupledOperator(
-        model, "chain_endfb71_pwr.xml", fission_q=fission_q
+        model, depletion_chain_path(), fission_q=fission_q
     )
     max_step = 2 * op.heavy_metal / thermal_power * 1e3
     # Check if any timestep exceeds the maximum allowed step size

@@ -21,3 +21,25 @@ export function containersToStop(running: string[], protect: readonly string[]):
   const keep = new Set(protect);
   return running.filter((name) => name.length > 0 && !keep.has(name));
 }
+
+export type TrackedContainerAction = "keep" | "refollow" | "finish";
+
+/**
+ * What to do with a run the queue still calls running.
+ * A container that is still being created (pending name, not in `docker ps` yet)
+ * must be left alone. A live log stream is left alone too: its close handler
+ * finishes the pass. A stream that died while the container is up has to be
+ * followed again, or the next autorefine pass never starts. A known container
+ * that has left `docker ps` with nobody attached has already exited.
+ */
+export function trackedContainerAction(input: {
+  running: boolean;
+  containerName: string;
+  pendingContainerName: string;
+  listed: readonly string[];
+  childAlive: boolean;
+}): TrackedContainerAction {
+  if (!input.running || !input.containerName || input.pendingContainerName) return "keep";
+  if (input.childAlive) return "keep";
+  return input.listed.includes(input.containerName) ? "refollow" : "finish";
+}

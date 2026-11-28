@@ -54,6 +54,13 @@ type QueueItemResult = {
   gammaKGy?: number | null;
   gammaCi95Pct?: number | null;
   gammaYears?: number | null;
+  dddMeVPerG?: number | null;
+  dddCi95Pct?: number | null;
+  dddYears?: number | null;
+  depletionYears?: number | null;
+  depletionDays?: number | null;
+  depletionBurnup?: number | null;
+  depletionBelowOne?: boolean | null;
 };
 
 type QueueItem = {
@@ -126,8 +133,10 @@ const FINAL_KEFF_RANK: Record<string, number> = {
   "Track-length": 1,
 };
 
-function stamp(): string {
-  return new Date().toLocaleTimeString("en-GB", { hour12: false });
+function stamp(at?: string): string {
+  const date = at ? new Date(at) : new Date();
+  const when = Number.isNaN(date.getTime()) ? new Date() : date;
+  return when.toLocaleTimeString("en-GB", { hour12: false });
 }
 
 function formatKeff(value: number | null, uncertainty: number | null): string {
@@ -203,9 +212,9 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup, defaultTherma
   const logRef = useRef<HTMLPreElement>(null);
   const sourceRef = useRef<EventSource | null>(null);
 
-  const append = (line: string) => {
+  const append = (line: string, at?: string) => {
     const cleaned = line.replace(/\r/g, "");
-    setOutput((prev) => `${prev}${prev ? "\n" : ""}[${stamp()}] ${cleaned}`);
+    setOutput((prev) => `${prev}${prev ? "\n" : ""}[${stamp(at)}] ${cleaned}`);
     setKeffLive((prev) => parseKeffFromLine(cleaned, prev) ?? prev);
   };
 
@@ -235,6 +244,7 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup, defaultTherma
         const payload = JSON.parse(event.data) as {
           type: string;
           line?: string;
+          at?: string;
           code?: number;
           running?: boolean;
           queuePaused?: boolean;
@@ -267,7 +277,7 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup, defaultTherma
             setKeffLive(EMPTY_KEFF);
             setRunning(true);
           }
-          append(payload.line);
+          append(payload.line, payload.at);
           if (payload.line.startsWith("[runner] done exit=")) {
             setRunning(false);
             void refreshWwStatus();

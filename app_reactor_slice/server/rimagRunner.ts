@@ -6,8 +6,15 @@ import { fileURLToPath } from "node:url";
 import {
   containersToStop,
   protectedContainerNames,
+  trackedContainerAction,
   weightWindowWriteBelongsToPass,
 } from "./containerPolicy";
+import {
+  displacementDamageFromResultsim,
+  parseDisplacementDamageLine,
+  type DisplacementDamage,
+} from "./dddResult";
+import { parseDepletionLine } from "./depletionResult";
 import {
   appendQueued,
   beginRunning,
@@ -21,6 +28,7 @@ import {
   reconcileAfterRestart,
   rememberContainer,
   removeQueued,
+  setRefinePassesDone,
   showLiveContainer,
   reorderQueued,
   saveQueue,
@@ -38,7 +46,17 @@ const RUN_DIR = path.resolve(REPO_ROOT, "runs", "default");
 const PARAMS_FILE = "app_slice_run.json";
 /** Identifies this loaded module. A Vite reload starts a new one; stale sweeps must stop. */
 const RUNNER_EPOCH_FILE = path.join(RUN_DIR, "runner.epoch");
+const PASS_EXIT_FILE = path.join(RUN_DIR, "pass_exit.json");
 const RUNNER_EPOCH = randomUUID();
+
+type PassExitRecord = {
+  itemId: string;
+  code: number;
+  containerName: string;
+  passStartedAt: number;
+  autoRefinePass: number;
+  at: string;
+};
 const RESULTSIM_FILE = "resultsim.json";
 /** Prefix for one-off sim containers (Stop / adopt match this). */
 const CONTAINER_PREFIX = "rimag-app-sim";
@@ -47,12 +65,14 @@ const CONTAINER_NAME = CONTAINER_PREFIX;
 
 export class RimagRunnerError extends Error {}
 
+type LoggedLine = { at: string; line: string };
+
 type JobState = {
   child: ChildProcessWithoutNullStreams | null;
-  listeners: Set<(line: string) => void>;
+  listeners: Set<(entry: LoggedLine) => void>;
   queueListeners: Set<(queue: SimQueueState) => void>;
   running: boolean;
-  lastLines: string[];
+  lastLines: LoggedLine[];
   currentId: string | null;
   /** Container that is actually transporting. Empty until it is visible. */
   containerName: string;
@@ -89,6 +109,9 @@ const job: JobState = {
 /** Serialize remove+spawn so `docker rm -f` cannot SIGKILL a just-started peer. */
 let launchChain: Promise<void> = Promise.resolve();
 
+/** Launch generation already handed to onJobEnded. A late log-stream close must not start a second next pass. */
+let endedLaunchGen = -1;
+
 const AUTOREFINE_TARGET = 0.8;
 const AUTOREFINE_MAX_PASSES = 50;
 
@@ -111,6 +134,43 @@ function runnerEpochIsCurrent(): boolean {
 }
 
 claimRunnerEpoch();
+
+function writePassExit(code: number) {
+  if (!job.currentId) return;
+  const record: PassExitRecord = {
+    itemId: job.currentId,
+    code,
+    containerName: job.containerName,
+    passStartedAt: job.passStartedAt,
+    autoRefinePass: job.autoRefinePass,
+    at: new Date().toISOString(),
+  };
+  try {
+    fs.mkdirSync(RUN_DIR, { recursive: true });
+    fs.writeFileSync(PASS_EXIT_FILE, `${JSON.stringify(record)}\n`, "utf8");
+  } catch {
+    // The queue row is still the record of the run. Missing this file only
+    // loses the exact exit code across a reload.
+  }
+}
+
+function readPassExit(): PassExitRecord | null {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(PASS_EXIT_FILE, "utf8")) as PassExitRecord;
+    if (!parsed || typeof parsed.itemId !== "string" || typeof parsed.code !== "number") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function clearPassExit() {
+  try {
+    fs.unlinkSync(PASS_EXIT_FILE);
+  } catch {
+    // already gone
+  }
+}
 
 function runDocker(args: string[]): Promise<number> {
   return new Promise((resolve) => {
@@ -198,10 +258,20 @@ async function removeSimContainers(protect: readonly string[] = []) {
   emit(`[runner] warning: ${CONTAINER_PREFIX}* still present after retries; next compose run may fail`);
 }
 
-function emit(line: string) {
-  job.lastLines.push(line);
+function emit(line: string, at?: string) {
+  const entry = { at: at ?? new Date().toISOString(), line };
+  job.lastLines.push(entry);
   if (job.lastLines.length > 2000) job.lastLines.splice(0, job.lastLines.length - 2000);
-  for (const listener of job.listeners) listener(line);
+  for (const listener of job.listeners) listener(entry);
+}
+
+/** `docker logs -t` prefixes each line with an RFC3339 timestamp. */
+function dockerLogStamp(line: string): { at?: string; line: string } {
+  const match = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))\s(.*)$/.exec(line);
+  if (!match) return { line };
+  const date = new Date(match[1]);
+  if (Number.isNaN(date.getTime())) return { line };
+  return { at: date.toISOString(), line: match[2] };
 }
 
 function emitQueue() {
@@ -351,23 +421,37 @@ async function containerIsRunning(): Promise<boolean> {
   return (await resolveRunningSimContainer()) != null;
 }
 
-function forwardProcessOutput(child: ChildProcessWithoutNullStreams) {
+function forwardChunks(
+  child: ChildProcessWithoutNullStreams,
+  onLine: (line: string) => void,
+) {
   const forward = (chunk: Buffer) => {
     const text = chunk.toString("utf8");
     for (const line of text.split(/\r\n|\n|\r/)) {
-      if (line.length) emit(line);
+      if (line.length) onLine(line);
     }
   };
   child.stdout.on("data", forward);
   child.stderr.on("data", forward);
 }
 
+function forwardProcessOutput(child: ChildProcessWithoutNullStreams) {
+  forwardChunks(child, (line) => emit(line));
+}
+
+function forwardDockerLogs(child: ChildProcessWithoutNullStreams) {
+  forwardChunks(child, (line) => {
+    const parsed = dockerLogStamp(line);
+    emit(parsed.line, parsed.at);
+  });
+}
+
 let adopting: Promise<void> | null = null;
 let reconcileChain: Promise<void> = Promise.resolve();
 
 function logsShowFinalKeff(): boolean {
-  return job.lastLines.some((line) =>
-    /k-effective\s*\([^)]+\)\s*=\s*[0-9.]+\s*\+\/-\s*[0-9.]+/i.test(line),
+  return job.lastLines.some((entry) =>
+    /k-effective\s*\([^)]+\)\s*=\s*[0-9.]+\s*\+\/-\s*[0-9.]+/i.test(entry.line),
   );
 }
 
@@ -405,19 +489,30 @@ function followContainerLogs(name: string, launchGen = job.launchGen) {
   ) {
     return;
   }
-  const child = spawn("docker", ["logs", "-f", "--tail", "400", name], {
+  const child = spawn("docker", ["logs", "-f", "-t", "--tail", "400", name], {
     windowsHide: true,
   });
   job.child = child;
-  forwardProcessOutput(child);
+  forwardDockerLogs(child);
   child.on("error", (error) => {
     emit(`[runner] log follow failed: ${error.message}`);
   });
   child.on("close", () => {
     void (async () => {
       if (!runnerEpochIsCurrent() || job.launchGen !== launchGen || !job.running) return;
+      if (job.child === child) job.child = null;
       const names = await listSimContainerNames();
-      if (names.includes(name)) return;
+      if (!runnerEpochIsCurrent() || job.launchGen !== launchGen || !job.running) return;
+      // `docker logs -f` can drop while the container is still in `docker ps`
+      // (it is exiting, or the stream blipped). Stopping here leaves the queue
+      // item running forever, so the next autorefine pass never starts.
+      if (names.includes(name)) {
+        emit(`[runner] Log stream for ${name} ended while it was still running. Following again.`);
+        await sleep(1000);
+        if (!runnerEpochIsCurrent() || job.launchGen !== launchGen || !job.running) return;
+        followContainerLogs(name, launchGen);
+        return;
+      }
       const code = logsShowFinalKeff() ? 0 : await inspectExitCode(name);
       onJobEnded(code, launchGen);
     })();
@@ -452,6 +547,36 @@ function reconcileContainers(): Promise<void> {
       if (job.currentId) rememberContainer(job.currentId, job.containerName);
     }
     if (job.running) {
+      const childAlive = job.child != null && job.child.exitCode == null && !job.child.killed;
+      const action = trackedContainerAction({
+        running: job.running,
+        containerName: job.containerName,
+        pendingContainerName: job.pendingContainerName,
+        listed: names,
+        childAlive,
+      });
+      if (action === "finish") {
+        const exitRec = readPassExit();
+        const same =
+          exitRec != null &&
+          exitRec.itemId === job.currentId &&
+          exitRec.containerName === job.containerName;
+        const code = same
+          ? exitRec.code
+          : logsShowFinalKeff()
+            ? 0
+            : await inspectExitCode(job.containerName);
+        if (!runnerEpochIsCurrent() || !job.running) return;
+        emit(`[runner] ${job.containerName} has exited. Continuing from that result.`);
+        onJobEnded(code);
+        return;
+      }
+      if (action === "refollow") {
+        emit(
+          `[runner] ${job.containerName} is still running but its log stream stopped. Following again.`,
+        );
+        followContainerLogs(job.containerName);
+      }
       const protect = keepNames();
       if (protect.length === 0 && names.length > 0) {
         job.containerName = names[0];
@@ -492,6 +617,7 @@ function reconcileContainers(): Promise<void> {
     job.running = true;
     job.suppressQueueAdvance = false;
     job.currentId = item.id;
+    job.autoRefinePass = item.refinePassesDone ?? 0;
     job.containerName = show;
     job.pendingContainerName = "";
     emit(
@@ -514,6 +640,51 @@ const containerSweep = setInterval(() => {
 containerSweep.unref?.();
 
 /**
+ * The running autorefine's container is gone after a server reload.
+ * Continue that same queue item. Do not send it back to "queued", which
+ * would clear its start time and launch it as a new run.
+ */
+function resumeAutoRefine(item: QueueItem) {
+  job.currentId = item.id;
+  job.autoRefinePass = item.refinePassesDone ?? 0;
+  job.running = true;
+  job.suppressQueueAdvance = false;
+  void (async () => {
+    if (!runnerEpochIsCurrent()) return;
+    const names = await listSimContainerNames();
+    if (!runnerEpochIsCurrent()) return;
+    if (names.length > 0) {
+      const show =
+        item.containerName && names.includes(item.containerName) ? item.containerName : names[0];
+      job.containerName = show;
+      job.pendingContainerName = "";
+      rememberContainer(item.id, show);
+      emit(`[runner] Reattached to ${show}. The run was still going.`);
+      followContainerLogs(show);
+      return;
+    }
+    const exitRec = readPassExit();
+    const same = exitRec != null && exitRec.itemId === item.id;
+    if (same) {
+      job.autoRefinePass = exitRec.autoRefinePass;
+      job.passStartedAt = exitRec.passStartedAt;
+      job.containerName = exitRec.containerName;
+    }
+    if (!same && !weightWindowsWrittenAfter(item.startedAt)) {
+      emit(
+        "[runner] Autorefine was interrupted by a server reload. Starting that refine again from the weight windows on disk.",
+      );
+      launchDockerJob(item.payload, item, { continueAutoRefine: true });
+      return;
+    }
+    emit(
+      "[runner] Autorefine's container ended while the server was restarting. Continuing the same run.",
+    );
+    onJobEnded(same ? exitRec.code : 0);
+  })();
+}
+
+/**
  * The Vite server keeps the run only in memory. A server restart drops that
  * state while `rimag-app-sim` keeps transporting. Follow its logs again.
  * Also resumes the disk queue when the container is gone but jobs remain.
@@ -527,6 +698,13 @@ export function adoptRunningSimulation(): Promise<void> {
     })
     .then((alive) => {
       if (alive == null || job.running) return;
+      if (!alive) {
+        const running = queueSnapshot().items.find((entry) => entry.status === "running");
+        if (running && isAutoRefinePayload(running.payload)) {
+          resumeAutoRefine(running);
+          return;
+        }
+      }
       reconcileAfterRestart(alive);
       if (alive) {
         const paramsPath = path.join(RUN_DIR, PARAMS_FILE);
@@ -541,6 +719,7 @@ export function adoptRunningSimulation(): Promise<void> {
         ensureRunningPlaceholder(payload, true);
         const runningItem = queueSnapshot().items.find((item) => item.status === "running");
         job.currentId = runningItem?.id ?? null;
+        job.autoRefinePass = runningItem?.refinePassesDone ?? 0;
         emitQueue();
         if (job.running) return;
         job.running = true;
@@ -568,9 +747,9 @@ export function adoptRunningSimulation(): Promise<void> {
   return adopting;
 }
 
-export function subscribe(listener: (line: string) => void) {
+export function subscribe(listener: (entry: LoggedLine) => void) {
   job.listeners.add(listener);
-  for (const line of job.lastLines) listener(line);
+  for (const entry of job.lastLines) listener(entry);
   return () => job.listeners.delete(listener);
 }
 
@@ -619,7 +798,7 @@ function gammaFromLogs(): Pick<QueueItemResult, "gammaKGy" | "gammaCi95Pct" | "g
   const lineRe =
     /InGaAs gamma dose:\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*kGy\s+over\s+([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s+years\s+\((?:±|\+\/-)\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?|nan)%\s*,\s*95%\s*CI\)/i;
   for (let i = job.lastLines.length - 1; i >= 0; i -= 1) {
-    const match = job.lastLines[i].match(lineRe);
+    const match = job.lastLines[i].line.match(lineRe);
     if (!match) continue;
     const gammaKGy = Number(match[1]);
     const gammaYears = Number(match[2]);
@@ -680,13 +859,67 @@ function attachStoredGamma(result: QueueItemResult, item: QueueItem | null | und
   return fromFile ? { ...result, ...fromFile } : result;
 }
 
+function dddFromLogs(): DisplacementDamage | null {
+  for (let i = job.lastLines.length - 1; i >= 0; i -= 1) {
+    const parsed = parseDisplacementDamageLine(job.lastLines[i].line);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+function doseYearsFromPayload(payload: unknown): number | null {
+  const years = Number(simulationRecordFromPayload(payload).dose_time);
+  return Number.isFinite(years) && years >= 0 ? years : null;
+}
+
+function dddFromResultsim(item: QueueItem): DisplacementDamage | null {
+  const file = path.join(RUN_DIR, RESULTSIM_FILE);
+  if (!fs.existsSync(file)) return null;
+  const stat = fs.statSync(file);
+  const started = item.startedAt ? Date.parse(item.startedAt) : NaN;
+  const finished = item.finishedAt ? Date.parse(item.finishedAt) : Date.now();
+  if (Number.isFinite(started) && stat.mtimeMs < started - 5000) return null;
+  if (Number.isFinite(finished) && stat.mtimeMs > finished + 120_000) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const record = parsed as Record<string, unknown>;
+  const batches = simulationRecordFromPayload(item.payload).n_batches;
+  if (typeof batches === "number" && record.n_batches !== batches) return null;
+  return displacementDamageFromResultsim(record, doseYearsFromPayload(item.payload));
+}
+
+function attachStoredDdd(result: QueueItemResult, item: QueueItem | null | undefined): QueueItemResult {
+  const fromLogs = dddFromLogs();
+  if (fromLogs) return { ...result, ...fromLogs };
+  if (!item || result.dddMeVPerG != null) return result;
+  const fromFile = dddFromResultsim(item);
+  return fromFile ? { ...result, ...fromFile } : result;
+}
+
 function resultFromLogs(): QueueItemResult {
+  const depletion = parseDepletionLine(job.lastLines.map((entry) => entry.line).join("\n"));
+  if (depletion) {
+    return {
+      summary: depletion.summary,
+      keff: depletion.keff,
+      keffUncertainty: depletion.keffUncertainty,
+      depletionYears: depletion.years,
+      depletionDays: depletion.days,
+      depletionBurnup: depletion.burnup,
+      depletionBelowOne: depletion.belowOne,
+    };
+  }
   // Prefer OpenMC's final combined keff line; fall back to the last progress k=.
   let keff: number | null = null;
   let keffUncertainty: number | null = null;
   let summary: string | null = null;
   for (let i = job.lastLines.length - 1; i >= 0; i -= 1) {
-    const line = job.lastLines[i];
+    const line = job.lastLines[i].line;
     const final = line.match(
       /k-effective\s*\([^)]+\)\s*=\s*([0-9.]+)\s*\+\/-\s*([0-9.]+)/i,
     );
@@ -699,7 +932,7 @@ function resultFromLogs(): QueueItemResult {
   }
   if (keff == null) {
     for (let i = job.lastLines.length - 1; i >= 0; i -= 1) {
-      const line = job.lastLines[i];
+      const line = job.lastLines[i].line;
       const progress = line.match(
         /\bk=([0-9.]+)(?:\s*\+\/-\s*([0-9.]+))?/i,
       );
@@ -757,6 +990,7 @@ function finishQueueItem(
 ) {
   const finishedContainer = job.containerName;
   markFinished(itemId, code, status, result);
+  clearPassExit();
   job.currentId = null;
   job.containerName = "";
   job.autoRefinePass = 0;
@@ -772,6 +1006,19 @@ function finishQueueItem(
   if (advance) maybeStartNextFromQueue();
 }
 
+function weightWindowsWrittenAfter(sinceIso: string | null): boolean {
+  if (!sinceIso) return false;
+  const since = Date.parse(sinceIso);
+  if (!Number.isFinite(since)) return false;
+  try {
+    const metaPath = path.join(RUN_DIR, WW_META_FILE);
+    if (!fs.existsSync(metaPath)) return false;
+    return fs.statSync(metaPath).mtimeMs >= since;
+  } catch {
+    return false;
+  }
+}
+
 function weightWindowsWrittenDuringPass(): boolean {
   if (!job.passStartedAt) return false;
   try {
@@ -784,11 +1031,18 @@ function weightWindowsWrittenDuringPass(): boolean {
 }
 
 function onJobEnded(code: number, endedGen?: number) {
+  // A Vite reload drops this module. Record the exit first so the new module
+  // can continue the same autorefine instead of starting another one.
+  writePassExit(code);
   if (!runnerEpochIsCurrent()) return;
+  const gen = endedGen ?? job.launchGen;
+  if (gen === endedLaunchGen) return;
   if (endedGen != null && endedGen !== job.launchGen) {
     emit(`[runner] Ignoring stale job end (gen ${endedGen}, current ${job.launchGen}).`);
     return;
   }
+  if (!job.running) return;
+  endedLaunchGen = gen;
   if (job.child && !job.child.killed) {
     try {
       job.child.kill();
@@ -822,6 +1076,7 @@ function onJobEnded(code: number, endedGen?: number) {
 
   if (!stopped && effectiveCode === 0 && item && isAutoRefinePayload(item.payload)) {
     job.autoRefinePass += 1;
+    if (itemId) setRefinePassesDone(itemId, job.autoRefinePass);
     const ww = weightWindowsStatus();
     const frac = ww.ingaasReachFraction;
     const pctLabel = frac != null ? `${(100 * frac).toFixed(0)}%` : "unknown";
@@ -834,7 +1089,7 @@ function onJobEnded(code: number, endedGen?: number) {
     );
 
     if (frac != null && frac >= AUTOREFINE_TARGET) {
-      const base = attachWwCoverage(attachStoredGamma(resultFromLogs(), item), item.payload);
+      const base = attachWwCoverage(attachStoredDdd(attachStoredGamma(resultFromLogs(), item), item), item.payload);
       finishQueueItem(
         itemId,
         0,
@@ -849,7 +1104,7 @@ function onJobEnded(code: number, endedGen?: number) {
     }
 
     if (job.autoRefinePass >= AUTOREFINE_MAX_PASSES) {
-      const base = attachWwCoverage(attachStoredGamma(resultFromLogs(), item), item.payload);
+      const base = attachWwCoverage(attachStoredDdd(attachStoredGamma(resultFromLogs(), item), item), item.payload);
       finishQueueItem(
         itemId,
         0,
@@ -877,7 +1132,7 @@ function onJobEnded(code: number, endedGen?: number) {
   const status = stopped ? "cancelled" : effectiveCode === 0 ? "done" : "failed";
   let result: QueueItemResult | null = stopped
     ? { summary: "Stopped by user" }
-    : attachWwCoverage(attachStoredGamma(resultFromLogs(), item), item?.payload);
+    : attachWwCoverage(attachStoredDdd(attachStoredGamma(resultFromLogs(), item), item), item?.payload);
 
   // Autorefine must reach InGaAs coverage (or hit max passes as "done") before the
   // next queue item. A crashed/killed refine (e.g. exit 137) used to mark failed
@@ -1351,7 +1606,28 @@ function backfillGamma(item: QueueItem): QueueItem {
   return state.items[index];
 }
 
+function backfillDdd(item: QueueItem): QueueItem {
+  if (item.status !== "done") return item;
+  if (item.result?.dddMeVPerG != null) return item;
+  const ddd = dddFromResultsim(item);
+  if (!ddd) return item;
+  const state = queueSnapshot();
+  const index = state.items.findIndex((entry) => entry.id === item.id);
+  if (index < 0) return { ...item, result: { ...(item.result ?? {}), ...ddd } };
+  const current = state.items[index];
+  if (current.result?.dddMeVPerG != null) return current;
+  const result = { ...(current.result ?? {}), ...ddd };
+  state.items[index] = { ...current, result };
+  saveQueue(state);
+  return state.items[index];
+}
+
 export function readQueueItem(id: string): QueueItem | null {
   const item = getQueueItem(id);
-  return item ? backfillGamma(backfillWwCoverage(item)) : null;
+  return item ? backfillDdd(backfillGamma(backfillWwCoverage(item))) : null;
 }
+
+// A reload has an empty memory. Attach to a container that is still
+// transporting, or continue an autorefine whose pass ended during the reload,
+// without waiting for the Neutronics tab to be opened.
+void adoptRunningSimulation();
