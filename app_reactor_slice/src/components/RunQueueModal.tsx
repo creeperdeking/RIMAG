@@ -694,7 +694,7 @@ const RunQueueModal: React.FC<Props> = ({
                 {draft.weight_windows === "autorefine" && (
                   <>
                     {" "}
-                    Repeats refine until InGaAs coverage reaches 80% (or 25 passes), then the queue continues.
+                    Repeats refine until InGaAs coverage reaches 80% (or 50 passes), then the queue continues.
                     If a refine pass crashes (non-zero exit), the queue pauses so the next run does not start
                     with incomplete windows.
                   </>

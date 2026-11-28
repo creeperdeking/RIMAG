@@ -90,7 +90,7 @@ const job: JobState = {
 let launchChain: Promise<void> = Promise.resolve();
 
 const AUTOREFINE_TARGET = 0.8;
-const AUTOREFINE_MAX_PASSES = 25;
+const AUTOREFINE_MAX_PASSES = 50;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
