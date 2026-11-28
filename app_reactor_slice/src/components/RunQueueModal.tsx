@@ -44,6 +44,13 @@ type QueueResult = {
   dddMeVPerG?: number | null;
   dddCi95Pct?: number | null;
   dddYears?: number | null;
+  pmaxRemaining?: number | null;
+  pmaxCi95Pct?: number | null;
+  pmaxYears?: number | null;
+  pmaxFluenceM2?: number | null;
+  pmaxOutsideRange?: boolean | null;
+  pmaxFastRemaining?: number | null;
+  pmaxTruncatedRemaining?: number | null;
   depletionYears?: number | null;
   depletionDays?: number | null;
   depletionBurnup?: number | null;
@@ -359,6 +366,7 @@ const RunQueueModal: React.FC<Props> = ({
     result?.keff != null ||
     result?.gammaKGy != null ||
     result?.dddMeVPerG != null ||
+    result?.pmaxRemaining != null ||
     result?.depletionBurnup != null ||
     result?.ingaasReachFraction != null ||
     Boolean(result?.summary);
@@ -421,6 +429,33 @@ const RunQueueModal: React.FC<Props> = ({
                 InGaAs DDD {formatSci(result.dddMeVPerG)} MeV/g
                 {result.dddYears != null ? ` over ${formatDoseYears(result.dddYears)} years` : ""}
                 {result.dddCi95Pct != null ? ` (± ${result.dddCi95Pct.toFixed(2)}%, 95% CI)` : ""}
+              </div>
+            )}
+            {result?.pmaxRemaining != null && (
+              <div className="font-monospace mt-1">
+                InGaAs Pmax {(100 * result.pmaxRemaining).toFixed(1)}% of initial
+                {result.pmaxYears != null ? ` over ${formatDoseYears(result.pmaxYears)} years` : ""}
+                {result.pmaxCi95Pct != null ? ` (± ${result.pmaxCi95Pct.toFixed(2)}%, 95% CI)` : ""}
+                {result.pmaxFluenceM2 != null
+                  ? ` · XPNR-equivalent ${formatSci(result.pmaxFluenceM2)} m^-2`
+                  : ""}
+                {result.pmaxFastRemaining != null || result.pmaxTruncatedRemaining != null ? (
+                  <div className="small text-secondary">
+                    {result.pmaxFastRemaining != null
+                      ? `fast-fluence definition ${(100 * result.pmaxFastRemaining).toFixed(1)}%`
+                      : ""}
+                    {result.pmaxFastRemaining != null && result.pmaxTruncatedRemaining != null ? " · " : ""}
+                    {result.pmaxTruncatedRemaining != null
+                      ? `truncated spectrum ${(100 * result.pmaxTruncatedRemaining).toFixed(1)}%`
+                      : ""}
+                    {result.pmaxOutsideRange ? " · outside the measured Wang range" : ""}
+                  </div>
+                ) : result.pmaxOutsideRange ? (
+                  <div className="small text-secondary">outside the measured Wang range</div>
+                ) : null}
+                <div className="small text-secondary">
+                  Baseline KX is provisional, folded for In0.68Ga0.32As. This cell is In0.53Ga0.47As.
+                </div>
               </div>
             )}
             {(result?.dddMeVPerG != null || result?.gammaKGy != null) &&
@@ -852,7 +887,7 @@ const RunQueueModal: React.FC<Props> = ({
           label={
             <span className="d-inline-flex align-items-center gap-1">
               Photovoltaic DDD tallies only
-              <InfoTip text="When on, keff keeps only the SR-NIEL flux tally on the InGaAs cells (keff itself still comes from the eigenvalue solve). Turn off for heating, tritium, C-14, IFP, and the rest." />
+              <InfoTip text="When on, keff keeps the SR-NIEL flux tally and the InGaAs damage-energy tally (keff itself still comes from the eigenvalue solve). The damage-energy tally is the Wang Pmax result shown next to the DDD. Turn off for heating, tritium, C-14, IFP, and the rest." />
             </span>
           }
           checked={draft.ddd_tallies_only}

@@ -33,6 +33,7 @@ from common_lib.tallies import (
     create_energy_deposition_tallies,
     create_fission_energy_weighted_flux_tally,
     create_flux_band_tally,
+    create_photovoltaic_damage_tally,
     create_photovoltaic_flux_tally,
     create_photovoltaic_gamma_heating_tally,
     create_photovoltaic_heating_absorption_tally,
@@ -1398,10 +1399,21 @@ def run_sim_with_tallies(
     photovoltaic_flux_tally = create_photovoltaic_flux_tally(
         photovoltaic_cells, particle_type
     )
+    # MT=444 is a neutron score. Photon runs keep the SR-NIEL tally alone.
+    damage_tally = (
+        create_photovoltaic_damage_tally(photovoltaic_cells)
+        if particle_type == "neutron"
+        else None
+    )
 
     if ddd_tallies_only:
-        print("Tallies: photovoltaic DDD only (SR-NIEL flux on InGaAs cells).")
-        tallies = openmc.Tallies([photovoltaic_flux_tally])
+        if damage_tally is not None:
+            print("Tallies: photovoltaic DDD and InGaAs damage-energy.")
+            tally_list = [photovoltaic_flux_tally, damage_tally]
+        else:
+            print("Tallies: photovoltaic DDD only (SR-NIEL flux on InGaAs cells).")
+            tally_list = [photovoltaic_flux_tally]
+        tallies = openmc.Tallies(tally_list)
     else:
         tally_photovoltaic = create_photovoltaic_heating_absorption_tally(
             photovoltaic_cells, particle_type, monitored_nuclide
@@ -1482,6 +1494,7 @@ def run_sim_with_tallies(
                 tally_O16_activation_coolant,
                 dpa_emitter,
             ]
+            + ([damage_tally] if damage_tally is not None else [])
         )
     run_sim(geometry, settings, materials_dict, tallies, quiet=True)
     print_tallies(

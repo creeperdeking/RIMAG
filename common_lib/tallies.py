@@ -1,7 +1,12 @@
 import json
 import openmc
-from typing import List, Literal, Tuple
+from typing import List, Literal, Optional, Tuple
 import scipy.constants as cst
+from common_lib.ingaas_pmax import (
+    format_pmax_lines,
+    model_ingaas_atoms,
+    pmax_from_damage,
+)
 from common_lib.materials import MonitoredNuclide
 import numpy as np
 
@@ -123,6 +128,23 @@ def create_photovoltaic_flux_tally(
     tally.scores = [
         "flux",
     ]
+    return tally
+
+
+def create_photovoltaic_damage_tally(
+    photovoltaic_cells: List[openmc.Cell],
+):
+    """Total neutron damage energy in the InGaAs cells, eV per source particle.
+
+    No energy filter: the score is ENDF MT=444 summed over the cell. Several
+    InGaAs layers come back as one bin each and are added in post-processing.
+    """
+    tally = openmc.Tally(name="InGaAs_damage")
+    tally.filters = [
+        openmc.CellFilter(photovoltaic_cells),
+        openmc.ParticleFilter("neutron"),
+    ]
+    tally.scores = ["damage-energy"]
     return tally
 
 
@@ -629,10 +651,17 @@ def _tally_scalar_mean_sd(
     return mean, sd
 
 
+def _json_sci(value: float) -> str:
+    if value is None or not np.isfinite(value):
+        return "null"
+    return f"{float(value):.6e}"
+
+
 def _write_ddd_resultsim(
     yearly_ddd_photovoltaic: float,
     yearly_ddd_photovoltaic_ci95_pct: float,
     batches: int,
+    pmax: Optional[dict] = None,
 ) -> None:
     ddd_ci95p = (
         yearly_ddd_photovoltaic_ci95_pct / 100
@@ -646,6 +675,24 @@ def _write_ddd_resultsim(
             f.write('  "ddd_ci95p": null,\n')
         else:
             f.write(f'  "ddd_ci95p": {ddd_ci95p},\n')
+        if pmax is not None:
+            ci = pmax["ci95_pct"]
+            ci_fraction = ci / 100 if np.isfinite(ci) else None
+            f.write(f'  "pmax_remaining": [{_json_sci(pmax["remaining"])}],\n')
+            if ci_fraction is None:
+                f.write('  "pmax_ci95p": null,\n')
+            else:
+                f.write(f'  "pmax_ci95p": {_json_sci(ci_fraction)},\n')
+            f.write(f'  "pmax_fluence_m2": [{_json_sci(pmax["fluence_m2"])}],\n')
+            f.write(
+                '  "pmax_outside": '
+                + ("true" if pmax["outside"] else "false")
+                + ",\n"
+            )
+            f.write(f'  "pmax_fast": [{_json_sci(pmax["fast_remaining"])}],\n')
+            f.write(
+                f'  "pmax_truncated": [{_json_sci(pmax["truncated_remaining"])}],\n'
+            )
         f.write(f'  "n_batches": {batches}\n')
         f.write("}\n")
 
@@ -711,10 +758,50 @@ def _print_photovoltaic_gamma_dose(
     _write_gamma_resultsim(kgy, ci95_pct, dose_years, batches)
 
 
+def _photovoltaic_pmax_report(
+    sp: openmc.StatePoint,
+    source_strength,
+    photovoltaic_slice_volume,
+    photovoltaic_density,
+    dose_time,
+):
+    """Wang remaining Pmax from the InGaAs damage-energy tally, or None."""
+    try:
+        tally = sp.get_tally(name="InGaAs_damage")
+    except LookupError:
+        return None
+    except Exception:
+        return None
+    td, td_sd = _tally_scalar_mean_sd(tally, ["damage-energy"])
+    n_atoms = model_ingaas_atoms(
+        float(photovoltaic_slice_volume), float(photovoltaic_density)
+    )
+    return pmax_from_damage(
+        td, td_sd, float(source_strength), n_atoms, float(dose_time)
+    )
+
+
+def _print_photovoltaic_pmax(report, dose_years) -> Optional[dict]:
+    """Print the power line next to the SR-NIEL dose. Skip a zero tally."""
+    if report is None:
+        return None
+    if report["zero_tally"]:
+        print(
+            "InGaAs damage-energy tally is zero. "
+            "Check that In, Ga and As have MT=444 in the library."
+        )
+        return None
+    main, sensitivity = format_pmax_lines(report, dose_years)
+    print(main)
+    print(sensitivity)
+    return report
+
+
 def _print_photovoltaic_ddd(
     sp: openmc.StatePoint,
     source_strength,
     photovoltaic_slice_volume,
+    photovoltaic_density,
     dose_time,
     batches,
 ) -> None:
@@ -745,8 +832,20 @@ def _print_photovoltaic_ddd(
         f"over {dose_years:g} years "
         f"(± {yearly_ddd_photovoltaic_ci95_pct:.2f}%, 95% CI)"
     )
+    pmax = _print_photovoltaic_pmax(
+        _photovoltaic_pmax_report(
+            sp,
+            source_strength,
+            photovoltaic_slice_volume,
+            photovoltaic_density,
+            dose_time,
+        ),
+        dose_years,
+    )
     print("--------------------------------")
-    _write_ddd_resultsim(ddd_over_dose_time, yearly_ddd_photovoltaic_ci95_pct, batches)
+    _write_ddd_resultsim(
+        ddd_over_dose_time, yearly_ddd_photovoltaic_ci95_pct, batches, pmax
+    )
 
 
 def print_tallies(
@@ -777,7 +876,12 @@ def print_tallies(
 
     if ddd_tallies_only:
         _print_photovoltaic_ddd(
-            sp, source_strength, photovoltaic_slice_volume, dose_time, batches
+            sp,
+            source_strength,
+            photovoltaic_slice_volume,
+            photovoltaic_density,
+            dose_time,
+            batches,
         )
         return
 
@@ -910,6 +1014,16 @@ def print_tallies(
         f"over {dose_years:g} years "
         f"(± {yearly_ddd_photovoltaic_ci95_pct:.2f}%, 95% CI)"
     )
+    pmax = _print_photovoltaic_pmax(
+        _photovoltaic_pmax_report(
+            sp,
+            source_strength,
+            photovoltaic_slice_volume,
+            photovoltaic_density,
+            dose_time,
+        ),
+        dose_years,
+    )
     print(
         f"Absorption: {absorption_photovoltaic * dose_time:.4e} neutrons/cm3 "
         f"over {dose_years:g} years"
@@ -931,4 +1045,6 @@ def print_tallies(
     )
     print("--------------------------------")
 
-    _write_ddd_resultsim(ddd_over_dose_time, yearly_ddd_photovoltaic_ci95_pct, batches)
+    _write_ddd_resultsim(
+        ddd_over_dose_time, yearly_ddd_photovoltaic_ci95_pct, batches, pmax
+    )

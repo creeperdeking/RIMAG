@@ -57,6 +57,13 @@ type QueueItemResult = {
   dddMeVPerG?: number | null;
   dddCi95Pct?: number | null;
   dddYears?: number | null;
+  pmaxRemaining?: number | null;
+  pmaxCi95Pct?: number | null;
+  pmaxYears?: number | null;
+  pmaxFluenceM2?: number | null;
+  pmaxOutsideRange?: boolean | null;
+  pmaxFastRemaining?: number | null;
+  pmaxTruncatedRemaining?: number | null;
   depletionYears?: number | null;
   depletionDays?: number | null;
   depletionBurnup?: number | null;

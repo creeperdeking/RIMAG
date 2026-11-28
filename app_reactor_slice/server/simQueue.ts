@@ -29,6 +29,14 @@ export type QueueItemResult = {
   dddMeVPerG?: number | null;
   dddCi95Pct?: number | null;
   dddYears?: number | null;
+  /** Wang remaining Pmax/Pmax0 over the same exposure. */
+  pmaxRemaining?: number | null;
+  pmaxCi95Pct?: number | null;
+  pmaxYears?: number | null;
+  pmaxFluenceM2?: number | null;
+  pmaxOutsideRange?: boolean | null;
+  pmaxFastRemaining?: number | null;
+  pmaxTruncatedRemaining?: number | null;
   /** Fuel lifetime at this item's slice power, until mean keff stays below 1. */
   depletionYears?: number | null;
   depletionDays?: number | null;

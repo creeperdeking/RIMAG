@@ -12,7 +12,11 @@ import {
 import {
   displacementDamageFromResultsim,
   parseDisplacementDamageLine,
+  parseIngaasPmaxLine,
+  parseIngaasPmaxSensitivityLine,
+  pmaxFromResultsim,
   type DisplacementDamage,
+  type IngaasPmax,
 } from "./dddResult";
 import { parseDepletionLine } from "./depletionResult";
 import {
@@ -872,7 +876,7 @@ function doseYearsFromPayload(payload: unknown): number | null {
   return Number.isFinite(years) && years >= 0 ? years : null;
 }
 
-function dddFromResultsim(item: QueueItem): DisplacementDamage | null {
+function resultsimRecord(item: QueueItem): Record<string, unknown> | null {
   const file = path.join(RUN_DIR, RESULTSIM_FILE);
   if (!fs.existsSync(file)) return null;
   const stat = fs.statSync(file);
@@ -890,6 +894,12 @@ function dddFromResultsim(item: QueueItem): DisplacementDamage | null {
   const record = parsed as Record<string, unknown>;
   const batches = simulationRecordFromPayload(item.payload).n_batches;
   if (typeof batches === "number" && record.n_batches !== batches) return null;
+  return record;
+}
+
+function dddFromResultsim(item: QueueItem): DisplacementDamage | null {
+  const record = resultsimRecord(item);
+  if (!record) return null;
   return displacementDamageFromResultsim(record, doseYearsFromPayload(item.payload));
 }
 
@@ -898,6 +908,55 @@ function attachStoredDdd(result: QueueItemResult, item: QueueItem | null | undef
   if (fromLogs) return { ...result, ...fromLogs };
   if (!item || result.dddMeVPerG != null) return result;
   const fromFile = dddFromResultsim(item);
+  return fromFile ? { ...result, ...fromFile } : result;
+}
+
+function pmaxFromLogs(): IngaasPmax | null {
+  let main: IngaasPmax | null = null;
+  let fast: number | null = null;
+  let truncated: number | null = null;
+  for (let i = job.lastLines.length - 1; i >= 0; i -= 1) {
+    const line = job.lastLines[i].line;
+    if (!main) {
+      const parsed = parseIngaasPmaxLine(line);
+      if (parsed) main = parsed;
+    }
+    if (fast == null || truncated == null) {
+      const sensitivity = parseIngaasPmaxSensitivityLine(line);
+      if (sensitivity) {
+        fast = sensitivity.pmaxFastRemaining;
+        truncated = sensitivity.pmaxTruncatedRemaining;
+      }
+    }
+  }
+  if (!main) return null;
+  return { ...main, pmaxFastRemaining: fast, pmaxTruncatedRemaining: truncated };
+}
+
+function pmaxFromStoredFile(item: QueueItem): IngaasPmax | null {
+  const record = resultsimRecord(item);
+  if (!record) return null;
+  return pmaxFromResultsim(record, doseYearsFromPayload(item.payload));
+}
+
+function attachStoredPmax(result: QueueItemResult, item: QueueItem | null | undefined): QueueItemResult {
+  const fromLogs = pmaxFromLogs();
+  if (fromLogs) {
+    if ((fromLogs.pmaxFastRemaining == null || fromLogs.pmaxTruncatedRemaining == null) && item) {
+      const fromFile = pmaxFromStoredFile(item);
+      if (fromFile) {
+        return {
+          ...result,
+          ...fromLogs,
+          pmaxFastRemaining: fromLogs.pmaxFastRemaining ?? fromFile.pmaxFastRemaining,
+          pmaxTruncatedRemaining: fromLogs.pmaxTruncatedRemaining ?? fromFile.pmaxTruncatedRemaining,
+        };
+      }
+    }
+    return { ...result, ...fromLogs };
+  }
+  if (!item || result.pmaxRemaining != null) return result;
+  const fromFile = pmaxFromStoredFile(item);
   return fromFile ? { ...result, ...fromFile } : result;
 }
 
@@ -1089,7 +1148,7 @@ function onJobEnded(code: number, endedGen?: number) {
     );
 
     if (frac != null && frac >= AUTOREFINE_TARGET) {
-      const base = attachWwCoverage(attachStoredDdd(attachStoredGamma(resultFromLogs(), item), item), item.payload);
+      const base = attachWwCoverage(attachStoredPmax(attachStoredDdd(attachStoredGamma(resultFromLogs(), item), item), item), item.payload);
       finishQueueItem(
         itemId,
         0,
@@ -1104,7 +1163,7 @@ function onJobEnded(code: number, endedGen?: number) {
     }
 
     if (job.autoRefinePass >= AUTOREFINE_MAX_PASSES) {
-      const base = attachWwCoverage(attachStoredDdd(attachStoredGamma(resultFromLogs(), item), item), item.payload);
+      const base = attachWwCoverage(attachStoredPmax(attachStoredDdd(attachStoredGamma(resultFromLogs(), item), item), item), item.payload);
       finishQueueItem(
         itemId,
         0,
@@ -1132,7 +1191,7 @@ function onJobEnded(code: number, endedGen?: number) {
   const status = stopped ? "cancelled" : effectiveCode === 0 ? "done" : "failed";
   let result: QueueItemResult | null = stopped
     ? { summary: "Stopped by user" }
-    : attachWwCoverage(attachStoredDdd(attachStoredGamma(resultFromLogs(), item), item), item?.payload);
+    : attachWwCoverage(attachStoredPmax(attachStoredDdd(attachStoredGamma(resultFromLogs(), item), item), item), item?.payload);
 
   // Autorefine must reach InGaAs coverage (or hit max passes as "done") before the
   // next queue item. A crashed/killed refine (e.g. exit 137) used to mark failed
@@ -1606,6 +1665,22 @@ function backfillGamma(item: QueueItem): QueueItem {
   return state.items[index];
 }
 
+function backfillPmax(item: QueueItem): QueueItem {
+  if (item.status !== "done") return item;
+  if (item.result?.pmaxRemaining != null) return item;
+  const pmax = pmaxFromStoredFile(item);
+  if (!pmax) return item;
+  const state = queueSnapshot();
+  const index = state.items.findIndex((entry) => entry.id === item.id);
+  if (index < 0) return { ...item, result: { ...(item.result ?? {}), ...pmax } };
+  const current = state.items[index];
+  if (current.result?.pmaxRemaining != null) return current;
+  const result = { ...(current.result ?? {}), ...pmax };
+  state.items[index] = { ...current, result };
+  saveQueue(state);
+  return state.items[index];
+}
+
 function backfillDdd(item: QueueItem): QueueItem {
   if (item.status !== "done") return item;
   if (item.result?.dddMeVPerG != null) return item;
@@ -1624,7 +1699,7 @@ function backfillDdd(item: QueueItem): QueueItem {
 
 export function readQueueItem(id: string): QueueItem | null {
   const item = getQueueItem(id);
-  return item ? backfillDdd(backfillGamma(backfillWwCoverage(item))) : null;
+  return item ? backfillPmax(backfillDdd(backfillGamma(backfillWwCoverage(item)))) : null;
 }
 
 // A reload has an empty memory. Attach to a container that is still
