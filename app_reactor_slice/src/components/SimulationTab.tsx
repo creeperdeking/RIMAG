@@ -69,6 +69,29 @@ type QueueItemResult = {
   depletionBelowOne?: boolean | null;
 };
 
+function simulationFromQueueItem(
+  item: QueueItem,
+): (SimulationParams & { weight_windows?: string }) | null {
+  const payload = item.payload;
+  if (!payload || typeof payload !== "object") return null;
+  const simulation = payload.simulation;
+  if (!simulation || typeof simulation !== "object" || Array.isArray(simulation)) return null;
+  return simulation as SimulationParams & { weight_windows?: string };
+}
+
+/** The simulation the user appended most recently. Queue order can change; added time does not. */
+function latestAddedSimulation(
+  items: QueueItem[],
+): (SimulationParams & { weight_windows?: string }) | null {
+  let best: { at: string; simulation: SimulationParams & { weight_windows?: string } } | null = null;
+  for (const item of items) {
+    const simulation = simulationFromQueueItem(item);
+    if (!simulation || !item.createdAt) continue;
+    if (!best || item.createdAt >= best.at) best = { at: item.createdAt, simulation };
+  }
+  return best?.simulation ?? null;
+}
+
 type QueueItem = {
   id: string;
   status: QueueItemStatus;
@@ -418,18 +441,35 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup, defaultTherma
     }
   };
 
-  const openAppendModal = () => {
+  const openAppendModal = async () => {
     setQueueModalError(null);
+    let items = queue.items;
+    try {
+      const response = await fetch("/api/simulation/queue");
+      if (response.ok) {
+        const data = (await response.json()) as SimQueue;
+        if (Array.isArray(data.items)) {
+          items = data.items;
+          setQueue(data);
+        }
+      }
+    } catch {
+      // The queue already on screen is enough to seed the form.
+    }
+    const lastAdded = latestAddedSimulation(items);
     setQueueModal({
       mode: "append",
       title: "Append run",
       itemId: null,
-      simulation: {
+      simulation: lastAdded ?? {
         ...params,
         // Default tally runs use keff; seed/refine presets switch to keff_notallies in the modal.
         run_mode: params.run_mode === "keff_notallies" ? "keff" : params.run_mode,
         // This host has 8 cores. Don't inherit a saved 12-thread setting into Append.
         n_threads: 8,
+        thermal_power_mw:
+          params.thermal_power_mw ??
+          (defaultThermalPowerMw != null && defaultThermalPowerMw > 0 ? defaultThermalPowerMw : null),
       },
     });
   };

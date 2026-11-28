@@ -400,19 +400,8 @@ const RunQueueModal: React.FC<Props> = ({
 
   useEffect(() => {
     if (!show) return;
-    const next = queueSimulationFromRaw(initialSimulation);
-    // Append: prefill with the overview stack power so a later geometry can keep it.
-    if (
-      mode === "append" &&
-      next.thermal_power_mw == null &&
-      defaultThermalPowerMw != null &&
-      Number.isFinite(defaultThermalPowerMw) &&
-      defaultThermalPowerMw > 0
-    ) {
-      next.thermal_power_mw = defaultThermalPowerMw;
-    }
-    setDraft(next);
-  }, [show, initialSimulation, mode, defaultThermalPowerMw]);
+    setDraft(queueSimulationFromRaw(initialSimulation));
+  }, [show, initialSimulation, mode]);
 
   const setField = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) => {
     setDraft((prev) => ({ ...prev, [key]: value }));
@@ -918,8 +907,8 @@ const RunQueueModal: React.FC<Props> = ({
             info={
               <>
                 Whole-stack thermal power. The run gives the periodic slice its share,
-                period height / stack height, before the source strength and DDD. Prefills
-                with the overview stack power. Clear the field to use the thermodynamics-tab
+                period height / stack height, before the source strength and DDD. Append
+                starts from the last run you added. Clear the field to use the thermodynamics-tab
                 period power, which follows the geometry.
               </>
             }
