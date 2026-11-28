@@ -592,6 +592,7 @@ button.simulation-run-list-item {
   margin: 0;
   padding: 0.85rem 1rem;
   overflow: auto;
+  overflow-anchor: none;
   border-radius: 0.4rem;
   background: #1e2430;
   color: #d7dde8;

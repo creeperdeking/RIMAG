@@ -72,6 +72,8 @@ type Props = {
   statusLabel?: string | null;
   startedAt?: string | null;
   finishedAt?: string | null;
+  /** Queue item whose saved output file to show in view mode. */
+  itemId?: string | null;
   saving?: boolean;
   error?: string | null;
   onHide: () => void;
@@ -215,6 +217,68 @@ function CoverageBar({
   );
 }
 
+type RunLogFile = {
+  path: string;
+  text: string;
+  truncated: boolean;
+  missing: boolean;
+};
+
+function SavedRunLog({ itemId, live }: { itemId: string; live: boolean }) {
+  const [log, setLog] = useState<RunLogFile | null>(null);
+
+  useEffect(() => {
+    let stop = false;
+    const load = async () => {
+      try {
+        const response = await fetch(`/api/simulation/queue/${encodeURIComponent(itemId)}/log`);
+        if (!response.ok || stop) return;
+        const data = (await response.json()) as RunLogFile;
+        if (!stop) setLog(data);
+      } catch {
+        // keep the last copy
+      }
+    };
+    void load();
+    if (!live) return () => {
+      stop = true;
+    };
+    const timer = window.setInterval(() => void load(), 10_000);
+    return () => {
+      stop = true;
+      window.clearInterval(timer);
+    };
+  }, [itemId, live]);
+
+  return (
+    <div className="border rounded p-2 mb-3 bg-light-subtle">
+      <div className="small text-uppercase text-secondary fw-semibold mb-1">Output</div>
+      {log == null ? (
+        <p className="small text-secondary mb-0">Reading the saved output…</p>
+      ) : (
+        <>
+          <div className="small font-monospace text-secondary mb-2">{log.path}</div>
+          {log.missing ? (
+            <p className="small text-secondary mb-0">
+              No output file was saved for this run. New runs keep one at this path, including the
+              traceback if the container is removed.
+            </p>
+          ) : (
+            <>
+              {log.truncated && (
+                <div className="small text-secondary mb-1">Showing the end of the file.</div>
+              )}
+              <pre className="simulation-output small mb-0" style={{ maxHeight: 280, overflow: "auto" }}>
+                {log.text || "(empty)"}
+              </pre>
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function LiveWwCoverage({ startedAt }: { startedAt: string | null }) {
   const [status, setStatus] = useState<WwLive | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -325,6 +389,7 @@ const RunQueueModal: React.FC<Props> = ({
   statusLabel,
   startedAt = null,
   finishedAt = null,
+  itemId = null,
   saving = false,
   error = null,
   onHide,
@@ -400,6 +465,7 @@ const RunQueueModal: React.FC<Props> = ({
               : ""}
           </p>
         )}
+        {mode === "view" && itemId && <SavedRunLog itemId={itemId} live={statusLabel === "running"} />}
         {mode === "view" &&
           (draft.weight_windows === "autorefine" || draft.weight_windows === "refine") &&
           statusLabel === "running" && (

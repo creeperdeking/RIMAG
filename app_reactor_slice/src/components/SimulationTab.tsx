@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Alert, Button, Col, ProgressBar, Row } from "react-bootstrap";
 import { WEIGHT_WINDOWS, type WeightWindows, type WeightWindowsRun } from "../constants";
 import {
@@ -216,10 +216,22 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup, defaultTherma
   const [dragQueuedId, setDragQueuedId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const logRef = useRef<HTMLPreElement>(null);
+  /** Follow new lines only while the reader is already at the bottom. */
+  const stickToBottomRef = useRef(true);
+  const savedScrollRef = useRef(0);
   const sourceRef = useRef<EventSource | null>(null);
+
+  const noteLogScroll = () => {
+    const node = logRef.current;
+    if (!node) return;
+    savedScrollRef.current = node.scrollTop;
+    const gap = node.scrollHeight - node.scrollTop - node.clientHeight;
+    stickToBottomRef.current = gap <= 24;
+  };
 
   const append = (line: string, at?: string) => {
     const cleaned = line.replace(/\r/g, "");
+    if (logRef.current) savedScrollRef.current = logRef.current.scrollTop;
     setOutput((prev) => `${prev}${prev ? "\n" : ""}[${stamp(at)}] ${cleaned}`);
     setKeffLive((prev) => parseKeffFromLine(cleaned, prev) ?? prev);
   };
@@ -267,6 +279,7 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup, defaultTherma
         }
         if (payload.type === "ready") {
           if (clearOnReady) {
+            stickToBottomRef.current = true;
             setOutput("");
             setKeffLive(EMPTY_KEFF);
             clearOnReady = false;
@@ -279,6 +292,7 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup, defaultTherma
         }
         if (payload.type === "log" && payload.line) {
           if (payload.line.includes("[runner] Starting next queued run:")) {
+            stickToBottomRef.current = true;
             setOutput("");
             setKeffLive(EMPTY_KEFF);
             setRunning(true);
@@ -313,9 +327,10 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup, defaultTherma
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount/unmount only
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const node = logRef.current;
-    if (node) node.scrollTop = node.scrollHeight;
+    if (!node) return;
+    node.scrollTop = stickToBottomRef.current ? node.scrollHeight : savedScrollRef.current;
   }, [output]);
 
   const appendWith = async (
@@ -566,6 +581,7 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup, defaultTherma
 
   const onClear = () => {
     if (running) return;
+    stickToBottomRef.current = true;
     setOutput("");
     setKeffLive(EMPTY_KEFF);
     setError(null);
@@ -852,7 +868,7 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup, defaultTherma
               />
             </div>
           )}
-          <pre ref={logRef} className="simulation-output mb-0" aria-live="polite">
+          <pre ref={logRef} className="simulation-output mb-0" aria-live="polite" onScroll={noteLogScroll}>
             {output || "Append a run to stream RIMAG stdout here."}
           </pre>
         </div>
@@ -886,6 +902,7 @@ const SimulationTab: React.FC<Props> = ({ params, onChange, setup, defaultTherma
           statusLabel={queueModal.statusLabel}
           startedAt={queueModal.startedAt}
           finishedAt={queueModal.finishedAt}
+          itemId={queueModal.itemId}
           saving={queueModalSaving}
           error={queueModalError}
           onHide={() => {

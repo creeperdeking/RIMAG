@@ -16,7 +16,8 @@ import {
   parseIngaasPmaxSensitivityLine,
   pmaxFromResultsim,
   type DisplacementDamage,
-  type IngaasPmax,} from "./dddResult";
+  type IngaasPmax,
+} from "./dddResult";
 import { parseDepletionLine } from "./depletionResult";
 import {
   appendQueued,
@@ -46,7 +47,10 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.resolve(HERE, "..");
 const REPO_ROOT = path.resolve(APP_ROOT, "..");
 const RUN_DIR = path.resolve(REPO_ROOT, "runs", "default");
+const RUN_LOG_DIR = path.join(RUN_DIR, "logs");
 const PARAMS_FILE = "app_slice_run.json";
+/** Queue ids are UUIDs. Refuse anything that could escape the log directory. */
+const RUN_LOG_ID = /^[A-Za-z0-9-]{1,80}$/;
 /** Identifies this loaded module. A Vite reload starts a new one; stale sweeps must stop. */
 const RUNNER_EPOCH_FILE = path.join(RUN_DIR, "runner.epoch");
 const PASS_EXIT_FILE = path.join(RUN_DIR, "pass_exit.json");
@@ -261,10 +265,78 @@ async function removeSimContainers(protect: readonly string[] = []) {
   emit(`[runner] warning: ${CONTAINER_PREFIX}* still present after retries; next compose run may fail`);
 }
 
+export function runLogFile(itemId: string): string | null {
+  if (!RUN_LOG_ID.test(itemId)) return null;
+  return path.join(RUN_LOG_DIR, `${itemId}.log`);
+}
+
+/** Full stdout for one queue item, including every autorefine pass. Survives `--rm`. */
+export function appendRunLog(itemId: string | null, line: string) {
+  if (!itemId) return;
+  const file = runLogFile(itemId);
+  if (!file) return;
+  try {
+    fs.mkdirSync(RUN_LOG_DIR, { recursive: true });
+    fs.appendFileSync(file, `${line}\n`);
+  } catch {
+    // A log-disk failure must not take the run down.
+  }
+}
+
+export function readRunLog(itemId: string, tailLines = 400): {
+  path: string;
+  text: string;
+  bytes: number;
+  lines: number;
+  truncated: boolean;
+  missing: boolean;
+} | null {
+  const file = runLogFile(itemId);
+  if (!file) return null;
+  const relPath = path.posix.join("runs/default/logs", `${itemId}.log`);
+  if (!fs.existsSync(file)) {
+    return { path: relPath, text: "", bytes: 0, lines: 0, truncated: false, missing: true };
+  }
+  const bytes = fs.statSync(file).size;
+  const maxBytes = 2_000_000;
+  let raw: string;
+  let truncated = false;
+  if (bytes > maxBytes) {
+    const buf = Buffer.alloc(maxBytes);
+    const fd = fs.openSync(file, "r");
+    try {
+      fs.readSync(fd, buf, 0, maxBytes, bytes - maxBytes);
+    } finally {
+      fs.closeSync(fd);
+    }
+    raw = buf.toString("utf8");
+    const cut = raw.indexOf("\n");
+    if (cut >= 0) raw = raw.slice(cut + 1);
+    truncated = true;
+  } else {
+    raw = fs.readFileSync(file, "utf8");
+  }
+  let lines = raw.split(/\n/);
+  if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  if (tailLines > 0 && lines.length > tailLines) {
+    lines = lines.slice(-tailLines);
+    truncated = true;
+  }
+  return {
+    path: relPath,
+    text: lines.join("\n"),
+    bytes,
+    lines: lines.length,
+    truncated,
+    missing: false,
+  };
+}
+
 function emit(line: string, at?: string) {
   const entry = { at: at ?? new Date().toISOString(), line };
   job.lastLines.push(entry);
   if (job.lastLines.length > 2000) job.lastLines.splice(0, job.lastLines.length - 2000);
+  appendRunLog(job.currentId, line);
   for (const listener of job.listeners) listener(entry);
 }
 
@@ -1047,6 +1119,7 @@ function finishQueueItem(
   const finishedContainer = job.containerName;
   markFinished(itemId, code, status, result);
   clearPassExit();
+  appendRunLog(itemId, `[runner] done exit=${code}`);
   job.currentId = null;
   job.containerName = "";
   job.autoRefinePass = 0;
@@ -1406,6 +1479,7 @@ function launchDockerJob(
   options: { continueAutoRefine?: boolean } = {},
 ) {
   if (!runnerEpochIsCurrent()) return;
+  job.currentId = item.id;
   let runnerPayload: unknown;
   let threads: number;
   try {
@@ -1425,6 +1499,7 @@ function launchDockerJob(
   job.running = true;
   job.currentId = item.id;
   job.suppressQueueAdvance = false;
+  emit(`[runner] ----- ${new Date().toISOString()} -----`);
   if (!options.continueAutoRefine) {
     job.autoRefinePass = 0;
   }

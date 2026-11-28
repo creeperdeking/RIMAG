@@ -17,6 +17,7 @@ import {
   isQueuePaused,
   isSimulationRunning,
   readQueueItem,
+  readRunLog,
   removeQueuedSimulation,
   reorderQueuedSimulations,
   RimagRunnerError,
@@ -228,6 +229,20 @@ function simulationApi(): Plugin {
           res.setHeader("Content-Type", "application/json");
           res.end(JSON.stringify({ error: message }));
         });
+      return;
+    }
+
+    const queueLogMatch = url?.match(/^\/api\/simulation\/queue\/([^/]+)\/log$/);
+    if (queueLogMatch && req.method === "GET") {
+      const id = decodeURIComponent(queueLogMatch[1]);
+      const log = readRunLog(id);
+      res.setHeader("Content-Type", "application/json");
+      if (!log) {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ error: "Bad queue item id." }));
+        return;
+      }
+      res.end(JSON.stringify(log));
       return;
     }
 
