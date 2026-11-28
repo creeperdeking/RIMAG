@@ -527,7 +527,7 @@ const RunQueueModal: React.FC<Props> = ({
         </Form.Group>
 
         <Form.Group className="simulation-field">
-          <FieldLabel info="Elemental boron by mass in the neutron-shield graphite. The boron-carbide wedge stays as it is. Zero leaves the shield graphite pure.">
+          <FieldLabel info="Elemental boron by mass in the neutron shield when that material is graphite-like, including Natural Graphite and the other graphite cards. The boron-carbide wedge stays as it is. Zero leaves the shield material unchanged.">
             Shield graphite boron (ppm)
           </FieldLabel>
           <Form.Control

@@ -180,6 +180,67 @@ def test_shield_boron_zero_ppm_leaves_the_choice_unchanged():
     assert choice.neutron_absorber == "Boron Carbide"
 
 
+def test_shield_graphite_fields_include_other_graphite_like_materials():
+    choice = _choice(
+        neutron_shield_moderator="Natural Graphite",
+        shaft_shield_moderator="Low Density Graphite",
+        outer_cold_shield_moderator="Graphite NO Scattering",
+        neutron_absorber="Boron Carbide",
+        neutron_reflector="Graphite",
+    )
+    assert shield_graphite_fields(choice) == [
+        "neutron_shield_moderator",
+        "shaft_shield_moderator",
+        "outer_cold_shield_moderator",
+    ]
+
+
+def test_shield_boron_keeps_each_graphite_like_material():
+    from common_lib.materials import apply_boron_ppm_to_shield_graphite, make_materials
+
+    fields = {name: "Void" for name in MaterialChoice.model_fields}
+    fields.update(
+        {
+            "neutron_shield_moderator": "Natural Graphite",
+            "shaft_shield_moderator": "Natural Graphite",
+            "neutron_absorber": "Low Density Graphite",
+            "neutron_reflector": "Graphite",
+            "fuel_cladding": "Graphite NO Scattering",
+        }
+    )
+    materials, colors, choice = make_materials(
+        9.7,
+        MaterialChoice(**fields),
+        extra_names=["Natural Graphite", "Low Density Graphite", "Graphite", "Graphite NO Scattering"],
+    )
+    reflector_name = choice.neutron_reflector
+    apply_boron_ppm_to_shield_graphite(materials, choice, 1000, colors)
+
+    assert choice.neutron_shield_moderator == "Shield Natural Graphite"
+    assert choice.shaft_shield_moderator == "Shield Natural Graphite"
+    assert choice.neutron_absorber == "Shield Low Density Graphite"
+    assert choice.neutron_reflector == reflector_name
+    natural = materials["Shield Natural Graphite"]
+    low = materials["Shield Low Density Graphite"]
+    assert abs(natural.get_mass_density() - 1.82) < 1e-9
+    assert abs(low.get_mass_density() - 2.26 * 0.1) < 1e-9
+    assert any(nuc.startswith("B") for nuc in _nuclides(natural))
+    assert any(nuc.startswith("B") for nuc in _nuclides(low))
+    assert not any(nuc.startswith("B") for nuc in _nuclides(materials[reflector_name]))
+
+    plain = {name: "Void" for name in MaterialChoice.model_fields}
+    plain["neutron_shield_moderator"] = "Graphite NO Scattering"
+    no_scatter_materials, _, no_scatter_choice = make_materials(
+        9.7,
+        MaterialChoice(**plain),
+        extra_names=["Graphite NO Scattering"],
+    )
+    apply_boron_ppm_to_shield_graphite(no_scatter_materials, no_scatter_choice, 500)
+    doped = no_scatter_materials["Shield Graphite NO Scattering"]
+    assert abs(doped.get_mass_density() - 2.26) < 1e-9
+    assert not getattr(doped, "_sab", None)
+
+
 def test_shield_graphite_fields_ignore_a_non_graphite_moderator():
     choice = _choice(
         neutron_shield_moderator="Beryllium Oxide",

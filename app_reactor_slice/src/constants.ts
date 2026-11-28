@@ -44,6 +44,9 @@ export type TabKey = (typeof TAB_KEYS)[number];
 /** Materials accepted as the neutron shield moderator. */
 export const NSM_MATERIALS = [
   "Graphite",
+  "Natural Graphite",
+  "Low Density Graphite",
+  "Graphite NO Scattering",
   "Beryllium Oxide",
   "High Density PolyEthylene",
   "Titanium Hydride",

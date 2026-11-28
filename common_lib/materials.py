@@ -347,12 +347,18 @@ SHIELD_GRAPHITE_NAME = "Shield graphite"
 
 
 def shield_graphite_fields(material_choice: MaterialChoice) -> List[str]:
-    """Choice fields that name graphite in the shield, in choice order."""
+    """Choice fields whose shield material is graphite-like, in choice order."""
     return [
         field
         for field in _SHIELD_GRAPHITE_FIELDS
-        if graphite_material_base_name(getattr(material_choice, field) or "") == "Graphite"
+        if is_graphite_like(getattr(material_choice, field) or "")
     ]
+
+
+def _doped_shield_name(base: str) -> str:
+    if base == "Graphite":
+        return SHIELD_GRAPHITE_NAME
+    return f"Shield {base}"
 
 
 def apply_boron_ppm_to_shield_graphite(
@@ -361,12 +367,13 @@ def apply_boron_ppm_to_shield_graphite(
     boron_ppm: float,
     colors: Optional[Dict] = None,
 ) -> None:
-    """Point shield graphite zones at one graphite doped with ``boron_ppm``.
+    """Point graphite-like shield zones at a carbon-plus-boron copy.
 
-    The neutron-shield moderator is doped when it is graphite. The absorber
-    zone is doped only when that layer is graphite too; a boron-carbide wedge
-    is left alone. Fuel, disk, and reflector graphite keep their own materials.
-    Non-positive ppm leaves every zone untouched.
+    Each distinct graphite-like shield material keeps its own density and
+    thermal-scattering law. The composition becomes carbon plus ``boron_ppm``
+    of elemental boron by mass. A boron-carbide wedge is left alone. Fuel,
+    disk, and reflector graphite keep their own materials. Non-positive ppm
+    leaves every zone untouched.
     """
     ppm = float(boron_ppm)
     if ppm <= 0:
@@ -375,35 +382,43 @@ def apply_boron_ppm_to_shield_graphite(
     if not fields:
         print(
             f"Shield boron {ppm:g} ppm ignored: "
-            f"shield moderator is '{material_choice.neutron_shield_moderator}', not graphite."
+            f"shield moderator is '{material_choice.neutron_shield_moderator}', not graphite-like."
         )
         return
     weight_carbon, weight_boron = graphite_boron_weight_fractions(ppm)
 
     import openmc
 
-    spec = _MATERIAL_SPECS.get("Graphite")
-    density = spec.density if spec is not None else ISOTROPIC_GRAPHITE_DENSITY
-    scattering = spec.scattering if spec is not None and spec.scattering else "c_Graphite"
-
-    doped = openmc.Material(name=SHIELD_GRAPHITE_NAME)
-    doped.add_element("C", weight_carbon, percent_type="wo")
-    doped.add_element("B", weight_boron, percent_type="wo")
-    doped.add_s_alpha_beta(scattering)
-    doped.set_density("g/cm3", density)
-    materials_dict[SHIELD_GRAPHITE_NAME] = doped
-    if colors is not None:
-        for field in fields:
-            old = materials_dict.get(getattr(material_choice, field))
-            if old is not None and old in colors:
-                colors[doped] = colors[old]
-                break
+    grouped: Dict[str, List[str]] = {}
     for field in fields:
-        setattr(material_choice, field, SHIELD_GRAPHITE_NAME)
-    print(
-        f"Shield graphite: {ppm:g} ppm boron by mass "
-        f"({', '.join(fields)}; density {density} g/cm3, {scattering})."
-    )
+        base = graphite_material_base_name(getattr(material_choice, field) or "")
+        grouped.setdefault(base, []).append(field)
+
+    for base, group_fields in grouped.items():
+        spec = _MATERIAL_SPECS.get(base)
+        density = spec.density if spec is not None else ISOTROPIC_GRAPHITE_DENSITY
+        scattering = spec.scattering if spec is not None else "c_Graphite"
+        doped_name = _doped_shield_name(base)
+        doped = openmc.Material(name=doped_name)
+        doped.add_element("C", weight_carbon, percent_type="wo")
+        doped.add_element("B", weight_boron, percent_type="wo")
+        if scattering:
+            doped.add_s_alpha_beta(scattering)
+        doped.set_density("g/cm3", density)
+        materials_dict[doped_name] = doped
+        if colors is not None and doped not in colors:
+            for field in group_fields:
+                old = materials_dict.get(getattr(material_choice, field))
+                if old is not None and old in colors:
+                    colors[doped] = colors[old]
+                    break
+        for field in group_fields:
+            setattr(material_choice, field, doped_name)
+        scatter_note = scattering if scattering else "no thermal scattering"
+        print(
+            f"Shield graphite '{base}': {ppm:g} ppm boron by mass "
+            f"({', '.join(group_fields)}; density {density} g/cm3, {scatter_note})."
+        )
 
 
 def heavy_metal_density(mat, elements=None, z_min=90):
