@@ -100,7 +100,7 @@ export type SimulationParams = {
   dose_time: number;
   print_core_characteristics: boolean;
   boron_concentration_ppm: number;
-  /** Elemental boron by mass in the neutron-shield graphite. */
+  /** Elemental boron by mass mixed into every neutron-shield material. */
   shield_boron_ppm: number;
   ddd_tallies_only: boolean;
   ww_mesh_cm: number;

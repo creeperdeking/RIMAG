@@ -337,9 +337,10 @@ def apply_boron_ppm_to_fuel_graphite(
     )
 
 
-# Shield zones whose graphite can carry the append-menu boron concentration.
-# The fuel-side reflector bump and the disk stay on their own graphite copies.
-_SHIELD_GRAPHITE_FIELDS = (
+# Shield zones that take the append-menu boron concentration.
+# The fuel-side reflector bump and the disk stay on their own materials.
+# Void has nothing to dope. The boron-carbide wedge is already the absorber.
+_SHIELD_BORON_FIELDS = (
     "neutron_shield_moderator",
     "shaft_shield_moderator",
     "outer_cold_shield_moderator",
@@ -347,6 +348,7 @@ _SHIELD_GRAPHITE_FIELDS = (
     "neutron_absorber",
     "inner_neutron_shield_moderator",
 )
+_SHIELD_BORON_SKIP = {"", "Void", "Boron Carbide"}
 SHIELD_GRAPHITE_NAME = "Shield graphite"
 
 
@@ -354,9 +356,23 @@ def shield_graphite_fields(material_choice: MaterialChoice) -> List[str]:
     """Choice fields whose shield material is graphite-like, in choice order."""
     return [
         field
-        for field in _SHIELD_GRAPHITE_FIELDS
+        for field in _SHIELD_BORON_FIELDS
         if is_graphite_like(getattr(material_choice, field) or "")
     ]
+
+
+def shield_boron_fields(material_choice: MaterialChoice) -> List[str]:
+    """Shield fields that receive the append-menu boron concentration.
+
+    Graphite-like or not. Void and a boron-carbide wedge are left alone.
+    """
+    fields = []
+    for field in _SHIELD_BORON_FIELDS:
+        base = graphite_material_base_name(getattr(material_choice, field) or "")
+        if base in _SHIELD_BORON_SKIP:
+            continue
+        fields.append(field)
+    return fields
 
 
 def _doped_shield_name(base: str) -> str:
@@ -365,31 +381,108 @@ def _doped_shield_name(base: str) -> str:
     return f"Shield {base}"
 
 
+def _thermal_scattering_names(material) -> List[str]:
+    names = []
+    for entry in getattr(material, "_sab", None) or []:
+        if isinstance(entry, str):
+            names.append(entry)
+            continue
+        if isinstance(entry, tuple) and entry:
+            names.append(str(entry[0]))
+            continue
+        name = getattr(entry, "name", None)
+        if isinstance(name, str) and name:
+            names.append(name)
+    return names
+
+
+def _nuclide_weight_fractions(material) -> List[tuple[str, float]]:
+    import openmc
+
+    total = 0.0
+    weighted = []
+    for nuclide, density in material.get_nuclide_atom_densities().items():
+        mass = float(density) * float(openmc.data.atomic_mass(str(nuclide)))
+        weighted.append((str(nuclide), mass))
+        total += mass
+    if total <= 0.0:
+        raise ValueError(f"Material '{getattr(material, 'name', '')}' has no mass to dope.")
+    return [(nuclide, mass / total) for nuclide, mass in weighted]
+
+
+def _natural_boron_weight_fractions(weight_boron: float) -> List[tuple[str, float]]:
+    """Isotopic weight fractions for ``weight_boron`` of natural elemental boron."""
+    import openmc
+
+    scratch = openmc.Material()
+    scratch.add_element("B", 1.0, percent_type="wo")
+    scratch.set_density("g/cm3", 2.34)
+    return [
+        (nuclide, fraction * weight_boron)
+        for nuclide, fraction in _nuclide_weight_fractions(scratch)
+    ]
+
+
+def _material_density(material) -> float:
+    density = getattr(material, "density", None)
+    if isinstance(density, (int, float)):
+        return float(density)
+    return float(material.get_mass_density())
+
+
+def _boron_added_copy(material, name: str, weight_boron: float):
+    """Scale the host to make room, then add ``weight_boron`` of elemental boron.
+
+    Boron already in the host stays, scaled with the rest of the composition,
+    and the new boron is added on top. Each nuclide is written once so an
+    isotopic host is not replaced by a second natural-boron card.
+    """
+    import openmc
+
+    host = 1.0 - weight_boron
+    combined: Dict[str, float] = {}
+    for nuclide, fraction in _nuclide_weight_fractions(material):
+        combined[nuclide] = fraction * host
+    for nuclide, fraction in _natural_boron_weight_fractions(weight_boron):
+        combined[nuclide] = combined.get(nuclide, 0.0) + fraction
+    doped = openmc.Material(name=name)
+    for nuclide, fraction in combined.items():
+        if fraction <= 0.0:
+            continue
+        doped.add_nuclide(nuclide, fraction, percent_type="wo")
+    for sab in _thermal_scattering_names(material):
+        doped.add_s_alpha_beta(sab)
+    doped.set_density("g/cm3", _material_density(material))
+    return doped
+
+
 def apply_boron_ppm_to_shield_graphite(
     materials_dict: Dict[str, object],
     material_choice: MaterialChoice,
     boron_ppm: float,
     colors: Optional[Dict] = None,
 ) -> None:
-    """Point graphite-like shield zones at a carbon-plus-boron copy.
+    """Point each neutron-shield material at a copy that carries ``boron_ppm``.
 
-    Each distinct graphite-like shield material keeps its own density and
-    thermal-scattering law. The composition becomes carbon plus ``boron_ppm``
-    of elemental boron by mass. A boron-carbide wedge is left alone. Fuel,
-    disk, and reflector graphite keep their own materials. Non-positive ppm
-    leaves every zone untouched.
+    Graphite-like shields become carbon plus that boron and keep the card's
+    density and thermal-scattering law. Every other shield keeps its nuclides,
+    scaled so the added elemental boron is ``boron_ppm`` by mass, and keeps
+    its density and thermal scattering. Void and a boron-carbide wedge stay
+    as they are. Fuel, disk, and reflector materials are not shield zones.
+    Non-positive ppm leaves every zone untouched.
     """
     ppm = float(boron_ppm)
     if ppm <= 0:
         return
-    fields = shield_graphite_fields(material_choice)
+    fields = shield_boron_fields(material_choice)
     if not fields:
         print(
             f"Shield boron {ppm:g} ppm ignored: "
-            f"shield moderator is '{material_choice.neutron_shield_moderator}', not graphite-like."
+            f"neutron shield moderator is '{material_choice.neutron_shield_moderator}', "
+            f"and no other shield material can take boron."
         )
         return
-    weight_carbon, weight_boron = graphite_boron_weight_fractions(ppm)
+    _weight_carbon, weight_boron = graphite_boron_weight_fractions(ppm)
 
     import openmc
 
@@ -399,16 +492,31 @@ def apply_boron_ppm_to_shield_graphite(
         grouped.setdefault(base, []).append(field)
 
     for base, group_fields in grouped.items():
-        spec = _MATERIAL_SPECS.get(base)
-        density = spec.density if spec is not None else ISOTROPIC_GRAPHITE_DENSITY
-        scattering = spec.scattering if spec is not None else "c_Graphite"
         doped_name = _doped_shield_name(base)
-        doped = openmc.Material(name=doped_name)
-        doped.add_element("C", weight_carbon, percent_type="wo")
-        doped.add_element("B", weight_boron, percent_type="wo")
-        if scattering:
-            doped.add_s_alpha_beta(scattering)
-        doped.set_density("g/cm3", density)
+        if is_graphite_like(base):
+            spec = _MATERIAL_SPECS.get(base)
+            density = spec.density if spec is not None else ISOTROPIC_GRAPHITE_DENSITY
+            scattering = spec.scattering if spec is not None else "c_Graphite"
+            doped = openmc.Material(name=doped_name)
+            doped.add_element("C", 1.0 - weight_boron, percent_type="wo")
+            doped.add_element("B", weight_boron, percent_type="wo")
+            if scattering:
+                doped.add_s_alpha_beta(scattering)
+            doped.set_density("g/cm3", density)
+            scatter_note = scattering if scattering else "no thermal scattering"
+            kind = "graphite"
+        else:
+            source_name = getattr(material_choice, group_fields[0])
+            source = materials_dict.get(source_name)
+            if source is None:
+                raise ValueError(
+                    f"Shield material '{source_name}' is not in materials_dict."
+                )
+            doped = _boron_added_copy(source, doped_name, weight_boron)
+            density = float(doped.get_mass_density())
+            scatter_names = _thermal_scattering_names(doped)
+            scatter_note = ", ".join(scatter_names) if scatter_names else "no thermal scattering"
+            kind = "material"
         materials_dict[doped_name] = doped
         if colors is not None and doped not in colors:
             for field in group_fields:
@@ -418,9 +526,8 @@ def apply_boron_ppm_to_shield_graphite(
                     break
         for field in group_fields:
             setattr(material_choice, field, doped_name)
-        scatter_note = scattering if scattering else "no thermal scattering"
         print(
-            f"Shield graphite '{base}': {ppm:g} ppm boron by mass "
+            f"Shield {kind} '{base}': {ppm:g} ppm boron by mass "
             f"({', '.join(group_fields)}; density {density} g/cm3, {scatter_note})."
         )
 

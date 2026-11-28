@@ -8,6 +8,7 @@ from common_lib.materials import (
     graphite_material_base_name,
     is_graphite_like,
     natural_graphite_atom_proportions,
+    shield_boron_fields,
     shield_graphite_fields,
 )
 
@@ -247,6 +248,110 @@ def test_shield_graphite_fields_ignore_a_non_graphite_moderator():
         neutron_absorber="Boron Carbide",
     )
     assert shield_graphite_fields(choice) == []
+
+
+def test_shield_boron_fields_include_any_shield_except_void_and_carbide():
+    choice = _choice(
+        neutron_shield_moderator="Beryllium Oxide",
+        inner_neutron_shield_moderator="Lead",
+        shaft_shield_moderator="Void",
+        neutron_absorber="Boron Carbide",
+        neutron_reflector="Graphite",
+    )
+    assert shield_boron_fields(choice) == [
+        "neutron_shield_moderator",
+        "inner_neutron_shield_moderator",
+    ]
+
+
+def _element_ppm(material, element: str) -> float:
+    import openmc
+
+    total = 0.0
+    wanted = 0.0
+    for nuclide, density in material.get_nuclide_atom_densities().items():
+        mass = float(density) * openmc.data.atomic_mass(str(nuclide))
+        total += mass
+        symbol = "".join(ch for ch in str(nuclide) if ch.isalpha())
+        if symbol == element:
+            wanted += mass
+    if total <= 0.0:
+        return 0.0
+    return 1.0e6 * wanted / total
+
+
+def test_shield_boron_dopes_a_non_graphite_moderator():
+    from common_lib.materials import apply_boron_ppm_to_shield_graphite, make_materials
+
+    fields = {name: "Void" for name in MaterialChoice.model_fields}
+    fields.update(
+        {
+            "neutron_shield_moderator": "Beryllium Oxide",
+            "inner_neutron_shield_moderator": "Lead",
+            "neutron_absorber": "Boron Carbide",
+            "neutron_reflector": "Graphite",
+        }
+    )
+    materials, colors, choice = make_materials(
+        9.7,
+        MaterialChoice(**fields),
+        extra_names=["Beryllium Oxide", "Lead", "Boron Carbide", "Graphite"],
+    )
+    reflector_name = choice.neutron_reflector
+    plain_beo = _element_ppm(materials["Beryllium Oxide"], "Be")
+    plain_oxygen = _element_ppm(materials["Beryllium Oxide"], "O")
+    apply_boron_ppm_to_shield_graphite(materials, choice, 1000, colors)
+
+    assert choice.neutron_shield_moderator == "Shield Beryllium Oxide"
+    assert choice.inner_neutron_shield_moderator == "Shield Lead"
+    assert choice.neutron_absorber == "Boron Carbide"
+    assert choice.neutron_reflector == reflector_name
+    beo = materials["Shield Beryllium Oxide"]
+    lead = materials["Shield Lead"]
+    assert abs(beo.get_mass_density() - 2.92) < 1e-9
+    assert abs(lead.get_mass_density() - 11.34) < 1e-9
+    assert abs(_element_ppm(beo, "B") - 1000) < 1.0
+    assert abs(_element_ppm(lead, "B") - 1000) < 1.0
+    assert abs(_element_ppm(beo, "Be") / _element_ppm(beo, "O") - plain_beo / plain_oxygen) < 1e-6
+    assert _element_ppm(materials[reflector_name], "B") == 0.0
+    assert beo in colors
+    assert lead in colors
+
+
+def test_shield_boron_keeps_boron_already_in_the_host():
+    from common_lib.materials import apply_boron_ppm_to_shield_graphite, make_materials
+
+    fields = {name: "Void" for name in MaterialChoice.model_fields}
+    fields.update(
+        {
+            "neutron_shield_moderator": "Tungsten Diboride",
+            "inner_neutron_shield_moderator": "Borated Water",
+        }
+    )
+    materials, colors, choice = make_materials(
+        0.0,
+        MaterialChoice(**fields),
+        extra_names=["Tungsten Diboride", "Borated Water"],
+    )
+    host_boron = _element_ppm(materials["Tungsten Diboride"], "B")
+    water_boron = _element_ppm(materials["Borated Water"], "B")
+    apply_boron_ppm_to_shield_graphite(materials, choice, 1000, colors)
+
+    diboride = materials["Shield Tungsten Diboride"]
+    water = materials["Shield Borated Water"]
+    assert abs(diboride.get_mass_density() - 15.2) < 1e-6
+    assert abs(water.get_mass_density() - 1.016) < 1e-6
+    # The requested ppm is added on top of the boron the host already has.
+    assert abs(_element_ppm(diboride, "B") - (host_boron * 0.999 + 1000)) < 5.0
+    assert abs(_element_ppm(water, "B") - (water_boron * 0.999 + 1000)) < 5.0
+    assert _thermal_names(water) == ["c_H_in_H2O"]
+
+
+def _thermal_names(material) -> list[str]:
+    names = []
+    for entry in getattr(material, "_sab", None) or []:
+        names.append(entry[0] if isinstance(entry, tuple) else str(entry))
+    return names
 
 
 def test_borated_water_raises_when_ppm_exceeds_pure_boric_acid_limit():

@@ -53,15 +53,19 @@ def test_named_inner_layer_is_independent():
     assert inner_shield_material_name(_setup("Beryllium Oxide"), "Graphite") == "Beryllium Oxide"
 
 
+def _element_symbol(nuclide: str) -> str:
+    return "".join(ch for ch in str(nuclide) if ch.isalpha())
+
+
 def _boron_ppm(material) -> float:
     import openmc
 
     total = 0.0
     boron = 0.0
     for nuclide, density in material.get_nuclide_atom_densities().items():
-        mass = float(density) * openmc.data.atomic_mass(nuclide)
+        mass = float(density) * openmc.data.atomic_mass(str(nuclide))
         total += mass
-        if str(nuclide).startswith("B"):
+        if _element_symbol(nuclide) == "B":
             boron += mass
     if total <= 0.0:
         return 0.0
@@ -128,6 +132,17 @@ def test_shield_boron_dopes_different_graphite_like_inner_and_disc_materials():
     assert abs(_boron_ppm(hole) - 2500) < 1.0
     assert abs(_boron_ppm(disc) - 2500) < 1.0
     assert hole.get_mass_density() == disc.get_mass_density()
+
+
+def test_shield_boron_dopes_a_non_graphite_inner_hole_and_the_disc():
+    geom, choice = _build("Beryllium Oxide", "Graphite", 1500)
+    hole = _named(geom.universe, "hole_shield_moderator").fill
+    disc = _named(geom.universe, f"shield_moderator_0_{choice.neutron_shield_moderator}").fill
+    assert hole.name == "Shield Beryllium Oxide"
+    assert disc.name == "Shield graphite"
+    assert abs(_boron_ppm(hole) - 1500) < 1.0
+    assert abs(hole.get_mass_density() - 2.92) < 1e-9
+    assert abs(_boron_ppm(disc) - 1500) < 1.0
 
 
 def _cells(universe):
