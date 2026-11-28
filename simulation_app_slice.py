@@ -10,7 +10,9 @@ from app_slice_design.geometry import make_app_slice_geometry
 from app_slice_design.materials_map import (
     collect_material_names,
     ensure_materials_available,
+    inner_shield_material_name,
     material_choice_from_setup,
+    resolve_material_name,
 )
 from app_slice_design.plot_defaults import write_plot_defaults
 from app_slice_design.setup import load_app_slice_run_config
@@ -90,6 +92,8 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     material_choice = material_choice_from_setup(setup, sim.nsm_material)
+    inner_catalog = inner_shield_material_name(setup, sim.nsm_material)
+    inner_matches_disc = inner_catalog == resolve_material_name(sim.nsm_material)
     # Equivalent enrichment is applied in the paper script; here use the slider enrichment.
     u235_enrichment = float(setup.enrichment_pct)
 
@@ -130,7 +134,20 @@ def main(argv: list[str] | None = None) -> None:
         )
         return
 
-    geom = make_app_slice_geometry(config, materials_dict, material_choice)
+    # Same catalog name keeps the hole on the disc material, including its
+    # boron-doped copy. A different name uses the hole's own material.
+    hole_fill = (
+        material_choice.neutron_shield_moderator
+        if inner_matches_disc
+        else material_choice.inner_neutron_shield_moderator
+    )
+    print(
+        f"Inner neutron shield moderator: {hole_fill} "
+        f"(rotating disc: {material_choice.neutron_shield_moderator})"
+    )
+    geom = make_app_slice_geometry(
+        config, materials_dict, material_choice, inner_shield_fill=hole_fill
+    )
     write_plot_defaults(geom.bounding_box, origin=geom.render_origin)
 
     print(

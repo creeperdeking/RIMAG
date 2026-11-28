@@ -57,6 +57,7 @@ export const LAYER_IDS: LayerGroupId[] = [
   "fuel",
   "reflector",
   "shield_moderator",
+  "inner_shield_moderator",
   "shield_absorber",
   "tpv",
 ];
@@ -66,9 +67,25 @@ export const LAYER_TITLES: Record<LayerGroupId, string> = {
   fuel: "Fuel layer",
   reflector: "Reflector layer",
   shield_moderator: "Shield moderator",
+  inner_shield_moderator: "Inner neutron shield moderator",
   shield_absorber: "Shield absorber",
   tpv: "TPV layer",
 };
+
+const INNER_SHIELD_PLACEHOLDERS = new Set([
+  "inner neutron shield moderator",
+  "inner_shield_moderator",
+]);
+
+/** One catalog material. A blank or untitled row keeps the disc shield material. */
+export function singleInnerShield(rows: LayerRow[] | undefined, discMaterial: string): LayerRow[] {
+  const name = String(rows?.[0]?.name ?? "").trim();
+  const disc = discMaterial.trim() || "Graphite";
+  if (!name || INNER_SHIELD_PLACEHOLDERS.has(name.toLowerCase())) {
+    return [{ name: disc, cm: 1 }];
+  }
+  return [{ name, cm: 1 }];
+}
 
 export type SimulationParams = {
   run_mode: RunMode;
@@ -262,6 +279,10 @@ export function defaultSetup(): Setup {
   values.dims = true;
   values.layers = normalizeLayers(null);
   values.simulation = { ...DEFAULT_SIMULATION_PARAMS };
+  values.layers.inner_shield_moderator = singleInnerShield(
+    values.layers.inner_shield_moderator,
+    values.simulation.nsm_material,
+  );
   return values;
 }
 
@@ -311,6 +332,10 @@ export function normalizeSetup(data: unknown): Setup {
   }
   values.layers = normalizeLayers(raw.layers);
   values.simulation = normalizeSimulation(raw.simulation);
+  values.layers.inner_shield_moderator = singleInnerShield(
+    values.layers.inner_shield_moderator,
+    values.simulation.nsm_material,
+  );
   return values;
 }
 

@@ -405,6 +405,7 @@ def _build_hole_cells(
     conical_pitch_deg: float,
     open_period: bool,
     shared_chord: bool = False,
+    inner_shield_fill: Optional[str] = None,
 ) -> None:
     """Approximate hole fills with chord planes (fuel at +y)."""
     cuts = center_cuts(layout, shared_chord=shared_chord)
@@ -464,11 +465,13 @@ def _build_hole_cells(
         )
         used = used & ~refl_region
         mod_region = used & +mod_plane
+        # The disc sector keeps neutron_shield_moderator. This cell is only the
+        # inner hole, so its material can differ.
         _add_cell(
             cells,
             tracked,
             materials_dict,
-            material_choice.neutron_shield_moderator,
+            inner_shield_fill or material_choice.neutron_shield_moderator,
             mod_region,
             "hole_shield_moderator",
         )
@@ -520,6 +523,7 @@ def _one_disk_universe(
     conical_pitch_deg: float,
     open_period: bool = False,
     shared_chord: bool = False,
+    inner_shield_fill: Optional[str] = None,
 ) -> Tuple[openmc.Universe, Dict[str, List[openmc.Cell]], List[openmc.Cell]]:
     tracked: Dict[str, List[openmc.Cell]] = defaultdict(list)
     cells: List[openmc.Cell] = []
@@ -563,6 +567,7 @@ def _one_disk_universe(
         conical_pitch_deg,
         open_period,
         shared_chord,
+        inner_shield_fill,
     )
 
     # No radial pad outside r_out: multi-column layouts place centers 2*r_out
@@ -675,6 +680,7 @@ def make_app_slice_geometry(
     config: AppSliceRunConfig,
     materials_dict: Dict[str, openmc.Material],
     material_choice: MaterialChoice,
+    inner_shield_fill: Optional[str] = None,
 ) -> MakeAppSliceGeometryResult:
     setup = config.setup
     # Graphite-like reflector and shield moderator share one fuel-to-TPV chord,
@@ -729,6 +735,7 @@ def make_app_slice_geometry(
         conical_pitch_deg,
         open_period=False,
         shared_chord=shared_chord,
+        inner_shield_fill=inner_shield_fill,
     )
     n_layers, start_index = _transport_layer_count(
         period_cm, r_out_cm, conical_pitch_deg

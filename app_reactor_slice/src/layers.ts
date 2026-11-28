@@ -1,4 +1,4 @@
-import { EDITOR_GROUPS, LAYER_GROUPS, type LayerGroupId } from "./constants";
+import { EDITOR_GROUPS, INNER_SHIELD_GROUP, LAYER_GROUPS, type LayerGroupId } from "./constants";
 import { LAYER_TITLES, type Setup } from "./configurations";
 import type { LayerRow } from "./geometry";
 import { trisoFuelLayers } from "./geometry";
@@ -7,7 +7,7 @@ export type Groups = Record<LayerGroupId, LayerRow[]>;
 
 export function defaultGroups(): Groups {
   const groups = {} as Groups;
-  for (const [groupId, title] of EDITOR_GROUPS) {
+  for (const [groupId, title] of [...EDITOR_GROUPS, INNER_SHIELD_GROUP]) {
     groups[groupId as LayerGroupId] = [{ name: title, cm: 1 }];
   }
   return groups;

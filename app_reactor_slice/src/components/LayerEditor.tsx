@@ -8,6 +8,9 @@ type Props = {
   rows: LayerRow[];
   lines: string[];
   onChange: (rows: LayerRow[]) => void;
+  /** One material, no thickness and no extra rows. */
+  single?: boolean;
+  note?: string;
 };
 
 type Item = {
@@ -30,7 +33,7 @@ const newId = () => Math.random().toString(36).slice(2, 10);
 const toItems = (rows: LayerRow[]): Item[] =>
   rows.map((row) => ({ id: newId(), name: row.name, cm: row.cm, cmText: String(row.cm) }));
 
-const LayerEditor: React.FC<Props> = ({ title, fallback, rows, lines, onChange }) => {
+const LayerEditor: React.FC<Props> = ({ title, fallback, rows, lines, onChange, single = false, note }) => {
   const [items, setItems] = useState<Item[]>(() => toItems(rows));
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -147,35 +150,40 @@ const LayerEditor: React.FC<Props> = ({ title, fallback, rows, lines, onChange }
   };
 
   return (
-    <div className="layer-editor">
+    <div className={`layer-editor${single ? " single" : ""}`}>
       <div className="layer-editor-title">
-        {title} · {total.toFixed(2)} cm
+        {single ? title : `${title} · ${total.toFixed(2)} cm`}
       </div>
-      <div className="layer-editor-labels">
-        <span />
-        <span>Material</span>
-        <span>cm</span>
-        <span />
-      </div>
+      {note && <div className="layer-editor-notes">{note}</div>}
+      {!single && (
+        <div className="layer-editor-labels">
+          <span />
+          <span>Material</span>
+          <span>cm</span>
+          <span />
+        </div>
+      )}
       <div ref={listRef} onDragOver={onDragOver} onDrop={(event) => event.preventDefault()}>
-        {items.map((item, index) => (
+        {(single ? items.slice(0, 1) : items).map((item, index) => (
           <div
             key={item.id}
             className={`layer-row${draggingId === item.id ? " dragging" : ""}`}
             data-id={item.id}
           >
-            <button
-              type="button"
-              className="layer-handle"
-              draggable
-              title="Drag to reorder"
-              aria-label="Drag to reorder"
-              onDragStart={(event) => onDragStart(event, item.id)}
-              onDragEnd={finishDrag}
-              onKeyDown={(event) => nudge(event, item.id)}
-            >
-              ⋮⋮
-            </button>
+            {!single && (
+              <button
+                type="button"
+                className="layer-handle"
+                draggable
+                title="Drag to reorder"
+                aria-label="Drag to reorder"
+                onDragStart={(event) => onDragStart(event, item.id)}
+                onDragEnd={finishDrag}
+                onKeyDown={(event) => nudge(event, item.id)}
+              >
+                ⋮⋮
+              </button>
+            )}
             <input
               className="layer-name"
               type="text"
@@ -191,40 +199,44 @@ const LayerEditor: React.FC<Props> = ({ title, fallback, rows, lines, onChange }
                 patch(item.id, { name: fallback }, true);
               }}
             />
-            <input
-              className="layer-cm"
-              type="number"
-              aria-label="cm"
-              min={0.01}
-              max={20}
-              step={0.01}
-              value={item.cmText}
-              onChange={(event) => {
-                const cmText = event.target.value;
-                const value = event.target.valueAsNumber;
-                const inRange = Number.isFinite(value) && value >= 0.01 && value <= 20;
-                patch(item.id, { cmText, ...(inRange ? { cm: value } : {}) }, inRange);
-              }}
-              onBlur={(event) => {
-                const value = clampCm(event.currentTarget.valueAsNumber);
-                patch(item.id, { cm: value, cmText: String(value) }, true);
-              }}
-            />
-            <div className="layer-action">
-              {index === 0 ? (
-                <span className="layer-base">base</span>
-              ) : (
-                <button
-                  type="button"
-                  className="layer-remove"
-                  title="Remove this material"
-                  aria-label="Remove this material"
-                  onClick={() => remove(item.id)}
-                >
-                  ×
-                </button>
-              )}
-            </div>
+            {!single && (
+              <input
+                className="layer-cm"
+                type="number"
+                aria-label="cm"
+                min={0.01}
+                max={20}
+                step={0.01}
+                value={item.cmText}
+                onChange={(event) => {
+                  const cmText = event.target.value;
+                  const value = event.target.valueAsNumber;
+                  const inRange = Number.isFinite(value) && value >= 0.01 && value <= 20;
+                  patch(item.id, { cmText, ...(inRange ? { cm: value } : {}) }, inRange);
+                }}
+                onBlur={(event) => {
+                  const value = clampCm(event.currentTarget.valueAsNumber);
+                  patch(item.id, { cm: value, cmText: String(value) }, true);
+                }}
+              />
+            )}
+            {!single && (
+              <div className="layer-action">
+                {index === 0 ? (
+                  <span className="layer-base">base</span>
+                ) : (
+                  <button
+                    type="button"
+                    className="layer-remove"
+                    title="Remove this material"
+                    aria-label="Remove this material"
+                    onClick={() => remove(item.id)}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -235,9 +247,11 @@ const LayerEditor: React.FC<Props> = ({ title, fallback, rows, lines, onChange }
           ))}
         </div>
       )}
-      <button type="button" className="layer-add" onClick={add}>
-        Add material
-      </button>
+      {!single && (
+        <button type="button" className="layer-add" onClick={add}>
+          Add material
+        </button>
+      )}
     </div>
   );
 };

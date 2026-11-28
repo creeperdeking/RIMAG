@@ -258,6 +258,10 @@ h1, h2, .fw-semibold {
   align-items: center;
 }
 
+.layer-editor.single .layer-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .layer-editor-labels {
   font-weight: 600;
   margin: 0 0 0.3rem;

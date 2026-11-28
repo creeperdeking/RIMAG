@@ -61,6 +61,9 @@ class MaterialChoice(BaseModel):
     coolant: str
     gamma_shield: str
     rotary_axle: str
+    # Hole on the fuel-to-TPV chord. The rotating-disc shield moderator stays
+    # on neutron_shield_moderator, so the two can differ.
+    inner_neutron_shield_moderator: str = "Graphite"
 
 
 atoms: Dict[str, Atom] = {
@@ -342,6 +345,7 @@ _SHIELD_GRAPHITE_FIELDS = (
     "outer_cold_shield_moderator",
     "shield_moderator_cladding",
     "neutron_absorber",
+    "inner_neutron_shield_moderator",
 )
 SHIELD_GRAPHITE_NAME = "Shield graphite"
 

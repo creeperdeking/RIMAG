@@ -10,6 +10,7 @@ import VisualisationTab from "./components/VisualisationTab";
 import ZoneChart, { columnPoses } from "./components/ZoneChart";
 import { LAYER_GROUPS, LAYER_MATCH_NOTE, TAB_KEYS, type LayerGroupId, type TabKey } from "./constants";
 import {
+  LAYER_TITLES,
   NUMERIC_FIELDS,
   RELOAD_FRACTIONS,
   formatPower,
@@ -91,9 +92,7 @@ function isPlaceholderStack(rows: LayerRow[], id: LayerGroupId): boolean {
 }
 
 function titleOf(id: LayerGroupId): string {
-  if (id === "disk") return "Disk layer";
-  const found = LAYER_GROUPS.find(([groupId]) => groupId === id);
-  return found ? found[1] : id;
+  return LAYER_TITLES[id] ?? id;
 }
 
 /** Replace stacks that are still the titled 1 cm placeholder with the saved ones. */
@@ -491,7 +490,11 @@ const Explorer: React.FC = () => {
   };
 
   const setGroupRows = (id: LayerGroupId, rows: LayerRow[]) => {
-    setSetup((prev) => ({ ...prev, layers: { ...prev.layers, [id]: rows } }));
+    const next =
+      id === "inner_shield_moderator"
+        ? [{ name: (rows[0]?.name ?? "").trim() || "Graphite", cm: 1 }]
+        : rows;
+    setSetup((prev) => ({ ...prev, layers: { ...prev.layers, [id]: next } }));
   };
 
   const withOperatingPoint = (base: Setup): Setup => ({
@@ -785,17 +788,30 @@ const Explorer: React.FC = () => {
 
   const editorGroups: Array<[LayerGroupId, string]> = [
     ["disk", "Disk layer"],
-    ...LAYER_GROUPS.filter(([id]) => id !== "fuel").map(([id, title]): [LayerGroupId, string] => [id, title]),
+    ...LAYER_GROUPS.filter(([id]) => id !== "fuel").flatMap(([id, title]): Array<[LayerGroupId, string]> =>
+      id === "shield_moderator"
+        ? [
+            [id, title],
+            ["inner_shield_moderator", "Inner neutron shield moderator"],
+          ]
+        : [[id, title]],
+    ),
   ];
 
   const renderEditor = (id: LayerGroupId, title: string) => (
     <LayerEditor
       key={id}
       title={title}
-      fallback={title}
+      fallback={id === "inner_shield_moderator" ? setup.simulation.nsm_material || "Graphite" : title}
       rows={groups[id]}
       lines={materialLines(groups[id], specs, mixed, setup.simulation.nsm_material)}
       onChange={(rows) => setGroupRows(id, rows)}
+      single={id === "inner_shield_moderator"}
+      note={
+        id === "inner_shield_moderator"
+          ? "One material. It fills the inner hole on the fuel-to-TPV chord. The shield moderator on the rotating disc stays its own material."
+          : undefined
+      }
     />
   );
 

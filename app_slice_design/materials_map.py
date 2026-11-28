@@ -73,6 +73,24 @@ def collect_material_names(setup: AppSliceSetup, nsm_material: str) -> Set[str]:
     return names
 
 
+_INNER_SHIELD_PLACEHOLDERS = {
+    "inner neutron shield moderator",
+    "inner_shield_moderator",
+}
+
+
+def inner_shield_material_name(setup: AppSliceSetup, nsm_material: str) -> str:
+    """Catalog material for the hole shield. A missing row keeps the disc material."""
+    disc = resolve_material_name(nsm_material)
+    rows = setup.layers.get("inner_shield_moderator") or []
+    if not rows:
+        return disc
+    raw = (rows[0].name or "").strip()
+    if not raw or raw.casefold() in _INNER_SHIELD_PLACEHOLDERS:
+        return disc
+    return resolve_material_name(raw)
+
+
 def material_choice_from_setup(setup: AppSliceSetup, nsm_material: str) -> MaterialChoice:
     layers = setup.layers
     fuel_name = _first_name(layers.get("fuel", []), "Uranium Dioxide") or "Uranium Dioxide"
@@ -101,6 +119,7 @@ def material_choice_from_setup(setup: AppSliceSetup, nsm_material: str) -> Mater
         shaft_shield_moderator=nsm,
         outer_cold_shield_moderator=nsm,
         neutron_shield_moderator=nsm,
+        inner_neutron_shield_moderator=inner_shield_material_name(setup, nsm_material),
         shield_moderator_cladding=nsm,
         gamma_shield="Void",
         outer_empty_zone="Void",
