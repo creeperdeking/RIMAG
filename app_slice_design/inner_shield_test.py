@@ -53,6 +53,83 @@ def test_named_inner_layer_is_independent():
     assert inner_shield_material_name(_setup("Beryllium Oxide"), "Graphite") == "Beryllium Oxide"
 
 
+def _boron_ppm(material) -> float:
+    import openmc
+
+    total = 0.0
+    boron = 0.0
+    for nuclide, density in material.get_nuclide_atom_densities().items():
+        mass = float(density) * openmc.data.atomic_mass(nuclide)
+        total += mass
+        if str(nuclide).startswith("B"):
+            boron += mass
+    if total <= 0.0:
+        return 0.0
+    return 1.0e6 * boron / total
+
+
+def _build(inner: str, nsm: str, ppm: float):
+    """Same order as simulation_app_slice: dope, then choose the hole fill."""
+    from app_slice_design.geometry import make_app_slice_geometry
+    from app_slice_design.materials_map import (
+        material_choice_from_setup,
+        resolve_material_name,
+    )
+    from app_slice_design.setup import AppSliceRunConfig, AppSliceSimulationParams
+    from common_lib.materials import apply_boron_ppm_to_shield_graphite, make_materials
+
+    setup = _setup(inner)
+    choice = material_choice_from_setup(setup, nsm)
+    matches = inner_shield_material_name(setup, nsm) == resolve_material_name(nsm)
+    materials, colors, choice = make_materials(
+        9.7,
+        choice,
+        borated_water_moderator_boron_ppm=0.0,
+        moderator_density=1.0,
+        gadolinium_oxide_in_fuel_proportion=0.0,
+    )
+    apply_boron_ppm_to_shield_graphite(materials, choice, ppm, colors)
+    hole_fill = (
+        choice.neutron_shield_moderator
+        if matches
+        else choice.inner_neutron_shield_moderator
+    )
+    config = AppSliceRunConfig(
+        setup=setup,
+        simulation=AppSliceSimulationParams(conical_pitch=0, n_batches=1, n_threads=1),
+    )
+    geom = make_app_slice_geometry(
+        config, materials, choice, inner_shield_fill=hole_fill
+    )
+    return geom, choice
+
+
+def _named(universe, name: str):
+    return next(cell for cell in _cells(universe) if cell.name == name)
+
+
+def test_shield_boron_dopes_the_disc_sector_and_the_inner_hole():
+    geom, choice = _build("Graphite", "Graphite", 1000)
+    hole = _named(geom.universe, "hole_shield_moderator").fill
+    # Index 0 is the shield-moderator sheet. Later indexes are the disk stack.
+    disc = _named(geom.universe, f"shield_moderator_0_{choice.neutron_shield_moderator}").fill
+    reflector = _named(geom.universe, "hole_reflector").fill
+    assert hole.name == disc.name
+    assert abs(_boron_ppm(hole) - 1000) < 1.0
+    assert abs(_boron_ppm(disc) - 1000) < 1.0
+    assert _boron_ppm(reflector) == 0.0
+
+
+def test_shield_boron_dopes_different_graphite_like_inner_and_disc_materials():
+    geom, choice = _build("Natural Graphite", "Graphite", 2500)
+    hole = _named(geom.universe, "hole_shield_moderator").fill
+    disc = _named(geom.universe, f"shield_moderator_0_{choice.neutron_shield_moderator}").fill
+    assert hole.name != disc.name
+    assert abs(_boron_ppm(hole) - 2500) < 1.0
+    assert abs(_boron_ppm(disc) - 2500) < 1.0
+    assert hole.get_mass_density() == disc.get_mass_density()
+
+
 def _cells(universe):
     found = []
     for cell in universe.cells.values():
