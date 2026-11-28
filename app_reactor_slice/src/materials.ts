@@ -90,8 +90,9 @@ export function isGraphiteLike(name: string, shieldModerator = "Graphite"): bool
 }
 
 export function catalogNameForLayer(name: string, shieldModerator = "Graphite"): string {
-  const trimmed = name.trim();
-  if (trimmed === "Shield moderator") return shieldModerator.trim() || "Graphite";
+  const trimmed = String(name ?? "").trim();
+  const shield = typeof shieldModerator === "string" ? shieldModerator.trim() : "";
+  if (trimmed === "Shield moderator") return shield || "Graphite";
   return ROLE_CATALOG_NAMES[trimmed] ?? trimmed;
 }
 

@@ -42,7 +42,7 @@ export function sharedGraphiteChord(
   const leftNames = solidMaterialNames(left);
   const rightNames = solidMaterialNames(right);
   if (!leftNames.length || !rightNames.length) return false;
-  return leftNames.every(isGraphite) && rightNames.every(isGraphite);
+  return leftNames.every((name) => isGraphite(name)) && rightNames.every((name) => isGraphite(name));
 }
 
 export function groupThicknesses(groups: Groups): Array<[string, number]> {
