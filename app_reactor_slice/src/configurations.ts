@@ -37,6 +37,12 @@ export const NUMERIC_FIELDS = {
   shell_emissivity: [0.05, 1.0, 0.01, 0.3],
   /** Air-bridge chart: 0 = 0.74 eV, 1 = 0.90 eV, 2 = 1.10 eV. */
   tpv_airbridge_cell: [0, 2, 1, 0],
+  /** Modelica run length [min]. 11.67 min is the previous 700 s stop. */
+  rimael_run_min: [0.1, 180, 0.01, 11.67],
+  /** Disk speed until the 4 min stop [rev/s]. */
+  rimael_disk_rps: [0, 20, 0.01, 0.2],
+  /** Chart series: disk section 0…11. */
+  rimael_section: [0, 11, 1, 0],
   stack_m: [0.1, 20.0, 0.1, 1.0],
   columns: [1.0, 3.0, 1.0, 1.0],
 } as const;
@@ -51,6 +57,7 @@ export const LAYER_IDS: LayerGroupId[] = [
   "fuel",
   "reflector",
   "shield_moderator",
+  "inner_shield_moderator",
   "shield_absorber",
   "tpv",
 ];
@@ -60,9 +67,25 @@ export const LAYER_TITLES: Record<LayerGroupId, string> = {
   fuel: "Fuel layer",
   reflector: "Reflector layer",
   shield_moderator: "Shield moderator",
+  inner_shield_moderator: "Inner neutron shield moderator",
   shield_absorber: "Shield absorber",
   tpv: "TPV layer",
 };
+
+const INNER_SHIELD_PLACEHOLDERS = new Set([
+  "inner neutron shield moderator",
+  "inner_shield_moderator",
+]);
+
+/** One catalog material. A blank or untitled row keeps the disc shield material. */
+export function singleInnerShield(rows: LayerRow[] | undefined, discMaterial: string): LayerRow[] {
+  const name = String(rows?.[0]?.name ?? "").trim();
+  const disc = discMaterial.trim() || "Graphite";
+  if (!name || INNER_SHIELD_PLACEHOLDERS.has(name.toLowerCase())) {
+    return [{ name: disc, cm: 1 }];
+  }
+  return [{ name, cm: 1 }];
+}
 
 export type SimulationParams = {
   run_mode: RunMode;
@@ -77,6 +100,8 @@ export type SimulationParams = {
   dose_time: number;
   print_core_characteristics: boolean;
   boron_concentration_ppm: number;
+  /** Elemental boron by mass mixed into every neutron-shield material. */
+  shield_boron_ppm: number;
   ddd_tallies_only: boolean;
   ww_mesh_cm: number;
   ww_energy_groups: number;
@@ -101,6 +126,7 @@ export const DEFAULT_SIMULATION_PARAMS: SimulationParams = {
   dose_time: 10,
   print_core_characteristics: true,
   boron_concentration_ppm: 0,
+  shield_boron_ppm: 0,
   ddd_tallies_only: true,
   ww_mesh_cm: 40,
   ww_energy_groups: 10,
@@ -150,6 +176,7 @@ export function normalizeSimulation(raw: unknown): SimulationParams {
   const conicalPitch = Number(source.conical_pitch);
   const doseTime = Number(source.dose_time);
   const boronPpm = Number(source.boron_concentration_ppm);
+  const shieldBoronPpm = Number(source.shield_boron_ppm);
   const wwMesh = Number(source.ww_mesh_cm);
   const wwGroups = Number(source.ww_energy_groups);
   const thermalMw = Number(source.thermal_power_mw);
@@ -182,6 +209,10 @@ export function normalizeSimulation(raw: unknown): SimulationParams {
       Number.isFinite(boronPpm) && boronPpm >= 0
         ? boronPpm
         : DEFAULT_SIMULATION_PARAMS.boron_concentration_ppm,
+    shield_boron_ppm:
+      Number.isFinite(shieldBoronPpm) && shieldBoronPpm >= 0
+        ? shieldBoronPpm
+        : DEFAULT_SIMULATION_PARAMS.shield_boron_ppm,
     ddd_tallies_only: pickBoolean(source.ddd_tallies_only, DEFAULT_SIMULATION_PARAMS.ddd_tallies_only),
     ww_mesh_cm:
       Number.isFinite(wwMesh) && wwMesh > 0 ? wwMesh : DEFAULT_SIMULATION_PARAMS.ww_mesh_cm,
@@ -248,6 +279,10 @@ export function defaultSetup(): Setup {
   values.dims = true;
   values.layers = normalizeLayers(null);
   values.simulation = { ...DEFAULT_SIMULATION_PARAMS };
+  values.layers.inner_shield_moderator = singleInnerShield(
+    values.layers.inner_shield_moderator,
+    values.simulation.nsm_material,
+  );
   return values;
 }
 
@@ -297,6 +332,10 @@ export function normalizeSetup(data: unknown): Setup {
   }
   values.layers = normalizeLayers(raw.layers);
   values.simulation = normalizeSimulation(raw.simulation);
+  values.layers.inner_shield_moderator = singleInnerShield(
+    values.layers.inner_shield_moderator,
+    values.simulation.nsm_material,
+  );
   return values;
 }
 

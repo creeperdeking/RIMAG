@@ -36,8 +36,7 @@ export type QueueItemResult = {
   pmaxFluenceM2?: number | null;
   pmaxOutsideRange?: boolean | null;
   pmaxFastRemaining?: number | null;
-  pmaxTruncatedRemaining?: number | null;
-  /** Fuel lifetime at this item's slice power, until mean keff stays below 1. */
+  pmaxTruncatedRemaining?: number | null;  /** Fuel lifetime at this item's slice power, until mean keff stays below 1. */
   depletionYears?: number | null;
   depletionDays?: number | null;
   depletionBurnup?: number | null;

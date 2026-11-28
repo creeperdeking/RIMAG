@@ -16,6 +16,12 @@ export const LAYER_GROUPS = [
 
 export const DISK_GROUP = ["disk", "Disk layer", ["#000000", "#171717", "#404040", "#737373"]] as const;
 
+/** One material for the hole on the fuel-to-TPV chord. Not part of the disc stack. */
+export const INNER_SHIELD_GROUP = [
+  "inner_shield_moderator",
+  "Inner neutron shield moderator",
+] as const;
+
 export const EDITOR_GROUPS = [DISK_GROUP, ...LAYER_GROUPS] as const;
 
 export type LayerGroupId =
@@ -23,6 +29,7 @@ export type LayerGroupId =
   | "fuel"
   | "reflector"
   | "shield_moderator"
+  | "inner_shield_moderator"
   | "shield_absorber"
   | "tpv";
 
@@ -34,6 +41,7 @@ export const TAB_KEYS = [
   "overview",
   "fuel",
   "designer",
+  "thermophotovoltaics",
   "thermodynamic",
   "simulation",
   "visualisation",
@@ -43,6 +51,9 @@ export type TabKey = (typeof TAB_KEYS)[number];
 /** Materials accepted as the neutron shield moderator. */
 export const NSM_MATERIALS = [
   "Graphite",
+  "Natural Graphite",
+  "Low Density Graphite",
+  "Graphite NO Scattering",
   "Beryllium Oxide",
   "High Density PolyEthylene",
   "Titanium Hydride",

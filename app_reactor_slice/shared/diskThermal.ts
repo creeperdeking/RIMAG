@@ -56,9 +56,8 @@ export function shieldGraphiteThermal(
 
 /**
  * Helium conductance of one shield conductor when its arc is fully covered.
- * The shield uses the same helium as the other gaps: both faces,
- * G = k A / d, with k taken from the fuel gap and the shell gap.
- * `shieldAreaM2` is the one-face disk-facing area of every shield zone.
+ * One disk face uses the fuel-side gap, the other the shell-side gap,
+ * each G = k A / d over the one-face shield area. `shieldAreaM2` is that area.
  */
 export function shieldHeliumPerFace(
   gFuelBothFaces: number,
@@ -70,11 +69,9 @@ export function shieldHeliumPerFace(
   nSections: number = RIMAEL_N_SECTIONS,
 ): number {
   const shield = Number.isFinite(shieldAreaM2) && shieldAreaM2 > 0 ? shieldAreaM2 : 0;
-  const fuelSide = fuelAreaM2 > 0 ? Math.max(gFuelBothFaces, 0) * (shield / fuelAreaM2) : 0;
-  const shellSide = tpvAreaM2 > 0 ? Math.max(gShellBothFaces, 0) * (shield / tpvAreaM2) : 0;
-  const arcSum = Math.max(shieldArcSum, 1e-6);
-  const n = Math.max(1, Math.round(nSections));
-  return (fuelSide + shellSide) / (2 * n * arcSum);
+  const fuelFace = fuelAreaM2 > 0 ? Math.max(gFuelBothFaces, 0) * (shield / fuelAreaM2) / 2 : 0;
+  const shellFace = tpvAreaM2 > 0 ? Math.max(gShellBothFaces, 0) * (shield / tpvAreaM2) / 2 : 0;
+  return perFaceFullWindow(fuelFace + shellFace, shieldArcSum, nSections);
 }
 
 /** C = ρ · A · t · c_p for a single lumped graphite body (e.g. FuelPlate). */
@@ -96,6 +93,25 @@ export function graphiteLumpedThermal(areaM2: number, thicknessCm: number): Grap
  * and through-thickness conductance of that sector:
  * G = k · (A/N) / t
  */
+/**
+ * Rotational kinetic energy of one solid graphite annulus about its axis.
+ * I = ½ M (r_i² + r_o²), E = ½ I ω², ω = 2π × rev/s. Voids are not in the mass.
+ */
+export function diskRotationalKineticEnergy(options: {
+  innerRadiusM: number;
+  outerRadiusM: number;
+  thicknessCm: number;
+  revPerS: number;
+}): { massKg: number; inertiaKgM2: number; energyJ: number } {
+  const inner = Math.max(0, options.innerRadiusM);
+  const outer = Math.max(inner, options.outerRadiusM);
+  const thicknessM = Math.max(0, options.thicknessCm) / 100;
+  const massKg = GRAPHITE_DENSITY_KG_M3 * Math.PI * (outer * outer - inner * inner) * thicknessM;
+  const inertiaKgM2 = 0.5 * massKg * (inner * inner + outer * outer);
+  const omega = 2 * Math.PI * Math.max(0, options.revPerS);
+  return { massKg, inertiaKgM2, energyJ: 0.5 * inertiaKgM2 * omega * omega };
+}
+
 export function diskSectionThermal(
   areaM2: number,
   thicknessCm: number,

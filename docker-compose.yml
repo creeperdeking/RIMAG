@@ -5,6 +5,8 @@ services:
     working_dir: /work
     environment:
       RIMAG_THREADS: "${RIMAG_THREADS:-20}"
+      # Empty uses WW_MAX_GENERATION_TRACKS in common_lib/simlib.py.
+      RIMAG_MAX_GENERATION_TRACKS: "${RIMAG_MAX_GENERATION_TRACKS:-}"
       OPENMC_CROSS_SECTIONS: /data/cross_sections.xml
     volumes:
       - ${RIMAG_RUN_DIR:-./runs/default}:/work

@@ -63,8 +63,7 @@ type QueueItemResult = {
   pmaxFluenceM2?: number | null;
   pmaxOutsideRange?: boolean | null;
   pmaxFastRemaining?: number | null;
-  pmaxTruncatedRemaining?: number | null;
-  depletionYears?: number | null;
+  pmaxTruncatedRemaining?: number | null;  depletionYears?: number | null;
   depletionDays?: number | null;
   depletionBurnup?: number | null;
   depletionBelowOne?: boolean | null;

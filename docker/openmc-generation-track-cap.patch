@@ -1,0 +1,220 @@
+diff --git a/docs/source/io_formats/settings.rst b/docs/source/io_formats/settings.rst
+index b3dc94b18..847f673f0 100644
+--- a/docs/source/io_formats/settings.rst
++++ b/docs/source/io_formats/settings.rst
+@@ -434,6 +434,17 @@ can split during a history.
+ 
+   *Default*: 1000
+ 
++----------------------------------
++``<max_generation_tracks>`` Element
++----------------------------------
++
++The ``<max_generation_tracks>`` element sets the maximum number of tracks in
++one secondary generation. When the next generation is larger than this, those
++tracks are discarded and no later secondary generation is transported. Tracks
++already completed in the fission generation are kept. Zero disables the limit.
++
++  *Default*: 0
++
+ -----------------------------
+ ``<max_secondaries>`` Element
+ -----------------------------
+diff --git a/include/openmc/settings.h b/include/openmc/settings.h
+index 3ad5f502c..e5b5ea101 100644
+--- a/include/openmc/settings.h
++++ b/include/openmc/settings.h
+@@ -176,6 +176,9 @@ extern double free_gas_threshold;        //!< Threshold multiplier for free gas
+ 
+ extern int
+   max_history_splits; //!< maximum number of particle splits for weight windows
++extern int64_t max_generation_tracks; //!< maximum tracks in one secondary
++                                      //!< generation. Discard that generation
++                                      //!< above this. 0 disables the limit
+ extern int max_secondaries;       //!< maximum number of secondaries in the bank
+ extern int64_t ssw_max_particles; //!< maximum number of particles to be
+                                   //!< banked on surfaces per process
+diff --git a/openmc/settings.py b/openmc/settings.py
+index e723f7142..cac11b92f 100644
+--- a/openmc/settings.py
++++ b/openmc/settings.py
+@@ -156,6 +156,11 @@ class Settings:
+         Maximum number of times a particle can split during a history
+ 
+         .. versionadded:: 0.13
++    max_generation_tracks : int
++        Maximum tracks in one secondary generation. A generation above this
++        limit is discarded, and later secondary generations are not run.
++        Tracks already completed in the fission generation are kept. Zero
++        disables the limit.
+     max_secondaries : int
+         Maximum secondary bank size
+ 
+@@ -496,6 +501,7 @@ class Settings:
+         self._weight_windows_file = None
+         self._weight_window_checkpoints = {}
+         self._max_history_splits = None
++        self._max_generation_tracks = None
+         self._max_tracks = None
+         self._max_secondaries = None
+         self._use_decay_photons = None
+@@ -1352,6 +1358,16 @@ class Settings:
+         cv.check_greater_than('max particle splits', value, 0)
+         self._max_history_splits = value
+ 
++    @property
++    def max_generation_tracks(self) -> int:
++        return self._max_generation_tracks
++
++    @max_generation_tracks.setter
++    def max_generation_tracks(self, value: int):
++        cv.check_type('maximum generation tracks', value, Integral)
++        cv.check_greater_than('maximum generation tracks', value, 0, equality=True)
++        self._max_generation_tracks = value
++
+     @property
+     def max_secondaries(self) -> int:
+         return self._max_secondaries
+@@ -1994,6 +2010,11 @@ class Settings:
+             elem = ET.SubElement(root, "max_history_splits")
+             elem.text = str(self._max_history_splits)
+ 
++    def _create_max_generation_tracks_subelement(self, root):
++        if self._max_generation_tracks is not None:
++            elem = ET.SubElement(root, "max_generation_tracks")
++            elem.text = str(self._max_generation_tracks)
++
+     def _create_max_secondaries_subelement(self, root):
+         if self._max_secondaries is not None:
+             elem = ET.SubElement(root, "max_secondaries")
+@@ -2480,6 +2501,11 @@ class Settings:
+         if text is not None:
+             self.max_history_splits = int(text)
+ 
++    def _max_generation_tracks_from_xml_element(self, root):
++        text = get_text(root, 'max_generation_tracks')
++        if text is not None:
++            self.max_generation_tracks = int(text)
++
+     def _max_secondaries_from_xml_element(self, root):
+         text = get_text(root, 'max_secondaries')
+         if text is not None:
+@@ -2632,6 +2658,7 @@ class Settings:
+         self._create_weight_windows_file_element(element)
+         self._create_weight_window_checkpoints_subelement(element)
+         self._create_max_history_splits_subelement(element)
++        self._create_max_generation_tracks_subelement(element)
+         self._create_max_tracks_subelement(element)
+         self._create_max_secondaries_subelement(element)
+         self._create_random_ray_subelement(element, mesh_memo)
+@@ -2750,6 +2777,7 @@ class Settings:
+         settings._weight_window_generators_from_xml_element(elem, meshes)
+         settings._weight_window_checkpoints_from_xml_element(elem)
+         settings._max_history_splits_from_xml_element(elem)
++        settings._max_generation_tracks_from_xml_element(elem)
+         settings._max_tracks_from_xml_element(elem)
+         settings._max_secondaries_from_xml_element(elem)
+         settings._random_ray_from_xml_element(elem, meshes)
+diff --git a/src/finalize.cpp b/src/finalize.cpp
+index fd891d9dd..100db831a 100644
+--- a/src/finalize.cpp
++++ b/src/finalize.cpp
+@@ -101,6 +101,7 @@ int openmc_finalize()
+   settings::max_secondaries = 10000;
+   settings::max_particle_events = 1'000'000;
+   settings::max_history_splits = 10'000'000;
++  settings::max_generation_tracks = 0;
+   settings::max_tracks = 1000;
+   settings::max_write_lost_particles = -1;
+   settings::n_log_bins = 8000;
+diff --git a/src/settings.cpp b/src/settings.cpp
+index 1798869bd..057cbc82b 100644
+--- a/src/settings.cpp
++++ b/src/settings.cpp
+@@ -122,6 +122,7 @@ int n_batches;
+ int n_max_batches;
+ int max_secondaries {10000};
+ int max_history_splits {10'000'000};
++int64_t max_generation_tracks {0};
+ int max_tracks {1000};
+ ResScatMethod res_scat_method {ResScatMethod::rvs};
+ double res_scat_energy_min {0.01};
+@@ -1266,6 +1267,16 @@ void read_settings_xml(pugi::xml_node root)
+       std::stoi(get_node_value(root, "max_history_splits"));
+   }
+ 
++  // 0 leaves secondary generations uncapped. A positive value discards a
++  // generation whose track count is above the limit before those tracks run.
++  if (check_for_node(root, "max_generation_tracks")) {
++    settings::max_generation_tracks =
++      std::stoll(get_node_value(root, "max_generation_tracks"));
++    if (settings::max_generation_tracks < 0) {
++      fatal_error("max_generation_tracks must be zero or positive.");
++    }
++  }
++
+   if (check_for_node(root, "max_tracks")) {
+     settings::max_tracks = std::stoi(get_node_value(root, "max_tracks"));
+   }
+diff --git a/src/simulation.cpp b/src/simulation.cpp
+index d0e69e7f5..5f4f45254 100644
+--- a/src/simulation.cpp
++++ b/src/simulation.cpp
+@@ -1065,6 +1065,33 @@ void assign_eigenvalue_fission_progeny()
+   }
+ }
+ 
++//! Drop a secondary generation that is too large to transport.
++//!
++//! The fission sites already banked by earlier tracks stay. The discarded
++//! tracks never start, and the cleared bank ends the secondary-generation loop.
++void discard_secondary_generation(int generation, int64_t n_tracks)
++{
++  simulation::shared_secondary_bank_write.clear();
++  simulation::shared_secondary_bank_read.clear();
++  if (mpi::master) {
++    warning(fmt::format(
++      "Secondary generation {} has {} tracks, above the limit of {}. "
++      "This generation is discarded and later secondary generations are not "
++      "run. Tracks already completed in this fission generation are kept.",
++      generation, n_tracks, settings::max_generation_tracks));
++  }
++}
++
++bool secondary_generation_within_limit(int generation, int64_t n_tracks)
++{
++  if (settings::max_generation_tracks <= 0 ||
++      n_tracks <= settings::max_generation_tracks) {
++    return true;
++  }
++  discard_secondary_generation(generation, n_tracks);
++  return false;
++}
++
+ } // namespace
+ 
+ // The shared secondary bank transport algorithm works in two phases. In the
+@@ -1164,6 +1191,11 @@ void transport_history_based_shared_secondary()
+         6);
+     }
+ 
++    if (!secondary_generation_within_limit(
++          n_generation_depth, alive_secondary)) {
++      break;
++    }
++
+     simulation::shared_secondary_bank_read =
+       std::move(simulation::shared_secondary_bank_write);
+     simulation::shared_secondary_bank_write = SharedArray<SourceSite>();
+@@ -1306,6 +1338,11 @@ void transport_event_based_shared_secondary()
+         6);
+     }
+ 
++    if (!secondary_generation_within_limit(
++          n_generation_depth, alive_secondary)) {
++      break;
++    }
++
+     simulation::shared_secondary_bank_read =
+       std::move(simulation::shared_secondary_bank_write);
+     simulation::shared_secondary_bank_write = SharedArray<SourceSite>();

@@ -5,11 +5,12 @@ import CompactSection from "./components/CompactSection";
 import LayerChart from "./components/LayerChart";
 import LayerEditor from "./components/LayerEditor";
 import SimulationTab from "./components/SimulationTab";
-import ThermodynamicTab from "./components/ThermodynamicTab";
+import ThermodynamicTab, { ThermophotovoltaicsTab } from "./components/ThermodynamicTab";
 import VisualisationTab from "./components/VisualisationTab";
 import ZoneChart, { columnPoses } from "./components/ZoneChart";
 import { LAYER_GROUPS, LAYER_MATCH_NOTE, TAB_KEYS, type LayerGroupId, type TabKey } from "./constants";
 import {
+  LAYER_TITLES,
   NUMERIC_FIELDS,
   RELOAD_FRACTIONS,
   formatPower,
@@ -25,8 +26,8 @@ import { burnupDays, computeLayoutForRatio, formatBurnupTime, uraniumInventoryKg
 import {
   applyTrisoFuel,
   groupThicknesses,
-  sameMaterialNames,
   setupFromState,
+  sharedGraphiteChord,
   sharedThickness,
   diskHeliumGapsCm,
   solidDiskThicknessCm,
@@ -35,7 +36,7 @@ import {
   thicknessWarning,
   type Groups,
 } from "./layers";
-import { materialLibrary, materialLines } from "./materials";
+import { isGraphiteLike, materialLibrary, materialLines } from "./materials";
 import { airbridgeOperatingPoint } from "./data/tpvEmpiricalLimits";
 import { chooseSetupToOpen, readStoredSetup, usesSavedFile, writeStoredSetup } from "./openSetup";
 
@@ -46,7 +47,8 @@ const TAB_LABELS: Record<TabKey, string> = {
   overview: "Geometry",
   fuel: "Fuel setup",
   designer: "Layer designer",
-  thermodynamic: "Thermodynamic",
+  thermophotovoltaics: "Thermophotovoltaics",
+  thermodynamic: "Thermodynamics",
   simulation: "Neutronics",
   visualisation: "Visualisation",
 };
@@ -90,9 +92,7 @@ function isPlaceholderStack(rows: LayerRow[], id: LayerGroupId): boolean {
 }
 
 function titleOf(id: LayerGroupId): string {
-  if (id === "disk") return "Disk layer";
-  const found = LAYER_GROUPS.find(([groupId]) => groupId === id);
-  return found ? found[1] : id;
+  return LAYER_TITLES[id] ?? id;
 }
 
 /** Replace stacks that are still the titled 1 cm placeholder with the saved ones. */
@@ -364,20 +364,18 @@ const Explorer: React.FC = () => {
   const layerCm = useMemo(() => sharedThickness(layerTotals), [layerTotals]);
 
   // -- Geometry -------------------------------------------------------------
-  const mergeReflector = sameMaterialNames(groups.reflector, groups.shield_moderator);
-  const shieldA = mergeReflector ? setup.a + setup.refl : setup.a;
-  const reflector = mergeReflector ? 0 : setup.refl;
+  const sharedChord = sharedGraphiteChord(groups.reflector, groups.shield_moderator, isGraphiteLike);
   const layout = useMemo(
     () =>
       computeLayoutForRatio(
-        shieldA,
+        setup.a,
         (setup.a * setup.b_pct) / 100,
         setup.w,
         setup.ratio_pct / 100,
-        reflector,
+        setup.refl,
         setup.abs,
       ),
-    [shieldA, setup.a, setup.b_pct, setup.w, setup.ratio_pct, reflector, setup.abs],
+    [setup.a, setup.b_pct, setup.w, setup.ratio_pct, setup.refl, setup.abs],
   );
 
   // -- Power ----------------------------------------------------------------
@@ -453,6 +451,9 @@ const Explorer: React.FC = () => {
     params.set("disk_emissivity", setup.disk_emissivity.toFixed(2));
     params.set("shell_emissivity", setup.shell_emissivity.toFixed(2));
     params.set("tpv_airbridge_cell", String(setup.tpv_airbridge_cell));
+    params.set("rimael_run_min", (Number.isFinite(setup.rimael_run_min) ? setup.rimael_run_min : 11.67).toFixed(2));
+    params.set("rimael_disk_rps", (Number.isFinite(setup.rimael_disk_rps) ? setup.rimael_disk_rps : 0.2).toFixed(2));
+    params.set("rimael_section", String(Math.round(Number.isFinite(setup.rimael_section) ? setup.rimael_section : 0)));
     params.set("enrichment_pct", setup.enrichment_pct.toFixed(1));
     params.set("packing_pct", setup.packing_pct.toFixed(0));
     params.set("hm_particle_pct", setup.hm_particle_pct.toFixed(0));
@@ -489,7 +490,11 @@ const Explorer: React.FC = () => {
   };
 
   const setGroupRows = (id: LayerGroupId, rows: LayerRow[]) => {
-    setSetup((prev) => ({ ...prev, layers: { ...prev.layers, [id]: rows } }));
+    const next =
+      id === "inner_shield_moderator"
+        ? [{ name: (rows[0]?.name ?? "").trim() || "Graphite", cm: 1 }]
+        : rows;
+    setSetup((prev) => ({ ...prev, layers: { ...prev.layers, [id]: next } }));
   };
 
   const withOperatingPoint = (base: Setup): Setup => ({
@@ -607,16 +612,15 @@ const Explorer: React.FC = () => {
     );
   };
 
-  const shieldLabel = mergeReflector ? "Shield moderator (+ reflector)" : "Shield moderator";
   const resultRows: Array<[string, string]> = [
     ["Thermal", thermalPower === null ? "—" : formatPower(thermalPower)],
     ["Stack", stackPower === null ? "—" : formatPower(stackPower)],
     ["Fuel", `${fmtG(layout.fuelArea * columns)} m²`],
+    ["Reflector", `${fmtG(layout.reflectorArea * columns)} m²`],
   ];
-  if (!mergeReflector) resultRows.push(["Reflector", `${fmtG(layout.reflectorArea * columns)} m²`]);
   resultRows.push(
     ["TPV", `${fmtG(oppositeArea * columns)} m²`],
-    [shieldLabel, `${fmtG(layout.gapArea * columns)} m²`],
+    ["Shield moderator", `${fmtG(layout.gapArea * columns)} m²`],
     ["Shield absorber", `${fmtG(layout.absorberArea * columns)} m²`],
     ["Disk", `${fmtG(layout.totalArea * columns)} m²`],
     ["Diameter", `${fmtG(2 * layout.rOuter)} m`],
@@ -666,12 +670,13 @@ const Explorer: React.FC = () => {
           showDims={setup.dims}
           columns={columns}
           outerReflector={columns === 1 ? setup.refl : 0}
+          sharedChord={sharedChord}
         />
-        {mergeReflector && (
+        {sharedChord && (
           <div className="small text-secondary mt-2">
-            Reflector and shield moderator use the same materials, so the reflector ({setup.refl.toFixed(2)} m) is
-            folded into the shield moderator ({setup.a.toFixed(2)} m → {(setup.a + setup.refl).toFixed(2)} m) and
-            omitted as a separate core sector.
+            Reflector and shield moderator are both graphite. The fuel-to-TPV chord is{" "}
+            {(setup.a + setup.refl).toFixed(2)} m: the reflector is {setup.refl.toFixed(2)} m and the shield
+            moderator fills the remaining {setup.a.toFixed(2)} m. They stay separate cells.
           </div>
         )}
       </Col>
@@ -783,17 +788,30 @@ const Explorer: React.FC = () => {
 
   const editorGroups: Array<[LayerGroupId, string]> = [
     ["disk", "Disk layer"],
-    ...LAYER_GROUPS.filter(([id]) => id !== "fuel").map(([id, title]): [LayerGroupId, string] => [id, title]),
+    ...LAYER_GROUPS.filter(([id]) => id !== "fuel").flatMap(([id, title]): Array<[LayerGroupId, string]> =>
+      id === "shield_moderator"
+        ? [
+            [id, title],
+            ["inner_shield_moderator", "Inner neutron shield moderator"],
+          ]
+        : [[id, title]],
+    ),
   ];
 
   const renderEditor = (id: LayerGroupId, title: string) => (
     <LayerEditor
       key={id}
       title={title}
-      fallback={title}
+      fallback={id === "inner_shield_moderator" ? setup.simulation.nsm_material || "Graphite" : title}
       rows={groups[id]}
       lines={materialLines(groups[id], specs, mixed, setup.simulation.nsm_material)}
       onChange={(rows) => setGroupRows(id, rows)}
+      single={id === "inner_shield_moderator"}
+      note={
+        id === "inner_shield_moderator"
+          ? "One material. It fills the inner hole on the fuel-to-TPV chord. The shield moderator on the rotating disc stays its own material."
+          : undefined
+      }
     />
   );
 
@@ -847,13 +865,15 @@ const Explorer: React.FC = () => {
     [groups.shield_absorber],
   );
   const heliumGaps = useMemo(() => diskHeliumGapsCm(groups.disk), [groups.disk]);
-  const thermodynamicTab = (
-    <ThermodynamicTab
+  const thermophotovoltaicsTab = (
+    <ThermophotovoltaicsTab
       setup={setup}
       diskThicknessCm={diskThicknessCm}
       fuelGapCm={heliumGaps.fuelGapCm}
       tpvGapCm={heliumGaps.tpvGapCm}
       diskAreaM2={layout.totalArea}
+      diskInnerRadiusM={layout.rInner}
+      diskOuterRadiusM={layout.rOuter}
       fuelThicknessCm={fuelThicknessCm}
       fuelAreaM2={layout.fuelArea}
       fuelAngleRad={layout.fuelAngle}
@@ -868,6 +888,33 @@ const Explorer: React.FC = () => {
       operatingPoint={operatingPoint}
       renderSlider={renderSlider}
       onNumericChange={setNumber}
+    />
+  );
+
+  const thermodynamicTab = (
+    <ThermodynamicTab
+      setup={setup}
+      diskThicknessCm={diskThicknessCm}
+      fuelGapCm={heliumGaps.fuelGapCm}
+      tpvGapCm={heliumGaps.tpvGapCm}
+      diskAreaM2={layout.totalArea}
+      diskInnerRadiusM={layout.rInner}
+      diskOuterRadiusM={layout.rOuter}
+      fuelThicknessCm={fuelThicknessCm}
+      fuelAreaM2={layout.fuelArea}
+      fuelAngleRad={layout.fuelAngle}
+      tpvAngleRad={layout.oppositeAngle}
+      tpvAreaM2={oppositeArea}
+      reflectorAreaM2={shieldZones.reflectorArea}
+      moderatorAreaM2={shieldZones.gapArea}
+      absorberAreaM2={shieldZones.absorberArea}
+      reflectorThicknessCm={reflectorThicknessCm}
+      moderatorThicknessCm={moderatorThicknessCm}
+      absorberThicknessCm={absorberThicknessCm}
+      operatingPoint={operatingPoint}
+      renderSlider={renderSlider}
+      onNumericChange={setNumber}
+      columns={columns}
     />
   );
 
@@ -888,6 +935,7 @@ const Explorer: React.FC = () => {
     overview: overviewTab,
     fuel: fuelTab,
     designer: designerTab,
+    thermophotovoltaics: thermophotovoltaicsTab,
     thermodynamic: thermodynamicTab,
     simulation: simulationTab,
     visualisation: <VisualisationTab />,

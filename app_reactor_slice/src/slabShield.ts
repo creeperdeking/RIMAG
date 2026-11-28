@@ -34,19 +34,15 @@ function roundCm(cm: number): number {
 
 /**
  * Chord the fast slab transports, in the same order and thicknesses as the
- * full geometry. When the reflector and shield-moderator layer names match,
- * those metres are one block of the neutron-shield material. The last cell
- * is 1 cm of void, where the damage-weighted flux is scored.
+ * full geometry. Reflector and shield moderator stay separate blocks, so a
+ * graphite pair is still reflector thickness then shield-moderator thickness.
+ * The last cell is 1 cm of void, where the damage-weighted flux is scored.
  */
 export function slabLayersFromSetup(setup: Setup): SlabLayerSpec[] {
   const reflectorRows = setup.layers.reflector ?? [];
   const moderatorRows = setup.layers.shield_moderator ?? [];
-  const reflectorNames = namesOf(reflectorRows);
-  const moderatorNames = namesOf(moderatorRows);
-  const merged =
-    reflectorNames.length > 0 && reflectorNames.join("\0") === moderatorNames.join("\0");
-  const moderatorCm = (merged ? setup.a + setup.refl : setup.a) * 100;
-  const reflectorCm = merged ? 0 : setup.refl * 100;
+  const moderatorCm = setup.a * 100;
+  const reflectorCm = setup.refl * 100;
   const absorberCm = setup.abs * 100;
   const layers: SlabLayerSpec[] = [];
   if (reflectorCm > 1e-6) {

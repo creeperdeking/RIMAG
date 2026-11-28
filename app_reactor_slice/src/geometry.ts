@@ -40,6 +40,8 @@ export type LayerRow = { name: string; cm: number };
 export type MaterialSpec = {
   density: number;
   color: string | null;
+  /** Carbon moderator. Set in common_lib/materials.py and exported with the catalog. */
+  graphite_like?: boolean;
   composition: Array<{
     atom: string;
     atomic_weight: number;
@@ -52,6 +54,7 @@ export type MaterialSpec = {
 export type MixedSpec = {
   materials: string[];
   proportions: number[];
+  graphite_like?: boolean;
 };
 
 export function chordAngle(thickness: number, innerDiameter: number): number {
@@ -156,14 +159,16 @@ export function computeLayoutForRatio(
   return computeLayout(a, b, w, percent, reflector, absorber, 0);
 }
 
-export function centerCuts(layout: ZoneLayout): CenterCuts {
+export function centerCuts(layout: ZoneLayout, sharedChord = false): CenterCuts {
   const ri = layout.rInner;
   const yFuel = ri * Math.cos(layout.fuelAngle / 2);
   const junction = Math.min(Math.PI, layout.oppositeAngle / 2 + layout.absorberAngle);
   const moderatorY = Math.min(yFuel - (layout.a + layout.reflector), -ri * Math.cos(junction));
   let reflectorY: number | null = null;
   if (layout.reflector > 1e-9) {
-    reflectorY = ri * Math.cos(layout.fuelAngle / 2 + layout.reflectorAngle);
+    reflectorY = sharedChord
+      ? yFuel - layout.reflector
+      : ri * Math.cos(layout.fuelAngle / 2 + layout.reflectorAngle);
   }
   return { moderatorY, reflectorY };
 }

@@ -16,6 +16,7 @@ import {
   shieldHeliumPerFace,
   heatFromFuelToShell,
   perFaceFullWindow,
+  radiationFactorM2,
   type DiskCircuitArcs,
 } from "../shared/diskThermal";
 
@@ -48,14 +49,31 @@ function sourcePackageMtimeMs(): number {
 
 export class RimaelRunnerError extends Error {}
 
+export class RimaelBusyError extends RimaelRunnerError {}
+
+let rimaelOwner: string | null = null;
+
+export function holdRimael(owner: string): void {
+  if (rimaelOwner && rimaelOwner !== owner) {
+    throw new RimaelBusyError(`OpenModelica is busy with the ${rimaelOwner} run.`);
+  }
+  rimaelOwner = owner;
+}
+
+export function releaseRimael(owner: string): void {
+  if (rimaelOwner === owner) rimaelOwner = null;
+}
+
 export type RimaelFuelTrace = {
   timeS: number[];
   fuelTempK: number[];
   fuelTempC: number[];
   diskTempC: number[];
   shellTempC: number[];
-  /** Disk sector whose window starts at 0°. */
+  /** Disk sector whose window starts at 0°. Same series as sectionTempsC[0]. */
   section0TempC: number[];
+  /** Twelve section temperatures, °C. Index 0 is the window that starts at 0°. */
+  sectionTempsC: number[][];
   stopTimeS: number;
   fuelTempStartC: number;
   fuelEmissivity: number;
@@ -118,7 +136,35 @@ export type RimaelRunOptions = {
   reflectorThicknessCm?: number;
   moderatorThicknessCm?: number;
   absorberThicknessCm?: number;
+  /** Simulation length [min]. Default 700 s. */
+  runTimeMin?: number;
+  /** Disk speed until shutdown [rev/s]. Default 0.2. */
+  diskRps?: number;
 };
+
+const DEFAULT_STOP_TIME_S = 700;
+const DEFAULT_RPS_DISK = 0.2;
+/** One output sample per second, with at least ~50 samples on a short run. */
+function outputStepS(stopTimeS: number): number {
+  return Math.min(1, stopTimeS / 50);
+}
+
+function resolveStopTimeS(minutes: number | undefined): number {
+  if (!Number.isFinite(minutes)) return DEFAULT_STOP_TIME_S;
+  const seconds = Math.round((minutes as number) * 60);
+  if (!(seconds > 0)) {
+    throw new RimaelRunnerError("Run time must be a positive number of minutes.");
+  }
+  return Math.min(180 * 60, seconds);
+}
+
+function resolveRpsDisk(rps: number | undefined): number {
+  if (!Number.isFinite(rps)) return DEFAULT_RPS_DISK;
+  if ((rps as number) < 0) {
+    throw new RimaelRunnerError("Disk rotation speed must be zero or positive, in revolutions per second.");
+  }
+  return Math.min(20, rps as number);
+}
 
 /** Model default FuelPlate start is 1523.15 K. */
 const DEFAULT_FUEL_START_K = 1523.15;
@@ -224,6 +270,7 @@ function overrideFlags(
   gFuelGap: number;
   gDiskShell: number;
   gShield: number;
+  grShield: number;
   shieldHeatCapacity: number;
   shieldMassKg: number;
   heatCapacitySection: number;
@@ -270,13 +317,19 @@ function overrideFlags(
   if (!(shield.heatCapacity > 0)) {
     throw new RimaelRunnerError("Shield graphite heat capacity is zero — check the disk-facing reflector, moderator, and absorber.");
   }
+  const shieldArcSum = arcs.shield1ArcFrac + arcs.shield2ArcFrac;
   const gShield = shieldHeliumPerFace(
     flow.gFuelWPerK,
     flow.gDiskShellWPerK,
     fuelAreaM2,
     tpvAreaM2,
     shield.areaM2,
-    arcs.shield1ArcFrac + arcs.shield2ArcFrac,
+    shieldArcSum,
+  );
+  // Shield face is the graphite module. Both faces, same emissivity as the disk.
+  const grShield = perFaceFullWindow(
+    2 * radiationFactorM2(shield.areaM2, diskEmissivity, diskEmissivity),
+    shieldArcSum,
   );
   const diskStartK = Math.max(273.15, flow.diskTempK);
   const shellStartK = Math.max(273.15, flow.shellTempK);
@@ -298,6 +351,7 @@ function overrideFlags(
       `T_cell=${TPV_CELL_TEMP_K}`,
       `cellHeat.area_cm2=${bothFacesCm2}`,
       `Gr_fuel=${grFuel}`,
+      `Gr_shield=${grShield}`,
       `Gr_tpv=${grTpv}`,
       `G_fuel_gap=${gFuelGap}`,
       `G_disk_shell=${gDiskShell}`,
@@ -316,6 +370,7 @@ function overrideFlags(
     gFuelGap,
     gDiskShell,
     gShield,
+    grShield,
     shieldHeatCapacity: shield.heatCapacity,
     shieldMassKg: shield.massKg,
     heatCapacitySection,
@@ -334,7 +389,7 @@ const OMC_DOCKER_IMAGE =
 /** Writable HOME for the non-root Docker user (Modelica package index + stdlib). */
 const OMC_DOCKER_HOME = path.join(MODEL_DIR, ".omc-home");
 
-type OmcLauncher =
+export type OmcLauncher =
   | { kind: "local"; omc: string }
   | { kind: "docker"; image: string };
 
@@ -457,8 +512,32 @@ async function regenerateAppMoIfNeeded() {
   }
 }
 
+/**
+ * Result-file regex. OpenModelica matches the whole variable name, so the
+ * section pattern needs a suffix: disk.T_section0 and disk.T_section[1] … [12].
+ */
+const RESULT_VARIABLE_FILTER = String.raw`time|FuelPlate\.T|VacuumShell\.T|disk\.T_mean|disk\.T_section.*`;
+
 function columnIndex(header: string[], suffix: string): number {
   return header.findIndex((name) => name === suffix || name.endsWith(suffix));
+}
+
+/** Column of each UI section 0…11. Modelica T_section[1] is section 0. */
+function sectionColumnIndices(header: string[]): number[] {
+  const idx = Array.from({ length: 12 }, () => -1);
+  header.forEach((name, col) => {
+    const arrayForm = /(?:^|\.)T_section\[(\d+)\]$/.exec(name);
+    if (arrayForm) {
+      const n = Number(arrayForm[1]) - 1;
+      if (n >= 0 && n < 12) idx[n] = col;
+      return;
+    }
+    const named = /(?:^|\.)T_section(\d+)$/.exec(name);
+    if (!named) return;
+    const n = Number(named[1]);
+    if (n >= 0 && n < 12 && idx[n] < 0) idx[n] = col;
+  });
+  return idx;
 }
 
 function parseFuelCsv(csvPath: string): {
@@ -467,6 +546,7 @@ function parseFuelCsv(csvPath: string): {
   diskTempK: number[];
   shellTempK: number[];
   section0TempK: number[];
+  sectionTempsK: number[][];
 } {
   const raw = fs.readFileSync(csvPath, "utf8");
   const lines = raw.split(/\r?\n/).filter((line) => line.trim().length > 0);
@@ -476,7 +556,7 @@ function parseFuelCsv(csvPath: string): {
   const tempIdx = columnIndex(header, "FuelPlate.T");
   const diskIdx = columnIndex(header, "disk.T_mean");
   const shellIdx = columnIndex(header, "VacuumShell.T");
-  const section0Idx = columnIndex(header, "disk.T_section0");
+  const sectionIdx = sectionColumnIndices(header);
   if (timeIdx < 0 || tempIdx < 0) {
     throw new RimaelRunnerError(`CSV missing time/FuelPlate.T columns: ${header.join(", ")}`);
   }
@@ -484,7 +564,7 @@ function parseFuelCsv(csvPath: string): {
   const fuelTempK: number[] = [];
   const diskTempK: number[] = [];
   const shellTempK: number[] = [];
-  const section0TempK: number[] = [];
+  const sectionTempsK: number[][] = Array.from({ length: 12 }, () => []);
   for (const line of lines.slice(1)) {
     const cells = line.split(",");
     const t = Number(cells[timeIdx]);
@@ -494,13 +574,17 @@ function parseFuelCsv(csvPath: string): {
     fuelTempK.push(temp);
     const disk = diskIdx >= 0 ? Number(cells[diskIdx]) : Number.NaN;
     const shell = shellIdx >= 0 ? Number(cells[shellIdx]) : Number.NaN;
-    const section0 = section0Idx >= 0 ? Number(cells[section0Idx]) : Number.NaN;
     if (Number.isFinite(disk)) diskTempK.push(disk);
     if (Number.isFinite(shell)) shellTempK.push(shell);
-    if (Number.isFinite(section0)) section0TempK.push(section0);
+    sectionIdx.forEach((col, section) => {
+      if (col < 0) return;
+      const value = Number(cells[col]);
+      if (Number.isFinite(value)) sectionTempsK[section].push(value);
+    });
   }
   if (!timeS.length) throw new RimaelRunnerError("No samples parsed from CSV.");
-  return { timeS, fuelTempK, diskTempK, shellTempK, section0TempK };
+  const section0TempK = sectionTempsK[0];
+  return { timeS, fuelTempK, diskTempK, shellTempK, section0TempK, sectionTempsK };
 }
 
 function canReuseBinary(): boolean {
@@ -523,15 +607,23 @@ function modelicaStdlibInstalled(): boolean {
   return fs.readdirSync(libraries).some((name) => name.startsWith("Modelica "));
 }
 
-function dockerRunArgs(image: string, workdirInContainer: string, command: string[]): string[] {
+function dockerRunArgs(
+  image: string,
+  workdirInContainer: string,
+  command: string[],
+  containerName?: string,
+): string[] {
   ensureDockerOmcHome();
   const uid = typeof process.getuid === "function" ? String(process.getuid()) : "0";
   const gid = typeof process.getgid === "function" ? String(process.getgid()) : "0";
   return [
     "run",
     "--rm",
+    ...(containerName ? ["--name", containerName] : []),
     "-u",
     `${uid}:${gid}`,
+    "-e",
+    "LC_ALL=C",
     "-e",
     "HOME=/omc-home",
     "-v",
@@ -564,25 +656,34 @@ async function ensureDockerModelicaLibrary(image: string): Promise<void> {
   }
 }
 
-async function runCompiledBinary(override: string, launcher: OmcLauncher): Promise<void> {
+async function runCompiledBinary(
+  override: string,
+  stopTimeS: number,
+  launcher: OmcLauncher,
+): Promise<void> {
   const overrideArg = `-override=${override}`;
+  const stepS = outputStepS(stopTimeS);
+  const simArgs = [overrideArg, `-stopTime=${stopTimeS}`, `-stepSize=${stepS}`, `-variableFilter=${RESULT_VARIABLE_FILTER}`];
   let result: { code: number; stdout: string; stderr: string };
   if (launcher.kind === "docker") {
     await ensureDockerModelicaLibrary(launcher.image);
     // Runtime libs live in the image; run the host-built Linux binary inside it.
     result = await runCommand(
       "docker",
-      dockerRunArgs(launcher.image, "/model/work", [`./${path.basename(REACTOR_BIN)}`, overrideArg]),
-      { cwd: WORK_DIR, timeoutMs: 180_000 },
+      dockerRunArgs(launcher.image, "/model/work", [
+        `./${path.basename(REACTOR_BIN)}`,
+        ...simArgs,
+      ]),
+      { cwd: WORK_DIR, timeoutMs: Math.max(180_000, stopTimeS * 500) },
     );
   } else {
-    result = await runCommand(REACTOR_BIN, [overrideArg], {
+    result = await runCommand(REACTOR_BIN, simArgs, {
       cwd: WORK_DIR,
       env: {
         ...process.env,
         PATH: `${path.dirname(launcher.omc)}${path.delimiter}${process.env.PATH ?? ""}`,
       },
-      timeoutMs: 180_000,
+      timeoutMs: Math.max(180_000, stopTimeS * 500),
     });
   }
   if (result.code !== 0) {
@@ -595,7 +696,147 @@ async function runCompiledBinary(override: string, launcher: OmcLauncher): Promi
   }
 }
 
-function writeMosWithOverride(override: string): string {
+async function compileRimaelBinary(launcher: OmcLauncher): Promise<void> {
+  fs.mkdirSync(WORK_DIR, { recursive: true });
+  try {
+    fs.unlinkSync(REACTOR_BIN);
+  } catch {
+    /* no previous binary */
+  }
+  const mosPath = path.join(MODEL_DIR, "build_reactor.mos");
+  fs.writeFileSync(
+    mosPath,
+    [
+      "// Auto-generated — do not edit",
+      'cd("work");',
+      "loadModel(Modelica);",
+      "getErrorString();",
+      'loadFile("../RIMAEL_App.mo");',
+      "getErrorString();",
+      "buildModel(RIMAEL.Reactor);",
+      "getErrorString();",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  let result: { code: number; stdout: string; stderr: string };
+  if (launcher.kind === "docker") {
+    await ensureDockerModelicaLibrary(launcher.image);
+    result = await runCommand("docker", dockerRunArgs(launcher.image, "/model", ["omc", path.basename(mosPath)]), {
+      cwd: MODEL_DIR,
+      timeoutMs: 600_000,
+    });
+  } else {
+    result = await runCommand(launcher.omc, [mosPath], {
+      cwd: MODEL_DIR,
+      env: {
+        ...process.env,
+        PATH: `${path.dirname(launcher.omc)}${path.delimiter}${process.env.PATH ?? ""}`,
+      },
+      timeoutMs: 600_000,
+    });
+  }
+  const combined = `${result.stdout}\n${result.stderr}\n`;
+  fs.writeFileSync(path.join(WORK_DIR, "omc_build.log"), combined, "utf8");
+  if (result.code !== 0 || !fs.existsSync(REACTOR_BIN)) {
+    throw new RimaelRunnerError(
+      `OpenModelica build failed (exit ${result.code}).\n${result.stdout.slice(-2000)}\n${result.stderr.slice(-2000)}`,
+    );
+  }
+}
+
+export type PreparedRimael = {
+  flags: string;
+  launcher: OmcLauncher;
+  fuelHeatingPowerW: number;
+};
+
+/** Regenerate the flat model, compile if the binary is older than the sources, and return override flags. */
+export async function prepareRimaelModel(options: RimaelRunOptions): Promise<PreparedRimael> {
+  const fuelStartK = resolveFuelStartK(options.fuelTempC);
+  const fuelEmissivity = clampEps(options.fuelEmissivity);
+  const diskEmissivity = clampEps(options.diskEmissivity);
+  const diskThicknessCm = resolveThicknessCm(options.diskThicknessCm, DEFAULT_DISK_THICKNESS_CM);
+  const fuelThicknessCm = resolveThicknessCm(options.fuelThicknessCm, DEFAULT_FUEL_THICKNESS_CM);
+  const diskAreaM2 = resolveAreaM2(options.diskAreaM2);
+  const fuelAreaM2 = resolveAreaM2(options.fuelAreaM2);
+  if (!(diskAreaM2 > 0)) {
+    throw new RimaelRunnerError("disk_area_m2 must be a positive disk face area from Geometry.");
+  }
+  if (!(fuelAreaM2 > 0)) {
+    throw new RimaelRunnerError("fuel_area_m2 must be a positive fuel-sector area from Geometry.");
+  }
+  const tpvAreaM2 = resolveAreaM2(options.tpvAreaM2);
+  if (!(tpvAreaM2 > 0)) {
+    throw new RimaelRunnerError("tpv_area_m2 must be a positive TPV face area from Geometry.");
+  }
+  const shellEmissivity = resolveShellEmissivity(options.shellEmissivity);
+  const fuelGapCm = resolveGapCm(options.fuelGapCm);
+  const tpvGapCm = resolveGapCm(options.tpvGapCm);
+  const cellIndex = resolveCellIndex(options.tpvCellIndex);
+  const arcs = resolveCircuitArcs(options);
+  const { flags, fuelHeatingPowerW } = overrideFlags(
+    fuelStartK,
+    fuelEmissivity,
+    diskEmissivity,
+    shellEmissivity,
+    diskThicknessCm,
+    diskAreaM2,
+    fuelThicknessCm,
+    fuelAreaM2,
+    tpvAreaM2,
+    fuelGapCm,
+    tpvGapCm,
+    cellIndex,
+    arcs,
+    [
+      { areaM2: resolveAreaM2(options.reflectorAreaM2), thicknessCm: resolveThicknessCm(options.reflectorThicknessCm, 1) },
+      { areaM2: resolveAreaM2(options.moderatorAreaM2), thicknessCm: resolveThicknessCm(options.moderatorThicknessCm, 1) },
+      { areaM2: resolveAreaM2(options.absorberAreaM2), thicknessCm: resolveThicknessCm(options.absorberThicknessCm, 1) },
+    ],
+  );
+  await regenerateAppMoIfNeeded();
+  fs.mkdirSync(WORK_DIR, { recursive: true });
+  writeAbsorbedTable(cellIndex, shellEmissivity);
+  const launcher = resolveOmcLauncher();
+  if (launcher.kind === "docker") await ensureDockerModelicaLibrary(launcher.image);
+  if (!canReuseBinary()) await compileRimaelBinary(launcher);
+  return { flags, launcher, fuelHeatingPowerW };
+}
+
+export const RIMAEL_WORK_DIR = WORK_DIR;
+export const RIMAEL_CONTAINER = "rimael-live";
+
+export function rimaelLaunchSpec(
+  launcher: OmcLauncher,
+  simArgs: string[],
+  containerName?: string,
+): { command: string; args: string[]; cwd: string; env?: NodeJS.ProcessEnv } {
+  if (launcher.kind === "docker") {
+    return {
+      command: "docker",
+      args: dockerRunArgs(
+        launcher.image,
+        "/model/work",
+        [`./${path.basename(REACTOR_BIN)}`, ...simArgs],
+        containerName,
+      ),
+      cwd: WORK_DIR,
+    };
+  }
+  return {
+    command: REACTOR_BIN,
+    args: simArgs,
+    cwd: WORK_DIR,
+    env: {
+      ...process.env,
+      LC_ALL: "C",
+      PATH: `${path.dirname(launcher.omc)}${path.delimiter}${process.env.PATH ?? ""}`,
+    },
+  };
+}
+
+function writeMosWithOverride(override: string, stopTimeS: number): string {
   const mosPath = path.join(MODEL_DIR, "run_reactor_override.mos");
   const escaped = override.replace(/"/g, '\\"');
   const content = `// Auto-generated — do not edit
@@ -607,12 +848,12 @@ getErrorString();
 simulate(
   RIMAEL.Reactor,
   startTime = 0,
-  stopTime = 700,
-  numberOfIntervals = 700,
+  stopTime = ${stopTimeS},
+  numberOfIntervals = ${Math.max(2, Math.round(stopTimeS / outputStepS(stopTimeS)))},
   method = "dassl",
   tolerance = 1e-6,
   outputFormat = "csv",
-  variableFilter = "time|FuelPlate\\\\.T|VacuumShell\\\\.T|disk\\\\.T_mean|disk\\\\.T_section0",
+  variableFilter = "${RESULT_VARIABLE_FILTER.replace(/\\/g, "\\\\")}",
   simflags = "-override=${escaped}"
 );
 getErrorString();
@@ -621,7 +862,11 @@ getErrorString();
   return mosPath;
 }
 
-async function compileAndSimulateWithOmc(override: string, launcher: OmcLauncher): Promise<void> {
+async function compileAndSimulateWithOmc(
+  override: string,
+  stopTimeS: number,
+  launcher: OmcLauncher,
+): Promise<void> {
   fs.mkdirSync(WORK_DIR, { recursive: true });
   // Drop stale Windows/previous results so a failed omc exit 0 cannot look successful.
   for (const stale of [CSV, REACTOR_BIN]) {
@@ -631,7 +876,7 @@ async function compileAndSimulateWithOmc(override: string, launcher: OmcLauncher
       /* missing is fine */
     }
   }
-  const mosPath = writeMosWithOverride(override);
+  const mosPath = writeMosWithOverride(override, stopTimeS);
   const mosName = path.basename(mosPath);
   let result: { code: number; stdout: string; stderr: string };
   if (launcher.kind === "docker") {
@@ -668,6 +913,17 @@ async function compileAndSimulateWithOmc(override: string, launcher: OmcLauncher
 export async function runRimaelFuelTemperature(
   options: RimaelRunOptions = {},
 ): Promise<RimaelFuelTrace> {
+  holdRimael("batch");
+  try {
+    return await runRimaelFuelTemperatureHeld(options);
+  } finally {
+    releaseRimael("batch");
+  }
+}
+
+async function runRimaelFuelTemperatureHeld(
+  options: RimaelRunOptions,
+): Promise<RimaelFuelTrace> {
   const fuelStartK = resolveFuelStartK(options.fuelTempC);
   const fuelTempStartC = fuelStartK - 273.15;
   const fuelEmissivity = clampEps(options.fuelEmissivity);
@@ -698,6 +954,7 @@ export async function runRimaelFuelTemperature(
     gFuelGap,
     gDiskShell,
     gShield,
+    grShield,
     shieldHeatCapacity,
     heatCapacitySection,
     throughThicknessG,
@@ -726,6 +983,9 @@ export async function runRimaelFuelTemperature(
       { areaM2: resolveAreaM2(options.absorberAreaM2), thicknessCm: resolveThicknessCm(options.absorberThicknessCm, 1) },
     ],
   );
+  const stopTimeS = resolveStopTimeS(options.runTimeMin);
+  const rpsDisk = resolveRpsDisk(options.diskRps);
+  const simFlags = `${flags},rpsDisk=${rpsDisk}`;
   await regenerateAppMoIfNeeded();
   fs.mkdirSync(WORK_DIR, { recursive: true });
   writeAbsorbedTable(cellIndex, shellEmissivity);
@@ -734,12 +994,12 @@ export async function runRimaelFuelTemperature(
   let reusedBinary = false;
   if (canReuseBinary()) {
     reusedBinary = true;
-    await runCompiledBinary(flags, launcher);
   } else {
-    await compileAndSimulateWithOmc(flags, launcher);
+    await compileRimaelBinary(launcher);
   }
+  await runCompiledBinary(simFlags, stopTimeS, launcher);
 
-  const { timeS, fuelTempK, diskTempK, shellTempK, section0TempK } = parseFuelCsv(CSV);
+  const { timeS, fuelTempK, diskTempK, shellTempK, section0TempK, sectionTempsK } = parseFuelCsv(CSV);
   const fuelPct = (100 * arcs.fuelArcFrac).toFixed(1);
   const p0Kw = (fuelHeatingPowerW / 1000).toFixed(1);
   const shellC = (shellStartK - 273.15).toFixed(0);
@@ -750,7 +1010,8 @@ export async function runRimaelFuelTemperature(
     diskTempC: diskTempK.map((k) => k - 273.15),
     shellTempC: shellTempK.map((k) => k - 273.15),
     section0TempC: section0TempK.map((k) => k - 273.15),
-    stopTimeS: timeS[timeS.length - 1] ?? 700,
+    sectionTempsC: sectionTempsK.map((series) => series.map((k) => k - 273.15)),
+    stopTimeS: timeS[timeS.length - 1] ?? stopTimeS,
     fuelTempStartC,
     fuelEmissivity,
     diskEmissivity,
@@ -769,7 +1030,7 @@ export async function runRimaelFuelTemperature(
     grFuel,
     grTpv,
     reusedBinary,
-    message: `${reusedBinary ? "Reused binary" : "Compiled"} · P0=${p0Kw} kW · shell ${shellC} °C · fuel arc ${fuelPct}% · G_fuel=${gFuelGap.toFixed(2)} W/K · G_shell=${gDiskShell.toFixed(2)} W/K · G_shield=${gShield.toFixed(2)} W/K · Shield.C=${shieldHeatCapacity.toFixed(0)} J/K`,
+    message: `${reusedBinary ? "Reused binary" : "Compiled"} · ${(stopTimeS / 60).toFixed(2)} min · ${rpsDisk} rev/s · P0=${p0Kw} kW · shell ${shellC} °C · fuel arc ${fuelPct}% · G_fuel=${gFuelGap.toFixed(2)} W/K · G_shell=${gDiskShell.toFixed(2)} W/K · G_shield=${gShield.toFixed(2)} W/K · Gr_shield=${grShield.toExponential(3)} · Shield.C=${shieldHeatCapacity.toFixed(0)} J/K`,
   };
 }
 

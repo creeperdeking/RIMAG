@@ -16,8 +16,7 @@ import {
   parseIngaasPmaxSensitivityLine,
   pmaxFromResultsim,
   type DisplacementDamage,
-  type IngaasPmax,
-} from "./dddResult";
+  type IngaasPmax,} from "./dddResult";
 import { parseDepletionLine } from "./depletionResult";
 import {
   appendQueued,
@@ -117,7 +116,7 @@ let launchChain: Promise<void> = Promise.resolve();
 let endedLaunchGen = -1;
 
 const AUTOREFINE_TARGET = 0.8;
-const AUTOREFINE_MAX_PASSES = 25;
+const AUTOREFINE_MAX_PASSES = 50;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -899,8 +898,7 @@ function resultsimRecord(item: QueueItem): Record<string, unknown> | null {
 
 function dddFromResultsim(item: QueueItem): DisplacementDamage | null {
   const record = resultsimRecord(item);
-  if (!record) return null;
-  return displacementDamageFromResultsim(record, doseYearsFromPayload(item.payload));
+  if (!record) return null;  return displacementDamageFromResultsim(record, doseYearsFromPayload(item.payload));
 }
 
 function attachStoredDdd(result: QueueItemResult, item: QueueItem | null | undefined): QueueItemResult {
@@ -959,7 +957,6 @@ function attachStoredPmax(result: QueueItemResult, item: QueueItem | null | unde
   const fromFile = pmaxFromStoredFile(item);
   return fromFile ? { ...result, ...fromFile } : result;
 }
-
 function resultFromLogs(): QueueItemResult {
   const depletion = parseDepletionLine(job.lastLines.map((entry) => entry.line).join("\n"));
   if (depletion) {
@@ -1192,7 +1189,6 @@ function onJobEnded(code: number, endedGen?: number) {
   let result: QueueItemResult | null = stopped
     ? { summary: "Stopped by user" }
     : attachWwCoverage(attachStoredPmax(attachStoredDdd(attachStoredGamma(resultFromLogs(), item), item), item), item?.payload);
-
   // Autorefine must reach InGaAs coverage (or hit max passes as "done") before the
   // next queue item. A crashed/killed refine (e.g. exit 137) used to mark failed
   // and still advance — hold the queue instead.
@@ -1680,7 +1676,6 @@ function backfillPmax(item: QueueItem): QueueItem {
   saveQueue(state);
   return state.items[index];
 }
-
 function backfillDdd(item: QueueItem): QueueItem {
   if (item.status !== "done") return item;
   if (item.result?.dddMeVPerG != null) return item;

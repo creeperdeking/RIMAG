@@ -139,14 +139,25 @@ def compute_layout_for_ratio(
     return compute_layout(a, b, w, percent, reflector, absorber)
 
 
-def center_cuts(layout: ZoneLayout) -> CenterCuts:
+def center_cuts(layout: ZoneLayout, shared_chord: bool = False) -> CenterCuts:
+    """Planes that split the inner hole along the fuel-to-TPV chord.
+
+    ``moderator_y`` sits ``a + reflector`` below the fuel chord, or at the
+    absorber junction when that is farther. With ``shared_chord``, the
+    reflector plane is exactly ``reflector`` below the fuel chord and the
+    shield moderator fills the rest of that distance. Otherwise the reflector
+    plane follows the reflector sector's angular edge.
+    """
     ri = layout.r_inner
     y_fuel = ri * math.cos(layout.fuel_angle / 2.0)
     junction = min(math.pi, layout.opposite_angle / 2.0 + layout.absorber_angle)
     moderator_y = min(y_fuel - (layout.a + layout.reflector), -ri * math.cos(junction))
     reflector_y = None
     if layout.reflector > 1e-9:
-        reflector_y = ri * math.cos(layout.fuel_angle / 2.0 + layout.reflector_angle)
+        if shared_chord:
+            reflector_y = y_fuel - layout.reflector
+        else:
+            reflector_y = ri * math.cos(layout.fuel_angle / 2.0 + layout.reflector_angle)
     return CenterCuts(moderator_y=moderator_y, reflector_y=reflector_y)
 
 

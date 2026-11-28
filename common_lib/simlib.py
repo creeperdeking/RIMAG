@@ -19,6 +19,12 @@ from common_lib.depletion_lifetime import (
     next_step_days,
 )
 from common_lib.materials import MonitoredNuclide
+from common_lib.weight_window_bounds import (
+    DEFAULT_HISTORY_SPLITS,
+    clamp_weight_window_span,
+    extend_weight_window_frontier,
+    followable_decades,
+)
 import numpy as np
 import h5py
 import math
@@ -331,12 +337,119 @@ WeightWindows = Literal["generate", "use", "no", "seed", "refine"]
 
 WW_META_FILE = "weight_windows_meta.json"
 WW_FILE = "weight_windows.h5"
-# Keep OpenMC's default max_lower_bound_ratio of 1 and a 100-split history cap.
-# A ratio above 1 raises every later window to the particle and suppresses the
-# splits that score the next InGaAs ring, so a refine pass stops gaining
-# coverage. That cap is what pushed this shield about 10% of the InGaAs mesh
-# per pass. Leave bins this pass did not score empty. Pasting the previous
-# pass's bounds back in mixes two flux maps, and the frontier stops moving.
+# Leave max_lower_bound_ratio at 1. OpenMC turns a ratio above 1 into one
+# scale factor, taken from the first window that deep, and applies it to every
+# later window, which stops the splits that score the next InGaAs cell.
+# max_history_splits stays at DEFAULT_HISTORY_SPLITS. The saved map is clamped
+# into that budget and a one-split lip is added only in memory at transport.
+# A secondary generation above this is a split cascade. Discard it and keep
+# the tracks already run in that fission generation. OpenMC reads the number
+# from settings.xml on every run, so change this constant, or set
+# RIMAG_MAX_GENERATION_TRACKS, and the next run picks it up. Zero disables
+# the limit. Neither change needs another OpenMC build.
+WW_MAX_GENERATION_TRACKS = 2_000_000
+
+
+def generation_track_limit() -> int:
+    raw = os.environ.get("RIMAG_MAX_GENERATION_TRACKS", "").strip()
+    if not raw:
+        return WW_MAX_GENERATION_TRACKS
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(
+            f"RIMAG_MAX_GENERATION_TRACKS must be an integer, got {raw!r}"
+        ) from exc
+    if value < 0:
+        raise ValueError(
+            "RIMAG_MAX_GENERATION_TRACKS must be zero or positive, "
+            f"got {value}"
+        )
+    return value
+
+
+def _window_split_factor(ww) -> int:
+    try:
+        factor = int(ww.max_split)
+    except (TypeError, ValueError):
+        factor = 10
+    return max(2, factor)
+
+
+def _lower_bound_decades(lower) -> float | None:
+    vals = np.asarray(lower, dtype=float)
+    vals = vals[np.isfinite(vals) & (vals > 0.0)]
+    if vals.size == 0:
+        return None
+    lo = float(vals.min())
+    hi = float(vals.max())
+    if lo <= 0.0 or hi <= 0.0:
+        return None
+    return float(math.log10(hi / lo))
+
+
+def limit_saved_weight_windows(ww_path: str | Path = WW_FILE) -> int:
+    """Raise bounds the split budget cannot follow, and keep only the latest set.
+
+    The one-split lip is not written. Saving it would make the next clamp
+    treat those bins as scored and walk the frontier without new tallies.
+    """
+    path = Path(ww_path)
+    wws = load_weight_windows_list(path)
+    if not wws:
+        return 0
+    ww = wws[-1]
+    factor = _window_split_factor(ww)
+    lower, upper, raised = clamp_weight_window_span(
+        ww.lower_ww_bounds,
+        ww.upper_ww_bounds,
+        history_splits=DEFAULT_HISTORY_SPLITS,
+        max_split=factor,
+    )
+    if raised or len(wws) > 1:
+        ww.lower_ww_bounds = lower
+        ww.upper_ww_bounds = upper
+        openmc.WeightWindowsList([ww]).export_to_hdf5(str(path))
+        if len(wws) > 1:
+            print(f"Weight windows: pruned {len(wws)} sets → 1 (kept latest)")
+    if raised:
+        decades = _lower_bound_decades(lower)
+        span = f" ({decades:.2f} decades)" if decades is not None else ""
+        print(
+            f"Weight windows: raised {raised} bins so the saved map stays within "
+            f"{followable_decades(DEFAULT_HISTORY_SPLITS, factor)} splits of its peak"
+            f"{span}."
+        )
+    return raised
+
+
+def prepare_weight_windows_for_transport(ww):
+    """Clamp the loaded map and add a one-split lip on its deep edge.
+
+    The lip lives on this object only. The file on disk stays without it.
+    """
+    factor = _window_split_factor(ww)
+    lower, upper, raised = clamp_weight_window_span(
+        ww.lower_ww_bounds,
+        ww.upper_ww_bounds,
+        history_splits=DEFAULT_HISTORY_SPLITS,
+        max_split=factor,
+    )
+    decades = _lower_bound_decades(lower)
+    lower, upper, added = extend_weight_window_frontier(
+        lower, upper, max_split=factor
+    )
+    ww.lower_ww_bounds = lower
+    ww.upper_ww_bounds = upper
+    span = f", span {decades:.2f} decades" if decades is not None else ""
+    print(
+        "Weight windows: kept the map within "
+        f"{followable_decades(DEFAULT_HISTORY_SPLITS, factor)} "
+        f"factor-of-{factor} splits of its peak "
+        f"(raised {raised} bins{span}) and added a one-split lip on "
+        f"{added} empty neighbor bins."
+    )
+    return ww
 
 
 def make_ww_mesh(
@@ -395,18 +508,6 @@ def latest_weight_windows(ww_path: str | Path = WW_FILE):
     if not wws:
         raise ValueError(f"{ww_path} contains no weight windows")
     return wws[-1]
-
-
-def prune_weight_windows_file(ww_path: str | Path = WW_FILE) -> int:
-    """Keep only the latest WW set so refine does not stack forever."""
-    path = Path(ww_path)
-    wws = load_weight_windows_list(path)
-    n = len(wws)
-    if n <= 1:
-        return n
-    openmc.WeightWindowsList([wws[-1]]).export_to_hdf5(str(path))
-    print(f"Weight windows: pruned {n} sets → 1 (kept latest)")
-    return 1
 
 
 def summarize_weight_windows(ww_path: str | Path = WW_FILE) -> dict:
@@ -645,10 +746,15 @@ def print_weight_windows_depth_summary(stats: dict, ingaas: dict | None = None) 
             f"InGaAs WW coverage: {hit}/{voxels} mesh cells "
             f"({frac:.1f}%); energy groups when reached {efrac:.1f}%"
         )
-        print(
-            "Tip: empty InGaAs cells → refine again; "
-            "then run keff with weight_windows=use for DDD."
-        )
+        if hit < voxels:
+            print(
+                "Empty InGaAs mesh cells score no neutrons. "
+                "DDD and gamma dose divide by the full InGaAs volume, "
+                "so those cells bias the result down. "
+                "Refine until they are reached, then run keff with weight_windows=use."
+            )
+        else:
+            print("Every InGaAs mesh cell has a window.")
     else:
         spat = 100.0 * float(stats.get("spatial_coverage") or 0.0)
         outer = 100.0 * float(stats.get("outer_coverage") or 0.0)
@@ -689,6 +795,7 @@ def write_ww_meta(
         "file": WW_FILE,
     }
     try:
+        limit_saved_weight_windows(WW_FILE)
         depth = summarize_weight_windows(WW_FILE)
         payload["spatial_coverage"] = depth["spatial_coverage"]
         payload["energy_coverage"] = depth["energy_coverage"]
@@ -712,8 +819,6 @@ def write_ww_meta(
             print(f"InGaAs WW coverage skipped: {ingaas_exc}")
             traceback.print_exc()
         print_weight_windows_depth_summary(depth, ingaas)
-        # Drop older MAGIC generations so the next refine/use loads only the latest.
-        prune_weight_windows_file(WW_FILE)
     except Exception as exc:
         print(f"Weight-window depth summary skipped: {exc}")
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -823,10 +928,11 @@ def make_sim_settings(
         # Keep a modest lost-particle margin; dumps stay off (they dominate runtime).
         settings.rel_max_lost_particles = 0.05
         settings.max_write_lost_particles = 1
-        # Analog seed, and refine with the previous map. Cap splits at 100 so a
-        # history can cross the shield cliff. Leave max_lower_bound_ratio at 1
-        # so OpenMC does not raise the windows toward the particle.
-        settings.max_history_splits = min(settings.max_history_splits, 100)
+        # Analog seed, and refine with the previous map. The history cap and
+        # the saved-map clamp share DEFAULT_HISTORY_SPLITS. Leave
+        # max_lower_bound_ratio at 1 so OpenMC does not rescale later windows.
+        settings.max_history_splits = DEFAULT_HISTORY_SPLITS
+        settings.max_generation_tracks = generation_track_limit()
         ww_mesh = make_ww_mesh(
             lower_left_corner, upper_right_corner, cell_dimension=ww_mesh_cm
         )
@@ -853,7 +959,9 @@ def make_sim_settings(
                 "surface": False,
             }
             settings.weight_windows_on = True
-            settings.weight_windows = [latest_weight_windows(WW_FILE)]
+            settings.weight_windows = [
+                prepare_weight_windows_for_transport(latest_weight_windows(WW_FILE))
+            ]
             settings.survival_biasing = False
             settings.cutoff = {"weight": 1e-4, "weight_avg": 1.0}
             print(f"Weight windows: refining from latest set in {WW_FILE}")
@@ -862,7 +970,9 @@ def make_sim_settings(
         print(
             f"Weight windows: {settings.particles} particles/gen, "
             f"rel_max_lost={settings.rel_max_lost_particles}, "
-            f"max_splits={settings.max_history_splits}, on_the_fly=False"
+            f"max_splits={settings.max_history_splits}, "
+            f"max_generation_tracks={settings.max_generation_tracks}, "
+            f"on_the_fly=False"
         )
     elif weight_windows == "use":
         if not Path(WW_FILE).is_file():
@@ -874,10 +984,13 @@ def make_sim_settings(
             "surface": False,
         }
         settings.weight_windows_on = True
-        settings.weight_windows = [latest_weight_windows(WW_FILE)]
+        settings.weight_windows = [
+            prepare_weight_windows_for_transport(latest_weight_windows(WW_FILE))
+        ]
         settings.survival_biasing = False  # WW handles weights
         settings.cutoff = {"weight": 1e-4, "weight_avg": 1.0}  # RR safety
-        settings.max_history_splits = min(settings.max_history_splits, 100)
+        settings.max_history_splits = DEFAULT_HISTORY_SPLITS
+        settings.max_generation_tracks = generation_track_limit()
         settings.rel_max_lost_particles = 0.05
         settings.max_write_lost_particles = 1
 

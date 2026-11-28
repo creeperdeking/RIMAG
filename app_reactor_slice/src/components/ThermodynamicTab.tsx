@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from "react";
-import { Alert, Button, Col, Row } from "react-bootstrap";
+import React, { useEffect, useMemo, useState } from "react";
+import { Alert, Button, Col, Form, Row } from "react-bootstrap";
+import LiveReactorPanel from "./LiveReactorPanel";
 import type { NumericKey, Setup } from "../configurations";
 import {
   GRAPHITE_CP_J_KG_K,
@@ -8,6 +9,7 @@ import {
   RIMAEL_N_SECTIONS,
   TPV_CELL_TEMP_K,
   diskCircuitArcsFromAngles,
+  diskRotationalKineticEnergy,
   diskSectionThermal,
   graphiteLumpedThermal,
   shieldGraphiteThermal,
@@ -27,6 +29,8 @@ type FuelTrace = {
   diskTempC?: number[];
   shellTempC?: number[];
   section0TempC?: number[];
+  /** Twelve section temperatures. Index 0 is the window that starts at 0°. */
+  sectionTempsC?: number[][];
   stopTimeS: number;
   fuelTempStartC: number;
   fuelArcFrac?: number;
@@ -46,6 +50,9 @@ type Props = {
   tpvGapCm: number;
   /** One-disk annulus face area from Geometry (m²). */
   diskAreaM2: number;
+  /** Annulus radii of that disk (m). */
+  diskInnerRadiusM: number;
+  diskOuterRadiusM: number;
   /** Solid fuel-stack thickness from Layer designer (cm, excludes Void). */
   fuelThicknessCm: number;
   /** Fuel-sector face area from Geometry (m²). */
@@ -70,6 +77,8 @@ type Props = {
   renderSlider: (key: NumericKey, label: string, format: (value: number) => string) => React.ReactNode;
   /** Apply a numeric setup field (the air-bridge cell choice). */
   onNumericChange?: (key: NumericKey, value: number) => void;
+  /** Geometry columns. Each column draws the same modeled disk. */
+  columns?: number;
 };
 
 function polylinePath(points: TpvPoint[], xOf: (t: number) => number, yOf: (v: number) => number): string {
@@ -218,7 +227,21 @@ function seriesPath(
   return drawn.length ? `M ${drawn.join(" L ")}` : "";
 }
 
-function FuelTempChart({ trace }: { trace: FuelTrace }) {
+function formatKineticEnergy(joules: number): string {
+  if (!(joules >= 0) || !Number.isFinite(joules)) return "—";
+  if (joules >= 1e6) return `${(joules / 1e6).toFixed(2)} MJ`;
+  if (joules >= 1000) return `${(joules / 1000).toFixed(2)} kJ`;
+  return `${joules.toFixed(0)} J`;
+}
+
+function sectionSeries(trace: FuelTrace, sectionIndex: number): number[] {
+  const fromAll = trace.sectionTempsC?.[sectionIndex];
+  if (fromAll && fromAll.length > 0) return fromAll;
+  if (sectionIndex === 0) return trace.section0TempC ?? [];
+  return [];
+}
+
+function FuelTempChart({ trace, sectionIndex }: { trace: FuelTrace; sectionIndex: number }) {
   const width = 640;
   const height = 300;
   const pad = { left: 52, right: 16, top: 28, bottom: 36 };
@@ -227,8 +250,7 @@ function FuelTempChart({ trace }: { trace: FuelTrace }) {
   const { paths, yMin, yMax, xMax } = useMemo(() => {
     const series = [
       { name: "Fuel", color: "#c2410c", values: trace.fuelTempC },
-      { name: "Section 0", color: "#7c3aed", values: trace.section0TempC ?? [] },
-      { name: "Disk", color: "#0f766e", values: trace.diskTempC ?? [] },
+      { name: `Section ${sectionIndex}`, color: "#7c3aed", values: sectionSeries(trace, sectionIndex) },
       { name: "Shell", color: "#1d4ed8", values: trace.shellTempC ?? [] },
     ].filter((item) => item.values.length === trace.timeS.length && item.values.length > 0);
     const xs = trace.timeS;
@@ -252,25 +274,25 @@ function FuelTempChart({ trace }: { trace: FuelTrace }) {
       yMax: yMaxLocal,
       xMax: xMaxLocal,
     };
-  }, [trace, plotW, plotH, pad.left, pad.top]);
+  }, [trace, sectionIndex, plotW, plotH, pad.left, pad.top]);
 
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => yMin + f * (yMax - yMin));
   const xTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * xMax);
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="rimael-fuel-chart" role="img" aria-label="Fuel, disk, and shell temperature vs time">
+    <svg viewBox={`0 0 ${width} ${height}`} className="rimael-fuel-chart" role="img" aria-label="Fuel, selected disk section, and shell temperature vs time">
       <rect x={pad.left} y={pad.top} width={plotW} height={plotH} fill="#fafbfc" stroke="#dee2e6" />
       {paths.map((item, index) => (
         <g key={item.name}>
           <line
-            x1={pad.left + index * 92}
-            x2={pad.left + index * 92 + 16}
+            x1={pad.left + index * 120}
+            x2={pad.left + index * 120 + 16}
             y1={14}
             y2={14}
             stroke={item.color}
             strokeWidth={2}
           />
-          <text x={pad.left + index * 92 + 20} y={18} className="rimael-chart-label">
+          <text x={pad.left + index * 120 + 20} y={18} className="rimael-chart-label">
             {item.name}
           </text>
         </g>
@@ -322,6 +344,8 @@ const ThermodynamicTab: React.FC<Props> = ({
   fuelGapCm,
   tpvGapCm,
   diskAreaM2,
+  diskInnerRadiusM,
+  diskOuterRadiusM,
   fuelThicknessCm,
   fuelAreaM2,
   fuelAngleRad,
@@ -334,24 +358,38 @@ const ThermodynamicTab: React.FC<Props> = ({
   moderatorThicknessCm,
   absorberThicknessCm,
   operatingPoint,
-  renderSlider,
   onNumericChange,
+  columns = 1,
 }) => {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [trace, setTrace] = useState<FuelTrace | null>(null);
-  const cellIndex = setup.tpv_airbridge_cell;
-
-  const curves = useMemo(
-    () => airbridgeCurves(cellIndex, setup.shell_emissivity),
-    [cellIndex, setup.shell_emissivity],
+  const [runTimeMin, setRunTimeMin] = useState(() =>
+    String(Number.isFinite(setup.rimael_run_min) ? setup.rimael_run_min : 11.67),
   );
-  const effPoints = curves.efficiency;
-  const powerPoints = curves.power;
-  const egColor = curves.color;
-
-  /** Cells see the vacuum shell, so the shell temperature is the TPV emitter. */
-  const emitterTempC = operatingPoint.shellTempC;
+  const [diskRps, setDiskRps] = useState(() =>
+    String(Number.isFinite(setup.rimael_disk_rps) ? setup.rimael_disk_rps : 0.2),
+  );
+  const sectionIndex = Math.round(Number.isFinite(setup.rimael_section) ? setup.rimael_section : 0);
+  const diskSpin = useMemo(() => {
+    const revPerS = Number(diskRps);
+    if (!Number.isFinite(revPerS) || revPerS < 0) return null;
+    return diskRotationalKineticEnergy({
+      innerRadiusM: diskInnerRadiusM,
+      outerRadiusM: diskOuterRadiusM,
+      thicknessCm: diskThicknessCm,
+      revPerS,
+    });
+  }, [diskRps, diskInnerRadiusM, diskOuterRadiusM, diskThicknessCm]);
+  useEffect(() => {
+    if (!Number.isFinite(setup.rimael_run_min)) return;
+    setRunTimeMin((prev) => (Number(prev) === setup.rimael_run_min ? prev : String(setup.rimael_run_min)));
+  }, [setup.rimael_run_min]);
+  useEffect(() => {
+    if (!Number.isFinite(setup.rimael_disk_rps)) return;
+    setDiskRps((prev) => (Number(prev) === setup.rimael_disk_rps ? prev : String(setup.rimael_disk_rps)));
+  }, [setup.rimael_disk_rps]);
+  const cellIndex = setup.tpv_airbridge_cell;
   const fuelHeatingPowerW = operatingPoint.heatW;
 
   const diskThermal = useMemo(
@@ -390,6 +428,16 @@ const ThermodynamicTab: React.FC<Props> = ({
         setError("TPV area is zero — cannot set Modelica fuel heating power P0.");
         return;
       }
+      const runMinutes = Number(runTimeMin);
+      const rps = Number(diskRps);
+      if (!(runMinutes > 0)) {
+        setError("Run time must be a positive number of minutes.");
+        return;
+      }
+      if (!Number.isFinite(rps) || rps < 0) {
+        setError("Disk speed must be zero or a positive number of revolutions per second.");
+        return;
+      }
       const response = await fetch("/api/rimael/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -417,6 +465,8 @@ const ThermodynamicTab: React.FC<Props> = ({
           reflector_thickness_cm: reflectorThicknessCm,
           moderator_thickness_cm: moderatorThicknessCm,
           absorber_thickness_cm: absorberThicknessCm,
+          run_time_min: runMinutes,
+          disk_rps: rps,
         }),
       });
       const data = (await response.json()) as FuelTrace & { error?: string };
@@ -431,6 +481,225 @@ const ThermodynamicTab: React.FC<Props> = ({
       setRunning(false);
     }
   };
+
+  return (
+    <Row className="g-4">
+      <Col lg={5}>
+        <div className="border rounded p-3 bg-white h-100">
+          <h2 className="h6 mb-3">Disk thermal circuit</h2>
+          <div className="small text-secondary">
+            Fuel temperature is the OpenMC fuel temperature and the initial <code>FuelPlate.T</code> of Run Sim (
+            {Math.round(setup.fuel_temp_c + 273.15)} K). Each of the twelve disk sections meets the fuel, the shield,
+            and the shell only while its window overlaps that arc. Across the helium gap,{" "}
+            <code>Q = σ Gr (T_hot⁴ − T_cold⁴) + k_He A ΔT / d</code>. From the shell to the cells the gap is vacuum,
+            so that step is radiation only, and the absorbed fraction of the blackbody is{" "}
+            <code>A ε / (ε + A (1 − ε))</code>.
+          </div>
+          <div className="small text-secondary mt-2">
+            Graphite ρ={(GRAPHITE_DENSITY_KG_M3 / 1000).toFixed(2)} g/cm³, cₚ={GRAPHITE_CP_J_KG_K} J/(kg·K), k=
+            {GRAPHITE_K_W_M_K} W/(m·K). Void gaps excluded from thicknesses.
+            <br />
+            Fuel plate: area <strong>{fuelAreaM2.toFixed(3)} m²</strong>, stack{" "}
+            <strong>{fuelThicknessCm.toFixed(2)} cm</strong> →{" "}
+            <code>FuelPlate.C = ρ·A·t·cₚ = {fuelThermal.heatCapacity.toFixed(0)} J/K</code> (m=
+            {fuelThermal.massKg.toFixed(1)} kg).
+            <br />
+            Disk: area <strong>{diskAreaM2.toFixed(3)} m²</strong>, solid{" "}
+            <strong>{diskThicknessCm.toFixed(2)} cm</strong>, {RIMAEL_N_SECTIONS} sectors →{" "}
+            <code>
+              C_sec = ρ·A·t·cₚ / {RIMAEL_N_SECTIONS} = {diskThermal.heatCapacitySection.toFixed(0)} J/K
+            </code>
+            {" · "}
+            <code>G = {diskThermal.throughThicknessG.toFixed(0)} W/K</code>.
+            <br />
+            Shield: disk-facing reflector <strong>{reflectorAreaM2.toFixed(3)} m²</strong> ×{" "}
+            <strong>{reflectorThicknessCm.toFixed(2)} cm</strong>, moderator{" "}
+            <strong>{moderatorAreaM2.toFixed(3)} m²</strong> × <strong>{moderatorThicknessCm.toFixed(2)} cm</strong>,
+            absorber <strong>{absorberAreaM2.toFixed(3)} m²</strong> ×{" "}
+            <strong>{absorberThicknessCm.toFixed(2)} cm</strong>, all at graphite ρ·cₚ →{" "}
+            <code>Shield.C = ρ·Σ(A·t)·cₚ = {shieldThermal.heatCapacity.toFixed(0)} J/K</code> (m=
+            {shieldThermal.massKg.toFixed(1)} kg). The disk radiates to that area with the disk emissivity, and
+            conducts across the same helium gaps as the fuel and the shell, only while a section window overlaps a
+            shield arc. Heat can enter the shield from a disk section and cannot flow back, so the shield cannot
+            carry heat from one section to another.
+            <br />
+            Circuit arcs from Geometry: fuel{" "}
+            <strong>{(100 * circuitArcs.fuelArcFrac).toFixed(1)}%</strong>, TPV{" "}
+            <strong>{(100 * circuitArcs.tpvArcFrac).toFixed(1)}%</strong>, each shield{" "}
+            <strong>{(100 * circuitArcs.shield1ArcFrac).toFixed(1)}%</strong> → Modelica{" "}
+            <code>fuel_arc_frac</code> / <code>tpv_arc_frac</code> / <code>shield*_arc_frac</code>.
+            <br />
+            Fuel heating (one disk × one slice):{" "}
+            <code>
+              P0 = 2·ρ·10·A_tpv / η = {(fuelHeatingPowerW / 1000).toFixed(1)} kW
+            </code>{" "}
+            (A_tpv={tpvAreaM2.toFixed(3)} m²).
+          </div>
+        </div>
+      </Col>
+      <Col lg={7}>
+        <div className="border rounded p-3 bg-white h-100">
+          <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+            <h2 className="h6 mb-0">RIMAEL Modelica — fuel temperature</h2>
+            <div className="d-flex align-items-center gap-2">
+              <Form.Label htmlFor="disk-section-select" className="small mb-0 text-nowrap">
+                Disk section
+              </Form.Label>
+              <Form.Select
+                id="disk-section-select"
+                size="sm"
+                aria-label="Disk section to display"
+                style={{ width: "11rem" }}
+                value={sectionIndex}
+                onChange={(event) => onNumericChange?.("rimael_section", Number(event.target.value))}
+              >
+                {Array.from({ length: RIMAEL_N_SECTIONS }, (_, index) => (
+                  <option key={index} value={index}>
+                    Section {index} · {index * 30}°
+                  </option>
+                ))}
+              </Form.Select>
+              <Button size="sm" variant="primary" disabled={running} onClick={() => void onRunRim()}>
+                {running ? "Running…" : "Run Sim"}
+              </Button>
+            </div>
+          </div>
+          <div className="d-flex flex-wrap align-items-end gap-3 mb-2">
+            <Form.Group controlId="run-time-min">
+              <Form.Label className="small mb-1">Run time (min)</Form.Label>
+              <Form.Control
+                size="sm"
+                type="number"
+                min={0.1}
+                max={180}
+                step={0.5}
+                value={runTimeMin}
+                onChange={(event) => {
+                  const text = event.target.value;
+                  setRunTimeMin(text);
+                  const minutes = Number(text);
+                  if (Number.isFinite(minutes)) onNumericChange?.("rimael_run_min", minutes);
+                }}
+                style={{ width: "6.5rem" }}
+              />
+            </Form.Group>
+            <Form.Group controlId="disk-rps">
+              <Form.Label className="small mb-1">Disk speed (rev/s)</Form.Label>
+              <Form.Control
+                size="sm"
+                type="number"
+                min={0}
+                max={20}
+                step={0.05}
+                value={diskRps}
+                onChange={(event) => {
+                  const text = event.target.value;
+                  setDiskRps(text);
+                  const rps = Number(text);
+                  if (Number.isFinite(rps)) onNumericChange?.("rimael_disk_rps", rps);
+                }}
+                style={{ width: "6.5rem" }}
+              />
+            </Form.Group>
+            <div className="small text-secondary pb-1">
+              One disk,{" "}
+              <strong>{diskSpin ? diskSpin.massKg.toFixed(0) : "—"} kg</strong>
+              {" · kinetic energy "}
+              <strong>{diskSpin ? formatKineticEnergy(diskSpin.energyJ) : "—"}</strong>
+            </div>
+          </div>
+          <LiveReactorPanel
+            geometryBody={{
+              fuel_temp_c: setup.fuel_temp_c,
+              fuel_emissivity: setup.fuel_emissivity,
+              disk_emissivity: setup.disk_emissivity,
+              disk_thickness_cm: diskThicknessCm,
+              disk_area_m2: diskAreaM2,
+              fuel_thickness_cm: fuelThicknessCm,
+              fuel_area_m2: fuelAreaM2,
+              fuel_arc_frac: circuitArcs.fuelArcFrac,
+              tpv_arc_frac: circuitArcs.tpvArcFrac,
+              shield1_arc_frac: circuitArcs.shield1ArcFrac,
+              shield2_arc_frac: circuitArcs.shield2ArcFrac,
+              fuel_heating_power_w: fuelHeatingPowerW,
+              shell_emissivity: setup.shell_emissivity,
+              fuel_gap_cm: fuelGapCm,
+              tpv_gap_cm: tpvGapCm,
+              tpv_area_m2: tpvAreaM2,
+              tpv_cell_index: cellIndex,
+              reflector_area_m2: reflectorAreaM2,
+              moderator_area_m2: moderatorAreaM2,
+              absorber_area_m2: absorberAreaM2,
+              reflector_thickness_cm: reflectorThicknessCm,
+              moderator_thickness_cm: moderatorThicknessCm,
+              absorber_thickness_cm: absorberThicknessCm,
+            }}
+            nominalPowerW={fuelHeatingPowerW}
+            diskRps={diskRps}
+            columns={columns}
+            innerRadiusM={diskInnerRadiusM}
+            outerRadiusM={diskOuterRadiusM}
+            fuelArcFrac={circuitArcs.fuelArcFrac}
+            shield1ArcFrac={circuitArcs.shield1ArcFrac}
+            tpvArcFrac={circuitArcs.tpvArcFrac}
+            shield2ArcFrac={circuitArcs.shield2ArcFrac}
+            batchRunning={running}
+          />
+          <p className="small text-secondary mb-3">
+            Runs <code>RIMAEL.Reactor</code> from this operating point. Helium conduction stays on, including on the
+            shield arcs. The shield is one graphite mass that starts at the disk temperature. The vacuum shell is its
+            own node, and the cells at {(TPV_CELL_TEMP_K - 273.15).toFixed(0)} °C take the air-bridge absorption.
+            The disk turns at the speed above until 4 min, then stops. A shorter run ends while it is still turning.
+            The menu picks which of the twelve sections is drawn. Section 0 is the window
+            that starts at 0°, on the fuel. While the disk turns, every section spends the same share of the turn
+            on each arc, so it stays near the disk mean. After shutdown the disk stops and that section stays on
+            the arc at its start angle. The first compile can take a couple of minutes; later runs reuse the binary.
+          </p>
+          {error && (
+            <Alert variant="danger" className="py-2 px-3 small">
+              {error}
+            </Alert>
+          )}
+          {trace && (
+            <>
+              <div className="small text-secondary mb-2">
+                {trace.message}
+                {" · "}
+                {trace.timeS.length} samples · final{" "}
+                {trace.fuelTempC[trace.fuelTempC.length - 1]?.toFixed(1)} °C at {trace.stopTimeS.toFixed(0)} s
+              </div>
+              <FuelTempChart trace={trace} sectionIndex={sectionIndex} />
+              {sectionSeries(trace, sectionIndex).length === 0 && (
+                <div className="small text-secondary mt-2">
+                  This run did not record section {sectionIndex}. Run Sim again to load all twelve.
+                </div>
+              )}
+            </>
+          )}
+          {!trace && !running && !error && (
+            <div className="small text-secondary">Click Run Sim to simulate and plot fuel temperature.</div>
+          )}
+          {running && <div className="small text-secondary">OpenModelica is simulating…</div>}
+        </div>
+      </Col>
+    </Row>
+  );
+};
+
+export const ThermophotovoltaicsTab: React.FC<Props> = ({
+  setup,
+  fuelGapCm,
+  tpvGapCm,
+  operatingPoint,
+  renderSlider,
+  onNumericChange,
+}) => {
+  const cellIndex = setup.tpv_airbridge_cell;
+  const curves = useMemo(
+    () => airbridgeCurves(cellIndex, setup.shell_emissivity),
+    [cellIndex, setup.shell_emissivity],
+  );
+  const emitterTempC = operatingPoint.shellTempC;
 
   return (
     <Row className="g-4">
@@ -493,7 +762,7 @@ const ThermodynamicTab: React.FC<Props> = ({
                 {tpvGapCm.toFixed(2)} cm of helium).
               </span>
             </div>
-            <div className="small mb-2">
+            <div className="small mb-0">
               Shell <strong>{emitterTempC.toFixed(0)} °C</strong>
               <span className="text-secondary">
                 {" "}
@@ -502,110 +771,32 @@ const ThermodynamicTab: React.FC<Props> = ({
                 {Math.round(100 * operatingPoint.conductionShareFuel)}% of the heat.
               </span>
             </div>
-            <TpvModelChart
-              title={`Efficiency — ${curves.label} · ε ${setup.shell_emissivity.toFixed(2)}`}
-              yLabel="η (%)"
-              points={effPoints}
-              color={egColor}
-              emitterTempC={emitterTempC}
-              yMin={0}
-              yMax={50}
-              valueFormat={(v) => v.toFixed(0)}
-            />
-            <TpvModelChart
-              title={`Power density — ${curves.label} · ε ${setup.shell_emissivity.toFixed(2)}`}
-              yLabel="P (W/cm²)"
-              points={powerPoints}
-              color={egColor}
-              emitterTempC={emitterTempC}
-              yMin={0.001}
-              yMax={10}
-              logY
-              valueFormat={(v) => v.toFixed(2)}
-            />
-          </div>
-
-          <div className="small text-secondary mt-2">
-            Fuel temperature is the OpenMC fuel temperature and the initial <code>FuelPlate.T</code> of Run Sim (
-            {Math.round(setup.fuel_temp_c + 273.15)} K). Helium gaps are the Void
-            sheets on the disk stack. Across helium,{" "}
-            <code>Q = σ Gr (T_hot⁴ − T_cold⁴) + k_He A ΔT / d</code>. From the shell to the cells the gap is vacuum
-            and reflected light returns, so the absorbed fraction of the blackbody is{" "}
-            <code>A ε / (ε + A (1 − ε))</code>.
-          </div>
-          <div className="small text-secondary mt-2">
-            Graphite ρ={(GRAPHITE_DENSITY_KG_M3 / 1000).toFixed(2)} g/cm³, cₚ={GRAPHITE_CP_J_KG_K} J/(kg·K), k=
-            {GRAPHITE_K_W_M_K} W/(m·K). Void gaps excluded from thicknesses.
-            <br />
-            Fuel plate: area <strong>{fuelAreaM2.toFixed(3)} m²</strong>, stack{" "}
-            <strong>{fuelThicknessCm.toFixed(2)} cm</strong> →{" "}
-            <code>FuelPlate.C = ρ·A·t·cₚ = {fuelThermal.heatCapacity.toFixed(0)} J/K</code> (m=
-            {fuelThermal.massKg.toFixed(1)} kg).
-            <br />
-            Disk: area <strong>{diskAreaM2.toFixed(3)} m²</strong>, solid{" "}
-            <strong>{diskThicknessCm.toFixed(2)} cm</strong>, {RIMAEL_N_SECTIONS} sectors →{" "}
-            <code>
-              C_sec = ρ·A·t·cₚ / {RIMAEL_N_SECTIONS} = {diskThermal.heatCapacitySection.toFixed(0)} J/K
-            </code>
-            {" · "}
-            <code>G = {diskThermal.throughThicknessG.toFixed(0)} W/K</code>.
-            <br />
-            Shield: disk-facing reflector <strong>{reflectorAreaM2.toFixed(3)} m²</strong> ×{" "}
-            <strong>{reflectorThicknessCm.toFixed(2)} cm</strong>, moderator{" "}
-            <strong>{moderatorAreaM2.toFixed(3)} m²</strong> × <strong>{moderatorThicknessCm.toFixed(2)} cm</strong>,
-            absorber <strong>{absorberAreaM2.toFixed(3)} m²</strong> ×{" "}
-            <strong>{absorberThicknessCm.toFixed(2)} cm</strong>, all graphite →{" "}
-            <code>Shield.C = ρ·Σ(A·t)·cₚ = {shieldThermal.heatCapacity.toFixed(0)} J/K</code> (m=
-            {shieldThermal.massKg.toFixed(1)} kg). Helium conductance uses the same gaps as the fuel and the shell.
-            <br />
-            Circuit arcs from Geometry: fuel{" "}
-            <strong>{(100 * circuitArcs.fuelArcFrac).toFixed(1)}%</strong>, TPV{" "}
-            <strong>{(100 * circuitArcs.tpvArcFrac).toFixed(1)}%</strong>, each shield{" "}
-            <strong>{(100 * circuitArcs.shield1ArcFrac).toFixed(1)}%</strong> → Modelica{" "}
-            <code>fuel_arc_frac</code> / <code>tpv_arc_frac</code> / <code>shield*_arc_frac</code>.
-            <br />
-            Fuel heating (one disk × one slice):{" "}
-            <code>
-              P0 = 2·ρ·10·A_tpv / η = {(fuelHeatingPowerW / 1000).toFixed(1)} kW
-            </code>{" "}
-            (A_tpv={tpvAreaM2.toFixed(3)} m²).
           </div>
         </div>
       </Col>
       <Col lg={7}>
         <div className="border rounded p-3 bg-white h-100">
-          <div className="d-flex justify-content-between align-items-center gap-2 mb-2">
-            <h2 className="h6 mb-0">RIMAEL Modelica — fuel temperature</h2>
-            <Button size="sm" variant="primary" disabled={running} onClick={() => void onRunRim()}>
-              {running ? "Running…" : "Run Sim"}
-            </Button>
-          </div>
-          <p className="small text-secondary mb-3">
-            Runs <code>RIMAEL.Reactor</code> from this operating point. Helium conduction stays on, including on the
-            shield arcs. The shield is one graphite mass that starts at the disk temperature. The vacuum shell is its
-            own node, and the cells at {(TPV_CELL_TEMP_K - 273.15).toFixed(0)} °C take the air-bridge absorption.
-            Shutdown is at 240 s. The first compile can take a couple of minutes; later runs reuse the binary.
-          </p>
-          {error && (
-            <Alert variant="danger" className="py-2 px-3 small">
-              {error}
-            </Alert>
-          )}
-          {trace && (
-            <>
-              <div className="small text-secondary mb-2">
-                {trace.message}
-                {" · "}
-                {trace.timeS.length} samples · final{" "}
-                {trace.fuelTempC[trace.fuelTempC.length - 1]?.toFixed(1)} °C at {trace.stopTimeS.toFixed(0)} s
-              </div>
-              <FuelTempChart trace={trace} />
-            </>
-          )}
-          {!trace && !running && !error && (
-            <div className="small text-secondary">Click Run Sim to simulate and plot fuel temperature.</div>
-          )}
-          {running && <div className="small text-secondary">OpenModelica is simulating…</div>}
+          <TpvModelChart
+            title={`Efficiency — ${curves.label} · ε ${setup.shell_emissivity.toFixed(2)}`}
+            yLabel="η (%)"
+            points={curves.efficiency}
+            color={curves.color}
+            emitterTempC={emitterTempC}
+            yMin={0}
+            yMax={50}
+            valueFormat={(v) => v.toFixed(0)}
+          />
+          <TpvModelChart
+            title={`Power density — ${curves.label} · ε ${setup.shell_emissivity.toFixed(2)}`}
+            yLabel="P (W/cm²)"
+            points={curves.power}
+            color={curves.color}
+            emitterTempC={emitterTempC}
+            yMin={0.001}
+            yMax={10}
+            logY
+            valueFormat={(v) => v.toFixed(2)}
+          />
         </div>
       </Col>
     </Row>

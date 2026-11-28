@@ -28,7 +28,8 @@ import {
   updateQueuedSimulation,
   weightWindowsStatus,
 } from "./server/rimagRunner";
-import { RimaelRunnerError, runRimaelFuelTemperature } from "./server/rimaelRunner";
+import { liveSnapshot, startLive, stopLive, subscribeLive, updateLiveControl } from "./server/rimaelLive";
+import { RimaelBusyError, RimaelRunnerError, runRimaelFuelTemperature, type RimaelRunOptions } from "./server/rimaelRunner";
 
 const SETUPS_FILE = path.resolve("save/setups.json");
 
@@ -475,6 +476,56 @@ function geometryApi(): Plugin {
   };
 }
 
+function rimaelOptions(body: unknown): { options: RimaelRunOptions; record: Record<string, unknown> } {
+  const record =
+    body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
+  const num = (key: string): number | undefined => {
+    const raw = record[key];
+    const value = typeof raw === "number" ? raw : Number(raw);
+    return Number.isFinite(value) ? value : undefined;
+  };
+  return {
+    record,
+    options: {
+      fuelTempC: num("fuel_temp_c"),
+      fuelEmissivity: num("fuel_emissivity"),
+      diskEmissivity: num("disk_emissivity"),
+      diskThicknessCm: num("disk_thickness_cm"),
+      diskAreaM2: num("disk_area_m2"),
+      fuelThicknessCm: num("fuel_thickness_cm"),
+      fuelAreaM2: num("fuel_area_m2"),
+      fuelArcFrac: num("fuel_arc_frac"),
+      tpvArcFrac: num("tpv_arc_frac"),
+      shield1ArcFrac: num("shield1_arc_frac"),
+      shield2ArcFrac: num("shield2_arc_frac"),
+      fuelHeatingPowerW: num("fuel_heating_power_w"),
+      shellEmissivity: num("shell_emissivity"),
+      fuelGapCm: num("fuel_gap_cm"),
+      tpvGapCm: num("tpv_gap_cm"),
+      tpvAreaM2: num("tpv_area_m2"),
+      tpvCellIndex: num("tpv_cell_index"),
+      reflectorAreaM2: num("reflector_area_m2"),
+      moderatorAreaM2: num("moderator_area_m2"),
+      absorberAreaM2: num("absorber_area_m2"),
+      reflectorThicknessCm: num("reflector_thickness_cm"),
+      moderatorThicknessCm: num("moderator_thickness_cm"),
+      absorberThicknessCm: num("absorber_thickness_cm"),
+      runTimeMin: num("run_time_min"),
+      diskRps: num("disk_rps"),
+    },
+  };
+}
+
+function rimaelError(error: unknown, fallback: string): { status: number; message: string } {
+  const message =
+    error instanceof RimaelRunnerError
+      ? error.message
+      : error instanceof Error
+        ? error.message
+        : fallback;
+  return { status: error instanceof RimaelBusyError ? 409 : 500, message };
+}
+
 function rimaelApi(): Plugin {
   const handle: Connect.NextHandleFunction = (req, res, next) => {
     const url = req.url?.split("?")[0];
@@ -483,56 +534,92 @@ function rimaelApi(): Plugin {
       return;
     }
 
+    if (url === "/api/rimael/live/stream" && req.method === "GET") {
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        // Caddy compresses responses when the browser sends Accept-Encoding: gzip.
+        // The encoder holds this stream until a gzip block fills, so EventSource
+        // never fires and the disk stays still. identity makes Caddy leave it alone.
+        "Content-Encoding": "identity",
+        "X-Accel-Buffering": "no",
+        Connection: "keep-alive",
+      });
+      const snap = liveSnapshot();
+      const send = (event: unknown) => {
+        if (!res.writableEnded) res.write(`data: ${JSON.stringify(event)}\n\n`);
+      };
+      send({ type: "ready", running: snap.running, message: snap.message, history: snap.history });
+      const unsubscribe = subscribeLive((event) => send(event));
+      req.on("close", () => unsubscribe());
+      return;
+    }
+
+    if (url === "/api/rimael/live/control" && req.method === "POST") {
+      void readJsonBody(req)
+        .then((body) => {
+          const { record } = rimaelOptions(body);
+          const num = (key: string): number | undefined => {
+            const value = Number(record[key]);
+            return Number.isFinite(value) ? value : undefined;
+          };
+          updateLiveControl({ powerW: num("power_w"), rps: num("disk_rps"), scale: num("time_scale") });
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ ok: true, ...liveSnapshot(), history: undefined }));
+        })
+        .catch((error: unknown) => {
+          const parsed = rimaelError(error, "Could not update the live control.");
+          res.statusCode = parsed.status;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ error: parsed.message }));
+        });
+      return;
+    }
+
+    if (url === "/api/rimael/live/stop" && req.method === "POST") {
+      stopLive();
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ ok: true, running: false }));
+      return;
+    }
+
+    if (url === "/api/rimael/live/start" && req.method === "POST") {
+      void readJsonBody(req)
+        .then(async (body) => {
+          const { options, record } = rimaelOptions(body);
+          const powerW = Number(record.power_w);
+          const rps = Number(record.disk_rps);
+          const scale = Number(record.time_scale);
+          const running = await startLive(options, {
+            powerW: Number.isFinite(powerW) ? powerW : options.fuelHeatingPowerW ?? 0,
+            rps: Number.isFinite(rps) ? rps : 0.2,
+            scale: Number.isFinite(scale) ? scale : 1,
+          });
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ ok: running, running }));
+        })
+        .catch((error: unknown) => {
+          const parsed = rimaelError(error, "Could not start the live Modelica session.");
+          res.statusCode = parsed.status;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ error: parsed.message }));
+        });
+      return;
+    }
+
     if (url === "/api/rimael/run" && req.method === "POST") {
       void readJsonBody(req)
         .then(async (body) => {
-          const record =
-            body && typeof body === "object" && !Array.isArray(body)
-              ? (body as Record<string, unknown>)
-              : {};
-          const num = (key: string): number | undefined => {
-            const raw = record[key];
-            const value = typeof raw === "number" ? raw : Number(raw);
-            return Number.isFinite(value) ? value : undefined;
-          };
-          const trace = await runRimaelFuelTemperature({
-            fuelTempC: num("fuel_temp_c"),
-            fuelEmissivity: num("fuel_emissivity"),
-            diskEmissivity: num("disk_emissivity"),
-            diskThicknessCm: num("disk_thickness_cm"),
-            diskAreaM2: num("disk_area_m2"),
-            fuelThicknessCm: num("fuel_thickness_cm"),
-            fuelAreaM2: num("fuel_area_m2"),
-            fuelArcFrac: num("fuel_arc_frac"),
-            tpvArcFrac: num("tpv_arc_frac"),
-            shield1ArcFrac: num("shield1_arc_frac"),
-            shield2ArcFrac: num("shield2_arc_frac"),
-            fuelHeatingPowerW: num("fuel_heating_power_w"),
-            shellEmissivity: num("shell_emissivity"),
-            fuelGapCm: num("fuel_gap_cm"),
-            tpvGapCm: num("tpv_gap_cm"),
-            tpvAreaM2: num("tpv_area_m2"),
-            tpvCellIndex: num("tpv_cell_index"),
-            reflectorAreaM2: num("reflector_area_m2"),
-            moderatorAreaM2: num("moderator_area_m2"),
-            absorberAreaM2: num("absorber_area_m2"),
-            reflectorThicknessCm: num("reflector_thickness_cm"),
-            moderatorThicknessCm: num("moderator_thickness_cm"),
-            absorberThicknessCm: num("absorber_thickness_cm"),
-          });
+          const { options } = rimaelOptions(body);
+          const trace = await runRimaelFuelTemperature(options);
           res.setHeader("Content-Type", "application/json");
           res.end(JSON.stringify(trace));
         })
         .catch((error: unknown) => {
-          const message =
-            error instanceof RimaelRunnerError
-              ? error.message
-              : error instanceof Error
-                ? error.message
-                : "Could not run the RIMAEL Modelica simulation.";
-          res.statusCode = 500;
+          const parsed = rimaelError(error, "Could not run the RIMAEL Modelica simulation.");
+          res.statusCode = parsed.status;
           res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ error: message }));
+          res.end(JSON.stringify({ error: parsed.message }));
         });
       return;
     }

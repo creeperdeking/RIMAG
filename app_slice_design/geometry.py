@@ -18,7 +18,7 @@ from app_slice_design.layout import (
 from app_slice_design.materials_map import (
     fuel_and_tpv_thickness_cm,
     resolve_material_name,
-    same_material_names,
+    shared_graphite_chord,
     shared_stack_thickness_cm,
     stack_with_disk,
 )
@@ -404,9 +404,11 @@ def _build_hole_cells(
     cells: List[openmc.Cell],
     conical_pitch_deg: float,
     open_period: bool,
+    shared_chord: bool = False,
+    inner_shield_fill: Optional[str] = None,
 ) -> None:
     """Approximate hole fills with chord planes (fuel at +y)."""
-    cuts = center_cuts(layout)
+    cuts = center_cuts(layout, shared_chord=shared_chord)
     r_in_cm = layout.r_inner * 100.0
     z_bot = -pitch_cm / 2.0
     z_top = pitch_cm / 2.0
@@ -447,23 +449,12 @@ def _build_hole_cells(
         used = used & ~region
 
     mod_plane = openmc.YPlane(y0=cuts.moderator_y * 100.0)
-    mod_region = used & +mod_plane
-    _add_cell(
-        cells,
-        tracked,
-        materials_dict,
-        material_choice.moderator,
-        mod_region,
-        "hole_moderator",
-    )
-    used = used & ~mod_region
-
-    if cuts.reflector_y is not None and layout.reflector > 1e-9:
+    if shared_chord and cuts.reflector_y is not None and layout.reflector > 1e-9:
+        # Fuel side of the chord is the reflector, exactly `refl` thick measured
+        # from the fuel chord. The shield moderator is the rest of the way to
+        # the moderator plane. The two stay separate cells.
         refl_plane = openmc.YPlane(y0=cuts.reflector_y * 100.0)
-        # Between fuel chord and moderator cut, on the fuel side of the reflector chord.
-        fuel_y = r_in_cm * math.cos(layout.fuel_angle / 2.0)
-        fuel_plane = openmc.YPlane(y0=fuel_y)
-        refl_region = used & +refl_plane & -fuel_plane
+        refl_region = used & +refl_plane
         _add_cell(
             cells,
             tracked,
@@ -473,6 +464,45 @@ def _build_hole_cells(
             "hole_reflector",
         )
         used = used & ~refl_region
+        mod_region = used & +mod_plane
+        # The disc sector keeps neutron_shield_moderator. This cell is only the
+        # inner hole, so its material can differ.
+        _add_cell(
+            cells,
+            tracked,
+            materials_dict,
+            inner_shield_fill or material_choice.neutron_shield_moderator,
+            mod_region,
+            "hole_shield_moderator",
+        )
+        used = used & ~mod_region
+    else:
+        mod_region = used & +mod_plane
+        _add_cell(
+            cells,
+            tracked,
+            materials_dict,
+            material_choice.moderator,
+            mod_region,
+            "hole_moderator",
+        )
+        used = used & ~mod_region
+
+        if cuts.reflector_y is not None and layout.reflector > 1e-9:
+            refl_plane = openmc.YPlane(y0=cuts.reflector_y * 100.0)
+            # Between fuel chord and moderator cut, on the fuel side of the reflector chord.
+            fuel_y = r_in_cm * math.cos(layout.fuel_angle / 2.0)
+            fuel_plane = openmc.YPlane(y0=fuel_y)
+            refl_region = used & +refl_plane & -fuel_plane
+            _add_cell(
+                cells,
+                tracked,
+                materials_dict,
+                material_choice.neutron_reflector,
+                refl_region,
+                "hole_reflector",
+            )
+            used = used & ~refl_region
 
     _add_cell(
         cells,
@@ -492,6 +522,8 @@ def _one_disk_universe(
     material_choice: MaterialChoice,
     conical_pitch_deg: float,
     open_period: bool = False,
+    shared_chord: bool = False,
+    inner_shield_fill: Optional[str] = None,
 ) -> Tuple[openmc.Universe, Dict[str, List[openmc.Cell]], List[openmc.Cell]]:
     tracked: Dict[str, List[openmc.Cell]] = defaultdict(list)
     cells: List[openmc.Cell] = []
@@ -534,6 +566,8 @@ def _one_disk_universe(
         cells,
         conical_pitch_deg,
         open_period,
+        shared_chord,
+        inner_shield_fill,
     )
 
     # No radial pad outside r_out: multi-column layouts place centers 2*r_out
@@ -646,20 +680,21 @@ def make_app_slice_geometry(
     config: AppSliceRunConfig,
     materials_dict: Dict[str, openmc.Material],
     material_choice: MaterialChoice,
+    inner_shield_fill: Optional[str] = None,
 ) -> MakeAppSliceGeometryResult:
     setup = config.setup
-    merge_reflector = same_material_names(
+    # Graphite-like reflector and shield moderator share one fuel-to-TPV chord,
+    # split into two cells. The sector angles stay separate either way.
+    shared_chord = shared_graphite_chord(
         setup.layers.get("reflector", []),
         setup.layers.get("shield_moderator", []),
     )
-    shield_a = setup.a + setup.refl if merge_reflector else setup.a
-    reflector = 0.0 if merge_reflector else setup.refl
     layout = compute_layout_for_ratio(
-        shield_a,
+        setup.a,
         (setup.a * setup.b_pct) / 100.0,
         setup.w,
         setup.ratio_pct / 100.0,
-        reflector,
+        setup.refl,
         setup.absorber,
     )
     if not layout.feasible:
@@ -699,6 +734,8 @@ def make_app_slice_geometry(
         material_choice,
         conical_pitch_deg,
         open_period=False,
+        shared_chord=shared_chord,
+        inner_shield_fill=inner_shield_fill,
     )
     n_layers, start_index = _transport_layer_count(
         period_cm, r_out_cm, conical_pitch_deg

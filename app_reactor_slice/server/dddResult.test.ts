@@ -5,8 +5,7 @@ import {
   parseDisplacementDamageLine,
   parseIngaasPmaxLine,
   parseIngaasPmaxSensitivityLine,
-  pmaxFromResultsim,
-} from "./dddResult.ts";
+  pmaxFromResultsim,} from "./dddResult.ts";
 
 const LINE =
   "Displacement damage: 3.1619e+09 MeV/g over 10 years (± 29.03%, 95% CI)";

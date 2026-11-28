@@ -1,4 +1,4 @@
-import { EDITOR_GROUPS, LAYER_GROUPS, type LayerGroupId } from "./constants";
+import { EDITOR_GROUPS, INNER_SHIELD_GROUP, LAYER_GROUPS, type LayerGroupId } from "./constants";
 import { LAYER_TITLES, type Setup } from "./configurations";
 import type { LayerRow } from "./geometry";
 import { trisoFuelLayers } from "./geometry";
@@ -7,7 +7,7 @@ export type Groups = Record<LayerGroupId, LayerRow[]>;
 
 export function defaultGroups(): Groups {
   const groups = {} as Groups;
-  for (const [groupId, title] of EDITOR_GROUPS) {
+  for (const [groupId, title] of [...EDITOR_GROUPS, INNER_SHIELD_GROUP]) {
     groups[groupId as LayerGroupId] = [{ name: title, cm: 1 }];
   }
   return groups;
@@ -25,6 +25,24 @@ export function sameMaterialNames(left: LayerRow[], right: LayerRow[]): boolean 
   const namesLeft = left.map((row) => String(row.name ?? "").trim());
   const namesRight = right.map((row) => String(row.name ?? "").trim());
   return Boolean(namesLeft.length) && namesLeft.every((name, index) => name === namesRight[index]);
+}
+
+function solidMaterialNames(rows: LayerRow[]): string[] {
+  return rows
+    .map((row) => String(row.name ?? "").trim())
+    .filter((name) => name && name.toLowerCase() !== "void");
+}
+
+/** Graphite-like reflector and shield moderator share one fuel-to-TPV chord. */
+export function sharedGraphiteChord(
+  left: LayerRow[],
+  right: LayerRow[],
+  isGraphite: (name: string) => boolean,
+): boolean {
+  const leftNames = solidMaterialNames(left);
+  const rightNames = solidMaterialNames(right);
+  if (!leftNames.length || !rightNames.length) return false;
+  return leftNames.every(isGraphite) && rightNames.every(isGraphite);
 }
 
 export function groupThicknesses(groups: Groups): Array<[string, number]> {

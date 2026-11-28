@@ -716,6 +716,36 @@ def _write_gamma_resultsim(
         handle.write("\n")
 
 
+def _print_incomplete_ingaas_window_bias() -> None:
+    """Warn when empty InGaAs weight-window cells can only pull a dose down.
+
+    Unscored cells add nothing to the tally and still sit in the InGaAs volume
+    the dose divides by.
+    """
+    fraction = None
+    try:
+        with open("weight_windows_meta.json", encoding="utf-8") as handle:
+            meta = json.load(handle)
+        raw = meta.get("ingaas_reach_fraction")
+        if isinstance(raw, (int, float)):
+            fraction = float(raw)
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        fraction = None
+    if fraction is not None and fraction >= 1.0:
+        return
+    if fraction is not None:
+        print(
+            f"InGaAs weight-window coverage is {100 * fraction:.0f}%. "
+            "Empty cells score no neutrons. This dose divides by the full "
+            "InGaAs volume, so it is biased down."
+        )
+        return
+    print(
+        "If any InGaAs weight-window cell is empty, it scores no neutrons. "
+        "This dose divides by the full InGaAs volume, so those cells bias it down."
+    )
+
+
 def _print_photovoltaic_gamma_dose(
     sp: openmc.StatePoint,
     source_strength,
@@ -754,6 +784,7 @@ def _print_photovoltaic_gamma_dose(
         f"over {dose_years:g} years "
         f"(± {ci_text}%, 95% CI)"
     )
+    _print_incomplete_ingaas_window_bias()
     print("--------------------------------")
     _write_gamma_resultsim(kgy, ci95_pct, dose_years, batches)
 
@@ -810,6 +841,8 @@ def _print_photovoltaic_ddd(
         ddd_photovoltaic, ["flux"]
     )
     # EnergyFunctionFilter × flux → (MeV/g)·cm³ per source particle; /V → MeV/g/s.
+    # Empty InGaAs weight-window cells add nothing here and still sit in
+    # photovoltaic_slice_volume, so incomplete coverage biases this down.
     absolute_ddd_photovoltaic = (
         normalized_ddd_photovoltaic * source_strength / photovoltaic_slice_volume
     )  # MeV/g/s
@@ -842,6 +875,7 @@ def _print_photovoltaic_ddd(
         ),
         dose_years,
     )
+    _print_incomplete_ingaas_window_bias()
     print("--------------------------------")
     _write_ddd_resultsim(
         ddd_over_dose_time, yearly_ddd_photovoltaic_ci95_pct, batches, pmax
@@ -1024,6 +1058,7 @@ def print_tallies(
         ),
         dose_years,
     )
+    _print_incomplete_ingaas_window_bias()
     print(
         f"Absorption: {absorption_photovoltaic * dose_time:.4e} neutrons/cm3 "
         f"over {dose_years:g} years"

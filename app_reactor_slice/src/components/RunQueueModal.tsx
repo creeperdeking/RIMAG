@@ -50,8 +50,7 @@ type QueueResult = {
   pmaxFluenceM2?: number | null;
   pmaxOutsideRange?: boolean | null;
   pmaxFastRemaining?: number | null;
-  pmaxTruncatedRemaining?: number | null;
-  depletionYears?: number | null;
+  pmaxTruncatedRemaining?: number | null;  depletionYears?: number | null;
   depletionDays?: number | null;
   depletionBurnup?: number | null;
   depletionBelowOne?: boolean | null;
@@ -275,6 +274,12 @@ function LiveWwCoverage({ startedAt }: { startedAt: string | null }) {
         }
       />
       <div className="small text-secondary mb-2">The mark is the 80% target.</div>
+      {ingaas < 1 && (
+        <Alert variant="warning" className="py-2 px-3 small mb-2">
+          Empty InGaAs cells score no neutrons. A later DDD or gamma dose divides by the
+          full InGaAs volume, so those cells bias it down.
+        </Alert>
+      )}
       {status.ingaasEnergyFraction != null && (
         <CoverageBar
           label="Energy groups in reached cells"
@@ -366,8 +371,7 @@ const RunQueueModal: React.FC<Props> = ({
     result?.keff != null ||
     result?.gammaKGy != null ||
     result?.dddMeVPerG != null ||
-    result?.pmaxRemaining != null ||
-    result?.depletionBurnup != null ||
+    result?.pmaxRemaining != null ||    result?.depletionBurnup != null ||
     result?.ingaasReachFraction != null ||
     Boolean(result?.summary);
 
@@ -457,8 +461,7 @@ const RunQueueModal: React.FC<Props> = ({
                   Baseline KX is provisional, folded for In0.68Ga0.32As. This cell is In0.53Ga0.47As.
                 </div>
               </div>
-            )}
-            {(result?.dddMeVPerG != null || result?.gammaKGy != null) &&
+            )}            {(result?.dddMeVPerG != null || result?.gammaKGy != null) &&
               !(result?.ingaasReachFraction != null && result.ingaasReachFraction >= 1) && (
                 <Alert variant="warning" className="py-2 px-3 small mt-2 mb-0">
                   Empty InGaAs weight-window cells score no neutrons. This dose divides by
@@ -484,8 +487,10 @@ const RunQueueModal: React.FC<Props> = ({
                   : ""}
                 {result.ingaasReachFraction < 0.8 ? (
                   <span className="small text-secondary"> · target 80%</span>
+                ) : result.ingaasReachFraction < 1 ? (
+                  <span className="small text-secondary"> · target met, cells still empty</span>
                 ) : (
-                  <span className="small text-success"> · target met</span>
+                  <span className="small text-success"> · every cell reached</span>
                 )}
               </div>
             )}
@@ -613,7 +618,7 @@ const RunQueueModal: React.FC<Props> = ({
         </Form.Group>
 
         <Form.Group className="simulation-field">
-          <FieldLabel info="Elemental boron by mass in the graphite of the fuel layer. Reflector, disk, and shield graphite stay pure carbon.">
+          <FieldLabel info="Elemental boron by mass in the graphite of the fuel layer. The reflector bump, the disk, and the shield graphite are unchanged.">
             Boron concentration (ppm)
           </FieldLabel>
           <Form.Control
@@ -625,6 +630,24 @@ const RunQueueModal: React.FC<Props> = ({
             disabled={fieldDisabled}
             onChange={(event) =>
               setField("boron_concentration_ppm", Math.max(0, Number(event.target.value) || 0))
+            }
+          />
+        </Form.Group>
+
+        <Form.Group className="simulation-field">
+          <FieldLabel info="Elemental boron by mass mixed into every neutron shield, graphite or not. A graphite shield becomes carbon plus this boron and keeps that graphite's density. Any other shield keeps its composition, scaled to make room for the boron, and keeps its density. The boron-carbide wedge stays as it is. Zero leaves the shields unchanged.">
+            Shield boron (ppm)
+          </FieldLabel>
+          <Form.Control
+            size="sm"
+            type="number"
+            min={0}
+            max={999999}
+            step={1}
+            value={draft.shield_boron_ppm}
+            disabled={fieldDisabled}
+            onChange={(event) =>
+              setField("shield_boron_ppm", Math.max(0, Math.min(999999, Number(event.target.value) || 0)))
             }
           />
         </Form.Group>
@@ -752,7 +775,7 @@ const RunQueueModal: React.FC<Props> = ({
                 {draft.weight_windows === "autorefine" && (
                   <>
                     {" "}
-                    Repeats refine until InGaAs coverage reaches 80% (or 25 passes), then the queue continues.
+                    Repeats refine until InGaAs coverage reaches 80% (or 50 passes), then the queue continues.
                     If a refine pass crashes (non-zero exit), the queue pauses so the next run does not start
                     with incomplete windows.
                   </>
@@ -887,8 +910,7 @@ const RunQueueModal: React.FC<Props> = ({
           label={
             <span className="d-inline-flex align-items-center gap-1">
               Photovoltaic DDD tallies only
-              <InfoTip text="When on, keff keeps the SR-NIEL flux tally and the InGaAs damage-energy tally (keff itself still comes from the eigenvalue solve). The damage-energy tally is the Wang Pmax result shown next to the DDD. Turn off for heating, tritium, C-14, IFP, and the rest." />
-            </span>
+              <InfoTip text="When on, keff keeps the SR-NIEL flux tally and the InGaAs damage-energy tally (keff itself still comes from the eigenvalue solve). The damage-energy tally is the Wang Pmax result shown next to the DDD. Empty InGaAs weight-window cells score no neutrons and bias this dose down, because it still divides by the full InGaAs volume. Turn off for heating, tritium, C-14, IFP, and the rest." />            </span>
           }
           checked={draft.ddd_tallies_only}
           disabled={fieldDisabled}
