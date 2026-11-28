@@ -41,6 +41,9 @@ type QueueResult = {
   gammaKGy?: number | null;
   gammaCi95Pct?: number | null;
   gammaYears?: number | null;
+  dddMeVPerG?: number | null;
+  dddCi95Pct?: number | null;
+  dddYears?: number | null;
   depletionYears?: number | null;
   depletionDays?: number | null;
   depletionBurnup?: number | null;
@@ -355,6 +358,7 @@ const RunQueueModal: React.FC<Props> = ({
   const hasSavedResult =
     result?.keff != null ||
     result?.gammaKGy != null ||
+    result?.dddMeVPerG != null ||
     result?.depletionBurnup != null ||
     result?.ingaasReachFraction != null ||
     Boolean(result?.summary);
@@ -412,6 +416,23 @@ const RunQueueModal: React.FC<Props> = ({
                 {result.gammaCi95Pct != null ? ` (± ${result.gammaCi95Pct.toFixed(2)}%, 95% CI)` : ""}
               </div>
             )}
+            {result?.dddMeVPerG != null && (
+              <div className="font-monospace mt-1">
+                InGaAs DDD {formatSci(result.dddMeVPerG)} MeV/g
+                {result.dddYears != null ? ` over ${formatDoseYears(result.dddYears)} years` : ""}
+                {result.dddCi95Pct != null ? ` (± ${result.dddCi95Pct.toFixed(2)}%, 95% CI)` : ""}
+              </div>
+            )}
+            {(result?.dddMeVPerG != null || result?.gammaKGy != null) &&
+              !(result?.ingaasReachFraction != null && result.ingaasReachFraction >= 1) && (
+                <Alert variant="warning" className="py-2 px-3 small mt-2 mb-0">
+                  Empty InGaAs weight-window cells score no neutrons. This dose divides by
+                  the full InGaAs volume, so those cells bias it down.
+                  {result?.ingaasReachFraction != null
+                    ? ` Coverage is ${(100 * result.ingaasReachFraction).toFixed(0)}%.`
+                    : ""}
+                </Alert>
+              )}
             {result?.depletionBurnup != null && result.depletionYears != null && (
               <div className="font-monospace mt-1">
                 {result.depletionBelowOne
@@ -433,6 +454,16 @@ const RunQueueModal: React.FC<Props> = ({
                 )}
               </div>
             )}
+            {result?.ingaasReachFraction != null &&
+              result.ingaasReachFraction < 1 &&
+              result.dddMeVPerG == null &&
+              result.gammaKGy == null && (
+                <Alert variant="warning" className="py-2 px-3 small mt-2 mb-0">
+                  Empty InGaAs cells score no neutrons. A tally run with these windows
+                  divides the dose by the full InGaAs volume, so those cells bias the DDD
+                  and the gamma dose down.
+                </Alert>
+              )}
             {result?.ingaasEnergyFraction != null && (
               <div className="small text-secondary font-monospace">
                 InGaAs energy groups {(100 * result.ingaasEnergyFraction).toFixed(0)}%

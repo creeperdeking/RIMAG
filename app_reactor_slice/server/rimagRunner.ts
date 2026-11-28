@@ -9,6 +9,11 @@ import {
   trackedContainerAction,
   weightWindowWriteBelongsToPass,
 } from "./containerPolicy";
+import {
+  displacementDamageFromResultsim,
+  parseDisplacementDamageLine,
+  type DisplacementDamage,
+} from "./dddResult";
 import { parseDepletionLine } from "./depletionResult";
 import {
   appendQueued,
@@ -854,6 +859,48 @@ function attachStoredGamma(result: QueueItemResult, item: QueueItem | null | und
   return fromFile ? { ...result, ...fromFile } : result;
 }
 
+function dddFromLogs(): DisplacementDamage | null {
+  for (let i = job.lastLines.length - 1; i >= 0; i -= 1) {
+    const parsed = parseDisplacementDamageLine(job.lastLines[i].line);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+function doseYearsFromPayload(payload: unknown): number | null {
+  const years = Number(simulationRecordFromPayload(payload).dose_time);
+  return Number.isFinite(years) && years >= 0 ? years : null;
+}
+
+function dddFromResultsim(item: QueueItem): DisplacementDamage | null {
+  const file = path.join(RUN_DIR, RESULTSIM_FILE);
+  if (!fs.existsSync(file)) return null;
+  const stat = fs.statSync(file);
+  const started = item.startedAt ? Date.parse(item.startedAt) : NaN;
+  const finished = item.finishedAt ? Date.parse(item.finishedAt) : Date.now();
+  if (Number.isFinite(started) && stat.mtimeMs < started - 5000) return null;
+  if (Number.isFinite(finished) && stat.mtimeMs > finished + 120_000) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const record = parsed as Record<string, unknown>;
+  const batches = simulationRecordFromPayload(item.payload).n_batches;
+  if (typeof batches === "number" && record.n_batches !== batches) return null;
+  return displacementDamageFromResultsim(record, doseYearsFromPayload(item.payload));
+}
+
+function attachStoredDdd(result: QueueItemResult, item: QueueItem | null | undefined): QueueItemResult {
+  const fromLogs = dddFromLogs();
+  if (fromLogs) return { ...result, ...fromLogs };
+  if (!item || result.dddMeVPerG != null) return result;
+  const fromFile = dddFromResultsim(item);
+  return fromFile ? { ...result, ...fromFile } : result;
+}
+
 function resultFromLogs(): QueueItemResult {
   const depletion = parseDepletionLine(job.lastLines.map((entry) => entry.line).join("\n"));
   if (depletion) {
@@ -1042,7 +1089,7 @@ function onJobEnded(code: number, endedGen?: number) {
     );
 
     if (frac != null && frac >= AUTOREFINE_TARGET) {
-      const base = attachWwCoverage(attachStoredGamma(resultFromLogs(), item), item.payload);
+      const base = attachWwCoverage(attachStoredDdd(attachStoredGamma(resultFromLogs(), item), item), item.payload);
       finishQueueItem(
         itemId,
         0,
@@ -1057,7 +1104,7 @@ function onJobEnded(code: number, endedGen?: number) {
     }
 
     if (job.autoRefinePass >= AUTOREFINE_MAX_PASSES) {
-      const base = attachWwCoverage(attachStoredGamma(resultFromLogs(), item), item.payload);
+      const base = attachWwCoverage(attachStoredDdd(attachStoredGamma(resultFromLogs(), item), item), item.payload);
       finishQueueItem(
         itemId,
         0,
@@ -1085,7 +1132,7 @@ function onJobEnded(code: number, endedGen?: number) {
   const status = stopped ? "cancelled" : effectiveCode === 0 ? "done" : "failed";
   let result: QueueItemResult | null = stopped
     ? { summary: "Stopped by user" }
-    : attachWwCoverage(attachStoredGamma(resultFromLogs(), item), item?.payload);
+    : attachWwCoverage(attachStoredDdd(attachStoredGamma(resultFromLogs(), item), item), item?.payload);
 
   // Autorefine must reach InGaAs coverage (or hit max passes as "done") before the
   // next queue item. A crashed/killed refine (e.g. exit 137) used to mark failed
@@ -1559,9 +1606,25 @@ function backfillGamma(item: QueueItem): QueueItem {
   return state.items[index];
 }
 
+function backfillDdd(item: QueueItem): QueueItem {
+  if (item.status !== "done") return item;
+  if (item.result?.dddMeVPerG != null) return item;
+  const ddd = dddFromResultsim(item);
+  if (!ddd) return item;
+  const state = queueSnapshot();
+  const index = state.items.findIndex((entry) => entry.id === item.id);
+  if (index < 0) return { ...item, result: { ...(item.result ?? {}), ...ddd } };
+  const current = state.items[index];
+  if (current.result?.dddMeVPerG != null) return current;
+  const result = { ...(current.result ?? {}), ...ddd };
+  state.items[index] = { ...current, result };
+  saveQueue(state);
+  return state.items[index];
+}
+
 export function readQueueItem(id: string): QueueItem | null {
   const item = getQueueItem(id);
-  return item ? backfillGamma(backfillWwCoverage(item)) : null;
+  return item ? backfillDdd(backfillGamma(backfillWwCoverage(item))) : null;
 }
 
 // A reload has an empty memory. Attach to a container that is still

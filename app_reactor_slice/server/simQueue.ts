@@ -25,6 +25,10 @@ export type QueueItemResult = {
   gammaKGy?: number | null;
   gammaCi95Pct?: number | null;
   gammaYears?: number | null;
+  /** Cumulative InGaAs displacement damage, MeV/g over dddYears. */
+  dddMeVPerG?: number | null;
+  dddCi95Pct?: number | null;
+  dddYears?: number | null;
   /** Fuel lifetime at this item's slice power, until mean keff stays below 1. */
   depletionYears?: number | null;
   depletionDays?: number | null;
